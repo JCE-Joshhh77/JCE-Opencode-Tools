@@ -4,7 +4,7 @@ import { dirname, join } from "path";
 import { spawnSync } from "child_process";
 import { getConfigDir } from "../../lib/config.js";
 
-export const AGENT_IDS = ["sisyphus", "oracle", "librarian", "explorer", "frontend"] as const;
+export const AGENT_IDS = ["jce-worker", "oracle", "jce-researcher", "explorer", "frontend"] as const;
 export type JceAgentId = typeof AGENT_IDS[number];
 export type AgentModelPreference = string | null;
 

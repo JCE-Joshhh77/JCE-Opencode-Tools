@@ -102,6 +102,35 @@ describe("audit fixes", () => {
     expect(sh).toContain("merge_lsp_to_opencode_config");
   });
 
+  test("Linux installer uses Linux-appropriate LSP install commands", () => {
+    const sh = readFileSync(join(process.cwd(), "install.sh"), "utf-8");
+
+    expect(sh).toContain("install_jdtls_linux");
+    expect(sh).toContain("install_marksman_linux");
+    expect(sh).toContain("install_rust_analyzer");
+    expect(sh).toContain("install_csharp_ls");
+    expect(sh).toContain("jdt-language-server-latest.tar.gz");
+    expect(sh).toContain('mkdir -p "$TEMP_DIR"');
+    expect(sh).not.toContain('"rustup component add rust-analyzer"');
+    expect(sh).not.toContain('"dotnet tool install -g csharp-ls --version 0.15.0"');
+    expect(sh).not.toContain('"brew install marksman || cargo install marksman"');
+  });
+
+  test("Linux LSP install commands are resolved by selected OS and package manager", () => {
+    const sh = readFileSync(join(process.cwd(), "install.sh"), "utf-8");
+
+    expect(sh).toContain("lsp_install_command");
+    expect(sh).toContain("lsp_system_install_command");
+    expect(sh).toContain("PKG_MGR");
+    expect(sh).not.toContain("brew install kotlin-language-server || sdk install kotlin-language-server");
+    expect(sh).not.toContain("brew install dart || sudo apt-get install -y dart");
+    expect(sh).not.toContain("brew install lua-language-server || sudo apt-get install -y lua-language-server");
+    expect(sh).not.toContain("brew install hashicorp/tap/terraform-ls || sudo apt-get install -y terraform-ls");
+    expect(sh).not.toContain("brew install zls || cargo install zls");
+    expect(sh).not.toContain("brew install elixir-ls || mix archive.install hex elixir_ls");
+    expect(sh).not.toContain("brew install metals || cs install metals");
+  });
+
   test("setup no longer prompts for raw API keys or writes api-keys.env", () => {
     const source = readFileSync(join(process.cwd(), "src", "commands", "setup.ts"), "utf-8");
 

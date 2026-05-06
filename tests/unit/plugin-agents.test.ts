@@ -32,19 +32,26 @@ describe("plugin agents", () => {
   test("builds 5 agent configs with correct IDs", () => {
     const agents = buildAgentConfigs();
     const ids = Object.keys(agents);
-    expect(ids).toContain("sisyphus");
+    expect(ids).toContain("jce-worker");
     expect(ids).toContain("oracle");
-    expect(ids).toContain("librarian");
+    expect(ids).toContain("jce-researcher");
     expect(ids).toContain("explorer");
     expect(ids).toContain("frontend");
     expect(ids).toHaveLength(5);
   });
 
-  test("sisyphus agent has boulder/todo system prompt", () => {
+  test("jce-worker agent has boulder/todo system prompt", () => {
     const agents = buildAgentConfigs();
-    expect(agents.sisyphus.systemPrompt).toContain("todo");
-    expect(agents.sisyphus.systemPrompt).toContain("boulder");
-    expect(agents.sisyphus.systemPrompt).toContain("Sisyphus");
+    expect(agents["jce-worker"].systemPrompt).toContain("todo");
+    expect(agents["jce-worker"].systemPrompt).toContain("boulder");
+    expect(agents["jce-worker"].systemPrompt).toContain("JCE-Worker");
+  });
+
+  test("jce-worker prompt describes planning, delegation review, and verification", () => {
+    const agents = buildAgentConfigs();
+    expect(agents["jce-worker"].systemPrompt).toContain("planning");
+    expect(agents["jce-worker"].systemPrompt).toContain("verification");
+    expect(agents["jce-worker"].systemPrompt).toContain("review delegated work");
   });
 
   test("agents omit model by default so OpenCode uses the active user model", () => {
@@ -60,10 +67,10 @@ describe("plugin agents", () => {
     const configDir = tempConfigDir("override");
     writeProviderConfig(configDir);
     writeFileSync(join(configDir, "jce-plugin.json"), JSON.stringify({
-      agents: { sisyphus: "enowxlabs/gpt-5.5", frontend: "enowxlabs/gpt-5.4" },
+      agents: { "jce-worker": "enowxlabs/gpt-5.5", frontend: "enowxlabs/gpt-5.4" },
     }), "utf-8");
     const agents = buildAgentConfigs();
-    expect(agents.sisyphus.model).toBe("enowxlabs/gpt-5.5");
+    expect(agents["jce-worker"].model).toBe("enowxlabs/gpt-5.5");
     expect(agents.frontend.model).toBe("enowxlabs/gpt-5.4");
     expect(agents.oracle.model).toBeUndefined();
   });
@@ -72,9 +79,9 @@ describe("plugin agents", () => {
     const configDir = tempConfigDir("invalid");
     writeProviderConfig(configDir);
     writeFileSync(join(configDir, "jce-plugin.json"), JSON.stringify({
-      agents: { sisyphus: "openai/gpt-4o-mini" },
+      agents: { "jce-worker": "openai/gpt-4o-mini" },
     }), "utf-8");
     const agents = buildAgentConfigs();
-    expect(agents.sisyphus.model).toBeUndefined();
+    expect(agents["jce-worker"].model).toBeUndefined();
   });
 });

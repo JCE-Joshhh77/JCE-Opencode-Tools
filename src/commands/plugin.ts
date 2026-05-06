@@ -127,7 +127,7 @@ const modelsCommand = new Command("models")
   });
 
 const configureCommand = new Command("configure")
-  .description("Interactively configure Sisyphus/JCE plugin agent models")
+  .description("Interactively configure JCE plugin agent models")
   .action(async () => {
     logCommandStart("plugin configure");
     const models = listAvailableModels();

@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="2.0.0"
+VERSION="2.0.1"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="/tmp/opencode-jce-install"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -471,6 +471,177 @@ precache_mcp_packages() {
     fi
 }
 
+install_rust_analyzer() {
+    if command -v rustup &>/dev/null; then
+        rustup component add rust-analyzer
+        return
+    fi
+
+    case "$PKG_MGR" in
+        apt)    sudo apt-get update && sudo apt-get install -y rust-analyzer;;
+        dnf)    sudo dnf install -y rust-analyzer;;
+        pacman) sudo pacman -S --noconfirm rust-analyzer;;
+        brew)   brew install rust-analyzer;;
+        *)      return 1;;
+    esac
+}
+
+install_jdtls_linux() {
+    if ! command -v java &>/dev/null; then
+        case "$PKG_MGR" in
+            apt)    sudo apt-get update && sudo apt-get install -y openjdk-21-jre-headless;;
+            dnf)    sudo dnf install -y java-21-openjdk-headless;;
+            pacman) sudo pacman -S --noconfirm jre-openjdk;;
+            *)      warn "Java runtime not found; install JDK 21 before jdtls if this fails.";;
+        esac
+    fi
+
+    local jce_bin="${HOME}/.local/bin"
+    local lsp_dir="${HOME}/.local/share/opencode-jce/lsp/jdtls"
+    local archive="${TEMP_DIR}/jdtls-latest.tar.gz"
+    mkdir -p "$TEMP_DIR"
+    mkdir -p "$jce_bin" "$lsp_dir"
+    curl -fsSL "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz" -o "$archive"
+    tar -xzf "$archive" -C "$lsp_dir"
+    local launcher
+    launcher=$(find "$lsp_dir/plugins" -name 'org.eclipse.equinox.launcher_*.jar' -print -quit)
+    [ -n "$launcher" ] || return 1
+    cat > "$jce_bin/jdtls" <<EOF
+#!/usr/bin/env sh
+JDTLS_HOME="$lsp_dir"
+JDTLS_LAUNCHER="$launcher"
+exec java \
+  -Declipse.application=org.eclipse.jdt.ls.core.id1 \
+  -Dosgi.bundles.defaultStartLevel=4 \
+  -Declipse.product=org.eclipse.jdt.ls.core.product \
+  -Dlog.protocol=true \
+  -Dlog.level=ALL \
+  -Xmx1G \
+  --add-modules=ALL-SYSTEM \
+  --add-opens java.base/java.util=ALL-UNNAMED \
+  --add-opens java.base/java.lang=ALL-UNNAMED \
+  -jar "\$JDTLS_LAUNCHER" \
+  -configuration "\$JDTLS_HOME/config_linux" \
+  -data "\$HOME/.jdtls-workspace" \
+  "\$@"
+EOF
+    chmod 755 "$jce_bin/jdtls"
+    export PATH="$jce_bin:$PATH"
+    command -v jdtls &>/dev/null
+}
+
+install_csharp_ls() {
+    command -v dotnet &>/dev/null || return 1
+    dotnet tool install -g csharp-ls || dotnet tool update -g csharp-ls
+    export PATH="${HOME}/.dotnet/tools:${PATH}"
+    command -v csharp-ls &>/dev/null
+}
+
+install_marksman_linux() {
+    local jce_bin="${HOME}/.local/bin"
+    mkdir -p "$jce_bin"
+
+    local os_arch
+    case "$(uname -m)" in
+        x86_64|amd64) os_arch="x64";;
+        aarch64|arm64) os_arch="arm64";;
+        *) os_arch="";;
+    esac
+
+    if [ -n "$os_arch" ]; then
+        local url="https://github.com/artempyanykh/marksman/releases/latest/download/marksman-linux-${os_arch}"
+        if curl -fsSL "$url" -o "$jce_bin/marksman"; then
+            chmod 755 "$jce_bin/marksman"
+            export PATH="$jce_bin:$PATH"
+            command -v marksman &>/dev/null && return 0
+        fi
+    fi
+
+    if command -v cargo &>/dev/null; then
+        cargo install marksman
+        return
+    fi
+
+    return 1
+}
+
+lsp_system_install_command() {
+    local apt_pkg="$1"
+    local dnf_pkg="${2:-$apt_pkg}"
+    local pacman_pkg="${3:-$apt_pkg}"
+    local brew_pkg="${4:-$apt_pkg}"
+
+    if [ "$OS" = "macos" ]; then
+        echo "brew install ${brew_pkg}"
+        return
+    fi
+
+    case "$PKG_MGR" in
+        apt)    echo "sudo apt-get update && sudo apt-get install -y ${apt_pkg}";;
+        dnf)    echo "sudo dnf install -y ${dnf_pkg}";;
+        pacman) echo "sudo pacman -S --noconfirm ${pacman_pkg}";;
+        *)      return 1;;
+    esac
+}
+
+lsp_install_command() {
+    case "$1" in
+        0)  echo "npm install -g pyright";;
+        1)  echo "npm install -g typescript-language-server typescript";;
+        2)  echo "install_rust_analyzer";;
+        3)  echo "go install golang.org/x/tools/gopls@latest";;
+        4)  echo "npm install -g dockerfile-language-server-nodejs";;
+        5)  echo "npm install -g sql-language-server";;
+        6)  [ "$OS" = "macos" ] && echo "brew install jdtls" || echo "install_jdtls_linux";;
+        7)  lsp_system_install_command clangd clang-tools-extra clang llvm;;
+        8)  echo "npm install -g intelephense";;
+        9)  echo "gem install solargraph";;
+        10) echo "install_csharp_ls";;
+        11) echo "npm install -g bash-language-server";;
+        12) echo "npm install -g yaml-language-server";;
+        13) echo "npm install -g vscode-langservers-extracted";;
+        14) echo "npm install -g vscode-langservers-extracted";;
+        15)
+            if [ "$OS" = "macos" ]; then
+                echo "brew install kotlin-language-server"
+            else
+                echo "command -v sdk >/dev/null && sdk install kotlin-language-server"
+            fi
+            ;;
+        16) lsp_system_install_command dart dart dart dart;;
+        17) lsp_system_install_command lua-language-server lua-language-server lua-language-server lua-language-server;;
+        18) echo "npm install -g svelte-language-server";;
+        19) echo "npm install -g @vue/language-server";;
+        20) lsp_system_install_command terraform-ls terraform-ls terraform-ls hashicorp/tap/terraform-ls;;
+        21) echo "npm install -g @tailwindcss/language-server";;
+        22)
+            if [ "$OS" = "macos" ]; then
+                echo "brew install zls"
+            else
+                echo "command -v cargo >/dev/null && cargo install zls"
+            fi
+            ;;
+        23) [ "$OS" = "macos" ] && echo "brew install marksman" || echo "install_marksman_linux";;
+        24) echo "cargo install taplo-cli --features lsp";;
+        25) echo "npm install -g graphql-language-service-cli";;
+        26)
+            if [ "$OS" = "macos" ]; then
+                echo "brew install elixir-ls"
+            else
+                echo "command -v mix >/dev/null && mix archive.install hex elixir_ls --force"
+            fi
+            ;;
+        27)
+            if [ "$OS" = "macos" ]; then
+                echo "brew install metals"
+            else
+                echo "command -v cs >/dev/null && cs install metals"
+            fi
+            ;;
+        *)  return 1;;
+    esac
+}
+
 select_and_install_lsp() {
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
@@ -483,36 +654,6 @@ select_and_install_lsp() {
     # Define LSP servers
     local -a LSP_NAMES=("Python" "TypeScript" "Rust" "Go" "Docker" "SQL" "Java" "C/C++" "PHP" "Ruby" "C#" "Bash" "YAML" "HTML" "CSS" "Kotlin" "Dart" "Lua" "Svelte" "Vue" "Terraform" "Tailwind CSS" "Zig" "Markdown" "TOML" "GraphQL" "Elixir" "Scala")
     local -a LSP_CMDS=("pyright-langserver" "typescript-language-server" "rust-analyzer" "gopls" "docker-langserver" "sql-language-server" "jdtls" "clangd" "intelephense" "solargraph" "csharp-ls" "bash-language-server" "yaml-language-server" "vscode-html-language-server" "vscode-css-language-server" "kotlin-language-server" "dart" "lua-language-server" "svelteserver" "vue-language-server" "terraform-ls" "tailwindcss-language-server" "zls" "marksman" "taplo" "graphql-lsp" "elixir-ls" "metals")
-    local -a LSP_INSTALL=(
-        "npm install -g pyright"
-        "npm install -g typescript-language-server typescript"
-        "rustup component add rust-analyzer"
-        "go install golang.org/x/tools/gopls@latest"
-        "npm install -g dockerfile-language-server-nodejs"
-        "npm install -g sql-language-server"
-        "brew install jdtls"
-        "sudo apt-get install -y clangd || brew install llvm"
-        "npm install -g intelephense"
-        "gem install solargraph"
-        "dotnet tool install -g csharp-ls --version 0.15.0"
-        "npm install -g bash-language-server"
-        "npm install -g yaml-language-server"
-        "npm install -g vscode-langservers-extracted"
-        "npm install -g vscode-langservers-extracted"
-        "brew install kotlin-language-server || sdk install kotlin-language-server"
-        "brew install dart || sudo apt-get install -y dart"
-        "brew install lua-language-server || sudo apt-get install -y lua-language-server"
-        "npm install -g svelte-language-server"
-        "npm install -g @vue/language-server"
-        "brew install hashicorp/tap/terraform-ls || sudo apt-get install -y terraform-ls"
-        "npm install -g @tailwindcss/language-server"
-        "brew install zls || cargo install zls"
-        "brew install marksman || cargo install marksman"
-        "cargo install taplo-cli --features lsp"
-        "npm install -g graphql-language-service-cli"
-        "brew install elixir-ls || mix archive.install hex elixir_ls"
-        "brew install metals || cs install metals"
-    )
 
     # Show list with status
     local -a ALREADY_INSTALLED=()
@@ -621,12 +762,20 @@ select_and_install_lsp() {
 
     for idx in "${selected[@]}"; do
         local name="${LSP_NAMES[$idx]}"
-        local install_cmd="${LSP_INSTALL[$idx]}"
+        local install_cmd
+        install_cmd=$(lsp_install_command "$idx") || install_cmd=""
 
         echo -n "  Installing ${name}... "
 
+        if [ -z "$install_cmd" ]; then
+            echo -e "${YELLOW}⚠️  Failed${NC}"
+            warn "  No install command available for ${name} on ${OS}/${PKG_MGR}."
+            failed_count=$((failed_count + 1))
+            continue
+        fi
+
         # Run install command
-        if bash -c "$install_cmd" &>/dev/null; then
+        if eval "$install_cmd" &>/dev/null; then
             echo -e "${GREEN}✅${NC}"
             installed_count=$((installed_count + 1))
         else

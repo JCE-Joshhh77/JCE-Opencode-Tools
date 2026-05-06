@@ -12,9 +12,9 @@ interface ProfileConfig extends AgentModelConfig {
 }
 
 const ROLE_PROFILE_MAP: Record<string, string[]> = {
-  sisyphus: ["claude-opus", "opus", "anthropic-opus"],
+  "jce-worker": ["claude-opus", "opus", "anthropic-opus"],
   oracle: ["gpt-o1", "o1", "openai-o1", "gpt"],
-  librarian: ["claude-sonet", "sonet", "anthropic-sonet", "claude-sonnet"],
+  "jce-researcher": ["claude-sonet", "sonet", "anthropic-sonet", "claude-sonnet"],
   explorer: ["grok", "gemini-flash", "haiku", "claude-haiku"],
   frontend: ["gemini", "gemini-pro", "google-gemini"],
 };

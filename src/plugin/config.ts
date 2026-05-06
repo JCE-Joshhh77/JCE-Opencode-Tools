@@ -1,6 +1,6 @@
-import { buildSisyphusAgent } from "./agents/sisyphus.js";
+import { buildJceWorkerAgent } from "./agents/jce-worker.js";
 import { buildOracleAgent } from "./agents/oracle.js";
-import { buildLibrarianAgent } from "./agents/librarian.js";
+import { buildJceResearcherAgent } from "./agents/jce-researcher.js";
 import { buildExplorerAgent } from "./agents/explorer.js";
 import { buildFrontendAgent } from "./agents/frontend.js";
 import { applyJcePluginSettings } from "./lib/settings.js";
@@ -12,9 +12,9 @@ export interface PluginAgentConfig {
 
 export function buildAgentConfigs(): Record<string, PluginAgentConfig> {
   return applyJcePluginSettings({
-    sisyphus: buildSisyphusAgent(),
+    "jce-worker": buildJceWorkerAgent(),
     oracle: buildOracleAgent(),
-    librarian: buildLibrarianAgent(),
+    "jce-researcher": buildJceResearcherAgent(),
     explorer: buildExplorerAgent(),
     frontend: buildFrontendAgent(),
   });

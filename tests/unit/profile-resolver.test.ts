@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe("profile resolver", () => {
   test("resolves any role to a model config with provider and model", () => {
-    const result = resolveAgentModel("sisyphus");
+    const result = resolveAgentModel("jce-worker");
     expect(result.provider).toBeDefined();
     expect(result.model).toBeDefined();
     expect(typeof result.provider).toBe("string");
@@ -44,7 +44,7 @@ describe("profile resolver", () => {
   });
 
   test("all known roles resolve without error", () => {
-    const roles = ["sisyphus", "oracle", "librarian", "explorer", "frontend"];
+    const roles = ["jce-worker", "oracle", "jce-researcher", "explorer", "frontend"];
     for (const role of roles) {
       const result = resolveAgentModel(role);
       expect(result.provider).toBeDefined();
@@ -70,6 +70,6 @@ describe("profile resolver", () => {
       },
     }), "utf-8");
 
-    expect(resolveAgentModel("sisyphus")).toEqual({ provider: "enowxlabs", model: "gpt-5.5" });
+    expect(resolveAgentModel("jce-worker")).toEqual({ provider: "enowxlabs", model: "gpt-5.5" });
   });
 });

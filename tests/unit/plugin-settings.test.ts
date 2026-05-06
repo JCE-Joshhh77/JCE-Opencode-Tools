@@ -48,9 +48,9 @@ describe("plugin settings", () => {
 
   test("saves nullable per-agent model settings", async () => {
     const configDir = tempConfigDir("save-settings");
-    await saveJcePluginSettings({ agents: { sisyphus: null, frontend: "enowxlabs/gpt-5.5" } });
+    await saveJcePluginSettings({ agents: { "jce-worker": null, frontend: "enowxlabs/gpt-5.5" } });
     const saved = JSON.parse(readFileSync(join(configDir, "jce-plugin.json"), "utf-8"));
-    expect(saved.agents.sisyphus).toBeNull();
+    expect(saved.agents["jce-worker"]).toBeNull();
     expect(saved.agents.frontend).toBe("enowxlabs/gpt-5.5");
   });
 
@@ -103,7 +103,8 @@ describe("plugin settings", () => {
   });
 
   test("exports the five JCE agent IDs", () => {
-    expect(AGENT_IDS).toEqual(["sisyphus", "oracle", "librarian", "explorer", "frontend"]);
+    expect(AGENT_IDS).toEqual(["jce-worker", "oracle", "jce-researcher", "explorer", "frontend"]);
     expect(getJcePluginSettingsPath()).toContain("jce-plugin.json");
   });
+
 });

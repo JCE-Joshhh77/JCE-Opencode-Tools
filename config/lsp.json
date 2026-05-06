@@ -19,7 +19,7 @@
       "command": "rust-analyzer",
       "args": [],
       "filetypes": ["rust"],
-      "installCommand": "rustup component add rust-analyzer"
+      "installCommand": "rustup component add rust-analyzer || sudo apt-get install -y rust-analyzer"
     },
     "docker": {
       "server": "dockerfile-language-server",
@@ -47,7 +47,7 @@
       "command": "jdtls",
       "args": [],
       "filetypes": ["java"],
-      "installCommand": "brew install jdtls"
+      "installCommand": "install via installer: download Eclipse JDTLS and create jdtls shim"
     },
     "cpp": {
       "server": "clangd",
@@ -75,7 +75,7 @@
       "command": "csharp-ls",
       "args": [],
       "filetypes": ["csharp"],
-      "installCommand": "dotnet tool install -g csharp-ls --version 0.15.0"
+      "installCommand": "dotnet tool install -g csharp-ls || dotnet tool update -g csharp-ls"
     },
     "bash": {
       "server": "bash-language-server",
@@ -166,7 +166,7 @@
       "command": "marksman",
       "args": ["server"],
       "filetypes": ["markdown"],
-      "installCommand": "brew install marksman || cargo install marksman"
+      "installCommand": "download marksman-linux-x64 from GitHub releases or cargo install marksman"
     },
     "toml": {
       "server": "taplo",

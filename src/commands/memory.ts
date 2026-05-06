@@ -174,9 +174,10 @@ const clearCommand = new Command("clear")
     }
 
     const store = getStore();
-    store.clear();
+    const backupPath = store.clear();
 
     success("All memories cleared.");
+    info(`Backup saved: ${backupPath}`);
     logCommandSuccess("memory clear");
     process.exit(EXIT_SUCCESS);
   });
