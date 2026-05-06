@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "2.0.3"
+$Version = "2.0.4"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -455,6 +455,10 @@ function Deploy-Config {
         Remove-Item (Join-Path $bunPath "opencode-jce") -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $bunPath "opencode-jce.bunx") -Force -ErrorAction SilentlyContinue
         Remove-Item (Join-Path $bunPath "opencode-jce.exe") -Force -ErrorAction SilentlyContinue
+        $npmPath = Join-Path $env:APPDATA "npm"
+        Remove-Item (Join-Path $npmPath "opencode-jce") -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $npmPath "opencode-jce.ps1") -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $npmPath "opencode-jce.cmd") -Force -ErrorAction SilentlyContinue
 
         $installDir = Join-Path $ConfigDir "cli"
         $stagingDir = Join-Path $ConfigDir ".cli-install-new"

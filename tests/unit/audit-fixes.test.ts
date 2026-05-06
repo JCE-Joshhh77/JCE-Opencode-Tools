@@ -229,6 +229,18 @@ describe("audit fixes", () => {
     expect(ps).toContain('bun run `"$installDir\\src\\index.ts`" -- %*');
   });
 
+  test("Windows install and update remove stale npm opencode-jce shims", () => {
+    const source = readFileSync(join(process.cwd(), "src", "commands", "update.ts"), "utf-8");
+    const ps = readFileSync(join(process.cwd(), "install.ps1"), "utf-8");
+
+    expect(source).toContain('join(process.env.APPDATA || "", "npm")');
+    expect(source).toContain('"opencode-jce.ps1"');
+    expect(source).toContain('"opencode-jce.cmd"');
+    expect(ps).toContain('Join-Path $env:APPDATA "npm"');
+    expect(ps).toContain('Remove-Item (Join-Path $npmPath "opencode-jce.ps1")');
+    expect(ps).toContain('Remove-Item (Join-Path $npmPath "opencode-jce.cmd")');
+  });
+
   test("plugin command exposes interactive JCE model configuration", () => {
     const source = readFileSync(join(process.cwd(), "src", "commands", "plugin.ts"), "utf-8");
 
