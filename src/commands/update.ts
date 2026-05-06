@@ -5,10 +5,10 @@ import { cp, mkdir, writeFile, readFile, chmod, rename } from "fs/promises";
 import { platform } from "os";
 import chalk from "chalk";
 import { getConfigDir } from "../lib/config.js";
+import { ensureOpenCodeJsonEntries } from "../lib/opencode-config-merge.js";
 import { banner, heading, info, success, warn, error } from "../lib/ui.js";
 import { logCommandStart, logCommandSuccess, logCommandError } from "../lib/logger.js";
 import {
-  cleanupLegacyMcpEntries,
   CURRENT_CONFIG_VERSION,
   initVersionFile,
   runMigrations,
@@ -30,6 +30,7 @@ interface GitHubContentEntry {
 }
 
 interface MergeStats {
+  opencodeJsonChanged: boolean;
   agents: number;
   mcpServers: number;
   lspEntries: number;
@@ -38,9 +39,12 @@ interface MergeStats {
   skills: number;
   agentsMdUpdated: boolean;
   fallbackSkipped: boolean;
+  fallbackFetchFailed: boolean;
   fetchFailed: number;
   fetchAttempted: number;
 }
+
+type FallbackStatus = "written" | "skipped" | "fetch-failed";
 
 // ─── GitHub Fetch Helpers ────────────────────────────────────
 
@@ -479,9 +483,10 @@ async function updateAgentsMd(configDir: string): Promise<boolean> {
   if (existsSync(localPath)) {
     const localContent = await readFile(localPath, "utf-8");
     if (localContent !== content) {
-      const backupPath = join(configDir, "AGENTS.md.backup");
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const backupPath = join(configDir, `AGENTS.md.backup.${timestamp}`);
       await writeTextFile(backupPath, localContent);
-      info("  AGENTS.md changed — backup saved to AGENTS.md.backup");
+      info(`  AGENTS.md changed — backup saved to ${backupPath}`);
     }
   }
 
@@ -493,74 +498,28 @@ async function updateAgentsMd(configDir: string): Promise<boolean> {
  * Handle fallback.json: skip if already exists (user may have customized).
  * Returns true if the file was written (i.e., it didn't exist before).
  */
-async function handleFallback(configDir: string): Promise<boolean> {
+async function handleFallback(configDir: string): Promise<FallbackStatus> {
   const localPath = join(configDir, "fallback.json");
   if (existsSync(localPath)) {
-    return false; // Skip — user may have customized
+    return "skipped"; // Skip — user may have customized
   }
 
   const content = await fetchRemoteFile("fallback.json");
-  if (!content) return false;
+  if (!content) return "fetch-failed";
 
   await writeTextFile(localPath, content);
-  return true;
+  return "written";
 }
 
 /**
  * Ensure OpenCode's primary config exists before migrations register MCP/LSP.
  */
 async function ensureOpenCodeJson(configDir: string): Promise<boolean> {
-  const localPath = join(configDir, "opencode.json");
-  const { buildDefaultMcpConfig, buildDefaultOpenCodeJson } = await import("../lib/opencode-json-template.js");
-  if (!existsSync(localPath)) {
-    await writeJson(localPath, buildDefaultOpenCodeJson(configDir));
-    return true;
+  const result = ensureOpenCodeJsonEntries(configDir);
+  if (result.repaired && result.backupPath) {
+    warn(`Malformed opencode.json was backed up to ${result.backupPath} and rebuilt.`);
   }
-
-  const existing = await readLocalJson<Record<string, any>>(localPath);
-  if (!existing) return false;
-
-  if (!existing.mcp || typeof existing.mcp !== "object") {
-    existing.mcp = {};
-  }
-
-  const defaults = buildDefaultOpenCodeJson(configDir);
-  let changed = false;
-
-  if (!Array.isArray(existing.plugin)) {
-    existing.plugin = [];
-    changed = true;
-  }
-
-  if (Array.isArray(defaults.plugin)) {
-    for (const defaultPlugin of defaults.plugin) {
-      if (!existing.plugin.includes(defaultPlugin)) {
-        existing.plugin.push(defaultPlugin);
-        changed = true;
-      }
-    }
-  }
-
-  for (const [key, value] of Object.entries(buildDefaultMcpConfig(configDir))) {
-    if (!(key in existing.mcp)) {
-      existing.mcp[key] = value;
-      changed = true;
-    }
-  }
-
-  changed = cleanupLegacyMcpEntries(existing) || changed;
-
-  // Repair context-keeper if it exists but is missing required env.PROJECT_ROOT
-  if (existing.mcp["context-keeper"] && (!existing.mcp["context-keeper"].env || !existing.mcp["context-keeper"].env.PROJECT_ROOT)) {
-    const defaults = buildDefaultMcpConfig(configDir);
-    existing.mcp["context-keeper"] = defaults["context-keeper"];
-    changed = true;
-  }
-
-  if (changed) {
-    await writeJson(localPath, existing);
-  }
-  return changed;
+  return result.changed;
 }
 
 // ─── Main Merge Orchestrator ─────────────────────────────────
@@ -578,6 +537,7 @@ async function mergeUpdatedConfigs(): Promise<MergeStats> {
   }
 
   const stats: MergeStats = {
+    opencodeJsonChanged: false,
     agents: 0,
     mcpServers: 0,
     lspEntries: 0,
@@ -586,13 +546,14 @@ async function mergeUpdatedConfigs(): Promise<MergeStats> {
     skills: 0,
     agentsMdUpdated: false,
     fallbackSkipped: false,
+    fallbackFetchFailed: false,
     fetchFailed: 0,
     fetchAttempted: 0,
   };
 
   // 1. Merge JSON config files
   info("Ensuring opencode.json...");
-  await ensureOpenCodeJson(configDir);
+  stats.opencodeJsonChanged = await ensureOpenCodeJson(configDir);
 
   info("Merging agents.json...");
   stats.fetchAttempted++;
@@ -633,8 +594,11 @@ async function mergeUpdatedConfigs(): Promise<MergeStats> {
 
   // 4. fallback.json — skip if exists
   info("Checking fallback.json...");
-  const fallbackWritten = await handleFallback(configDir);
-  stats.fallbackSkipped = !fallbackWritten && existsSync(join(configDir, "fallback.json"));
+  stats.fetchAttempted++;
+  const fallbackStatus = await handleFallback(configDir);
+  stats.fallbackSkipped = fallbackStatus === "skipped";
+  stats.fallbackFetchFailed = fallbackStatus === "fetch-failed";
+  if (fallbackStatus === "fetch-failed") { stats.fetchFailed++; }
 
   return stats;
 }
@@ -669,6 +633,10 @@ function printMergeReport(stats: MergeStats): void {
 
   if (stats.fallbackSkipped) {
     info("fallback.json skipped (local copy preserved).");
+  }
+
+  if (stats.opencodeJsonChanged) {
+    success("opencode.json updated with missing defaults.");
   }
 }
 
@@ -769,7 +737,10 @@ export const updateCommand = new Command("update")
         success("Backup created.");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        warn(`Backup failed: ${msg} — continuing anyway.`);
+        error(`Backup failed: ${msg}`);
+        error("Update aborted because no recovery backup could be created.");
+        logCommandError("update", `backup failed: ${msg}`);
+        process.exit(EXIT_ERROR);
       }
     }
 
@@ -785,7 +756,8 @@ export const updateCommand = new Command("update")
       stats.profiles +
       stats.prompts +
       stats.skills +
-      (stats.agentsMdUpdated ? 1 : 0);
+      (stats.agentsMdUpdated ? 1 : 0) +
+      (stats.opencodeJsonChanged ? 1 : 0);
 
     if (stats.fetchFailed > 0) {
       warn(`${stats.fetchFailed}/${stats.fetchAttempted} fetch(es) failed. Update may have failed.`);

@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions/workflows/ci.yml/badge.svg)](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.6-green)]()
+[![Version](https://img.shields.io/badge/Version-2.0.0-green)]()
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen)]()
 
 **One command. Full setup. Zero hassle.**
@@ -254,6 +254,9 @@ opencode-jce fallback reset    # Reset rate limit counters
 
 - API keys stored as environment variables (never in config files)
 - Merge-based installer — never overwrites existing config
+- `opencode-jce update` preserves existing `opencode.json` and adds only missing JCE-managed entries
+- Plugin config activation preserves unrelated OpenCode settings and blocks MCP key collisions
+- Malformed `opencode.json` is backed up and rebuilt automatically before safe merge
 - Command injection prevention in LSP detection
 - Atomic config file writes (no corruption on crash)
 

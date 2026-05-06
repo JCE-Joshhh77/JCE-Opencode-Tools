@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, rmSync } from "fs";
 import { readFile, writeFile } from "fs/promises";
 
 import { getConfigDir } from "./config.js";
+import { ensureOpenCodeJsonEntries, mergePluginMcpIntoOpenCodeJson, readOrRepairOpenCodeJson, writeOpenCodeJsonAtomic } from "./opencode-config-merge.js";
 
 /**
  * Remove a directory recursively (cross-platform).
@@ -198,7 +199,14 @@ export async function installPlugin(githubUrl: string): Promise<{ success: boole
 
   await applyPluginConfig(manifest);
   existing.push(plugin);
-  await savePluginsRegistry(existing);
+  try {
+    await savePluginsRegistry(existing);
+  } catch (err) {
+    await rollbackAppliedPluginConfig(plugin);
+    removeDir(pluginDir);
+    const msg = err instanceof Error ? err.message : String(err);
+    return { success: false, error: `Failed to save plugin registry: ${msg}` };
+  }
 
   return { success: true, plugin };
 }
@@ -207,31 +215,14 @@ export async function installPlugin(githubUrl: string): Promise<{ success: boole
  * Merge supported plugin config into opencode.json.
  */
 export async function applyPluginConfig(manifest: PluginManifest): Promise<void> {
-  const configPath = join(getConfigDir(), "opencode.json");
-  let config: Record<string, unknown> = {};
-
-  if (existsSync(configPath)) {
-    const content = await readFile(configPath, "utf-8");
-    config = JSON.parse(content) as Record<string, unknown>;
-  }
+  const configDir = getConfigDir();
+  ensureOpenCodeJsonEntries(configDir);
 
   if (manifest.type === "mcp") {
     const pluginMcp = getPluginMcpConfig(manifest);
     if (!pluginMcp) return;
-
-    const currentMcp = config.mcp && typeof config.mcp === "object" && !Array.isArray(config.mcp)
-      ? config.mcp as Record<string, unknown>
-      : {};
-
-    const collisions = Object.keys(pluginMcp).filter((key) => key in currentMcp);
-    if (collisions.length > 0) {
-      throw new Error(`MCP key collision: ${collisions.join(", ")}`);
-    }
-
-    config.mcp = { ...currentMcp, ...(pluginMcp as Record<string, unknown>) };
+    mergePluginMcpIntoOpenCodeJson(configDir, pluginMcp);
   }
-
-  await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 }
 
 /**
@@ -279,24 +270,27 @@ function getPluginMcpConfig(manifest: PluginManifest): Record<string, unknown> |
 async function removeAppliedPluginConfig(plugin: InstalledPlugin): Promise<void> {
   if (!plugin.appliedMcp || Object.keys(plugin.appliedMcp).length === 0) return;
 
-  const configPath = join(getConfigDir(), "opencode.json");
+  const configDir = getConfigDir();
+  const configPath = join(configDir, "opencode.json");
   if (!existsSync(configPath)) return;
 
-  const content = await readFile(configPath, "utf-8");
-  const config = JSON.parse(content) as Record<string, any>;
+  const { config } = readOrRepairOpenCodeJson(configDir);
   if (!config.mcp || typeof config.mcp !== "object" || Array.isArray(config.mcp)) return;
+  const currentMcp = config.mcp as Record<string, unknown>;
 
   let changed = false;
   for (const [key, value] of Object.entries(plugin.appliedMcp)) {
-    if (JSON.stringify(config.mcp[key]) === JSON.stringify(value)) {
-      delete config.mcp[key];
+    if (JSON.stringify(currentMcp[key]) === JSON.stringify(value)) {
+      delete currentMcp[key];
       changed = true;
     }
   }
 
-  if (changed) {
-    await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
-  }
+  if (changed) writeOpenCodeJsonAtomic(configDir, config);
+}
+
+async function rollbackAppliedPluginConfig(plugin: InstalledPlugin): Promise<void> {
+  await removeAppliedPluginConfig(plugin);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────

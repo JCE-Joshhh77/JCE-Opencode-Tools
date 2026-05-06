@@ -18,10 +18,9 @@ import {
   statSync,
   renameSync,
 } from "fs";
-import { join, basename } from "path";
+import { join } from "path";
 import { execFileSync } from "child_process";
-import { buildDefaultMcpConfig } from "../src/lib/opencode-json-template.js";
-import { cleanupLegacyMcpEntries } from "../src/lib/version.js";
+import { ensureOpenCodeJsonEntries } from "../src/lib/opencode-config-merge.js";
 
 /** Write JSON atomically: write to .tmp then rename */
 function writeJsonAtomic(filePath: string, data: unknown): void {
@@ -380,65 +379,29 @@ function detectInstalledLsp(): Record<string, { command: string[]; extensions: s
 // --- Create OpenCode's primary config file if it does not exist ---
 function ensureOpenCodeJson() {
   const targetFile = join(targetDir, "opencode.json");
+  const existed = existsSync(targetFile);
+  const before = existed ? readFileSync(targetFile, "utf8") : null;
+  const result = ensureOpenCodeJsonEntries(targetDir);
+  const after = readFileSync(targetFile, "utf8");
 
-  if (existsSync(targetFile)) {
-    const config = JSON.parse(readFileSync(targetFile, "utf8"));
-    if (!config.mcp || typeof config.mcp !== "object") config.mcp = {};
-
-    let added = 0;
-    for (const [key, value] of Object.entries(buildDefaultMcpConfig(targetDir))) {
-      if (!(key in config.mcp)) {
-        config.mcp[key] = value;
-        added++;
-      }
-    }
-
-    if (cleanupLegacyMcpEntries(config)) {
-      added++;
-    }
-
-    // Repair context-keeper if it exists but is missing required env.PROJECT_ROOT
-    if (config.mcp["context-keeper"] && (!config.mcp["context-keeper"].env || !config.mcp["context-keeper"].env.PROJECT_ROOT)) {
-      const defaults = buildDefaultMcpConfig(targetDir);
-      config.mcp["context-keeper"] = defaults["context-keeper"];
-      added++;
-    }
-
-    // Ensure plugin array includes default plugin
-    if (!config.plugin || !Array.isArray(config.plugin)) config.plugin = [];
-    const defaultPlugin = "superpowers@git+https://github.com/obra/superpowers.git";
-    if (!config.plugin.includes(defaultPlugin)) {
-      config.plugin.push(defaultPlugin);
-      added++;
-    }
-
-    if (added > 0) {
-      writeJsonAtomic(targetFile, config);
-      console.log(`  [+] opencode.json: ${added} default(s) merged`);
-    } else {
-      console.log(`  [=] opencode.json exists, all defaults present`);
-    }
+  if (result.repaired && result.backupPath) {
+    console.log(`  [!] opencode.json was invalid; backed up to ${result.backupPath}`);
+    console.log(`  [+] opencode.json created (repaired)`);
     return;
   }
 
-  // Build context-keeper path relative to target config dir
-  const contextKeeperPath = join(targetDir, "cli", "src", "mcp", "context-keeper.ts")
-    .replace(/\\/g, "/");
+  if (!existed) {
+    const parsed = JSON.parse(after) as { lsp?: Record<string, unknown> };
+    const lspCount = parsed.lsp && typeof parsed.lsp === "object" ? Object.keys(parsed.lsp).length : 0;
+    console.log(`  [+] opencode.json created (new) — MCP servers pre-configured, ${lspCount} LSP server(s) auto-detected`);
+    return;
+  }
 
-  // Auto-detect installed LSP servers
-  const detectedLsp = detectInstalledLsp();
-  const lspCount = Object.keys(detectedLsp).length;
-
-  writeJsonAtomic(targetFile, {
-    $schema: "https://opencode.ai/config.json",
-    plugin: [
-      "superpowers@git+https://github.com/obra/superpowers.git",
-    ],
-    mcp: buildDefaultMcpConfig(targetDir),
-    lsp: detectedLsp,
-  });
-
-  console.log(`  [+] opencode.json created (new) — MCP servers pre-configured, ${lspCount} LSP server(s) auto-detected`);
+  if (before !== after) {
+    console.log(`  [+] opencode.json defaults merged`);
+  } else {
+    console.log(`  [=] opencode.json exists, all defaults present`);
+  }
 }
 
 // --- Run all merges ---

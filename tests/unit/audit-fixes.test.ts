@@ -116,14 +116,63 @@ describe("audit fixes", () => {
 
     expect(source).toContain("if (stats.fetchFailed > 0)");
     expect(source).toContain("CURRENT_CONFIG_VERSION");
+    expect(source).toContain("Backup failed:");
+    expect(source).toContain("process.exit(EXIT_ERROR)");
+    expect(source).not.toContain("continuing anyway");
+    expect(source).toContain("opencodeJsonChanged");
+    expect(source).toContain("fallbackStatus === \"fetch-failed\"");
+  });
+
+  test("update keeps timestamped AGENTS.md backups", () => {
+    const source = readFileSync(join(process.cwd(), "src", "commands", "update.ts"), "utf-8");
+
+    expect(source).toContain("AGENTS.md.backup.");
+    expect(source).not.toContain('join(configDir, "AGENTS.md.backup")');
+    expect(source).toContain("AGENTS.md changed — backup saved to");
+  });
+
+  test("install merge repairs malformed opencode.json by backing it up", () => {
+    const source = readFileSync(join(process.cwd(), "scripts", "merge-config.ts"), "utf-8");
+    const helper = readFileSync(join(process.cwd(), "src", "lib", "opencode-config-merge.ts"), "utf-8");
+
+    expect(source).toContain("ensureOpenCodeJsonEntries(targetDir)");
+    expect(source).toContain("opencode.json created (repaired)");
+    expect(helper).toContain(".invalid-");
   });
 
   test("update merges default plugin entries into existing opencode.json", () => {
     const source = readFileSync(join(process.cwd(), "src", "commands", "update.ts"), "utf-8");
 
-    expect(source).toContain("const defaults = buildDefaultOpenCodeJson(configDir)");
-    expect(source).toContain("existing.plugin");
-    expect(source).toContain("defaultPlugin of defaults.plugin");
+    expect(source).toContain("ensureOpenCodeJsonEntries(configDir)");
+    expect(source).toContain("Malformed opencode.json was backed up to");
+  });
+
+  test("plugin config activation keeps unrelated top-level opencode.json keys", async () => {
+    const xdg = tempDir("plugin-activation-preserve");
+    const configDir = join(xdg, "opencode");
+    mkdirSync(configDir, { recursive: true });
+    process.env.XDG_CONFIG_HOME = xdg;
+    writeFileSync(join(configDir, "opencode.json"), JSON.stringify({
+      customTheme: "night",
+      providers: { custom: { models: ["foo"] } },
+    }), "utf-8");
+
+    await applyPluginConfig({
+      name: "demo-mcp",
+      version: "1.0.0",
+      type: "mcp",
+      description: "demo",
+      config: {
+        mcp: {
+          demo: { type: "local", command: ["npx", "demo-mcp"], enabled: true },
+        },
+      },
+    });
+
+    const updated = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf-8"));
+    expect(updated.customTheme).toBe("night");
+    expect(updated.providers).toEqual({ custom: { models: ["foo"] } });
+    expect(updated.mcp.demo.command).toEqual(["npx", "demo-mcp"]);
   });
 
   test("version upgrades hand off config merge to the freshly updated CLI", () => {
@@ -271,6 +320,16 @@ describe("audit fixes", () => {
     expect(getSafeNpmInstallArgs("npm install pyright")).toBeNull();
   });
 
+  test("doctor fix requires explicit opt-in before global tool installs", () => {
+    const doctorSource = readFileSync(join(process.cwd(), "src", "commands", "doctor.ts"), "utf-8");
+    const fixerSource = readFileSync(join(process.cwd(), "src", "lib", "fixer.ts"), "utf-8");
+
+    expect(doctorSource).toContain("--install-tools");
+    expect(doctorSource).toContain("installTools: opts.installTools === true");
+    expect(fixerSource).toContain("allowGlobalInstall = false");
+    expect(fixerSource).toContain("Global install skipped");
+  });
+
   test("team repo URL policy rejects unauthenticated or credentialed transports", () => {
     expect(validateTeamRepoUrl("https://github.com/acme/config.git")).toEqual({ valid: true });
     expect(validateTeamRepoUrl("git://github.com/acme/config.git").valid).toBe(false);
@@ -335,6 +394,19 @@ describe("audit fixes", () => {
 
     const keys = store.list().map((entry) => entry.key).sort();
     expect(keys).toEqual(["external", "local"]);
+  });
+
+  test("memory clear creates a backup before deleting entries", () => {
+    const root = tempDir("memory-clear-backup");
+    const store = new MemoryStore(root, root);
+    store.set("local", "one", "project");
+
+    const backupPath = store.clear();
+
+    expect(backupPath).toContain(".backup-");
+    expect(existsSync(backupPath)).toBe(true);
+    expect(readFileSync(backupPath, "utf-8")).toContain("local");
+    expect(store.list()).toHaveLength(0);
   });
 
   test("TokenTracker exposes true all-time entries", () => {
@@ -430,6 +502,14 @@ describe("audit fixes", () => {
       description: "bad",
       config: { mcp: { existing: { type: "local", command: ["evil"], enabled: true } } },
     })).rejects.toThrow("MCP key collision");
+  });
+
+  test("plugin install rolls back applied MCP config when registry save fails", async () => {
+    const source = readFileSync(join(process.cwd(), "src", "lib", "plugins.ts"), "utf-8");
+
+    expect(source).toContain("rollbackAppliedPluginConfig");
+    expect(source).toContain("await savePluginsRegistry(existing)");
+    expect(source).toContain("catch (err)");
   });
 
   test("plugin removal unregisters only MCP keys owned by that plugin", async () => {
