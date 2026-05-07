@@ -1,4 +1,5 @@
 export type WorkflowRecipeTaskType = "agent_prompt" | "config" | "installer" | "release" | "docs" | "tests" | "unknown";
+export type CodeTaskType = "bugfix" | "feature" | "refactor" | "tests" | "docs" | "config" | "installer" | "release" | "unknown";
 
 interface VerificationRecipe {
   commands: string[];
@@ -63,6 +64,129 @@ export function buildVerificationRecipe(taskType: WorkflowRecipeTaskType): strin
     section("Success Criteria", recipe.successCriteria),
     "",
     section("Notes", recipe.notes),
+  ].join("\n");
+}
+
+function inferFocusedTestCommand(path: string): string | undefined {
+  const normalized = path.replace(/\\/g, "/");
+  if (normalized.startsWith("tests/") && /\.test\.ts$/.test(normalized)) return `bun test ${normalized}`;
+  if (normalized.startsWith("src/plugin/agents/")) return "bun test tests/unit/plugin-agents.test.ts";
+  if (normalized.includes("workflow")) return "bun test tests/unit/plugin-workflow-assistant.test.ts tests/unit/plugin-workflow-tool.test.ts";
+  if (normalized.includes("commands/update") || normalized.includes("install")) return "bun test tests/unit/audit-fixes.test.ts";
+  if (normalized.includes("config") || normalized.includes("opencode-json")) return "bun test tests/unit/update-config-hardening.test.ts tests/unit/plugin-config-hardening.test.ts";
+  return undefined;
+}
+
+function unique(items: Array<string | undefined>): string[] {
+  return [...new Set(items.filter((item): item is string => Boolean(item)))];
+}
+
+function verificationCommandsForFiles(files: string[]): string[] {
+  const focused = unique(files.map(inferFocusedTestCommand));
+  const needsTypecheck = files.some((file) => /\.(ts|tsx|js|jsx)$/.test(file));
+  const needsConfig = files.some((file) => file.includes("config") || file.endsWith("opencode.json") || file.endsWith("agents.json"));
+  const needsInstaller = files.some((file) => file === "install.sh" || file === "install.ps1" || file.includes("commands/update"));
+  return unique([
+    ...focused,
+    needsTypecheck ? "bun run typecheck" : undefined,
+    needsConfig ? "bun ./src/index.ts validate" : undefined,
+    needsInstaller ? "bash -n install.sh" : undefined,
+    "bun test",
+  ]);
+}
+
+export interface CodeTaskPlanInput {
+  taskType?: CodeTaskType;
+  scope?: string;
+  changedFiles?: string[];
+}
+
+export function buildCodeTaskPlan(input: CodeTaskPlanInput = {}): string {
+  const taskType = input.taskType ?? "unknown";
+  const changedFiles = input.changedFiles ?? [];
+  const taskProtocol = taskType === "bugfix"
+    ? ["Bugfix Protocol", "- reproduce the symptom", "- identify Root Cause", "- add or run regression coverage", "- make the smallest fix", "- rerun focused verification"]
+    : taskType === "feature"
+      ? ["Feature Protocol", "- define Acceptance Criteria", "- inspect existing patterns", "- build the minimal useful slice", "- add behavior tests", "- verify visible behavior"]
+      : taskType === "refactor"
+        ? ["Refactor Protocol", "- state preserved behavior", "- avoid feature changes", "- keep public contracts stable", "- run regression checks"]
+        : ["General Protocol", "- classify task", "- inspect code", "- plan safe change", "- verify relevant behavior"];
+
+  return [
+    "Coding Brain v3.1",
+    `Scope: ${input.scope?.trim() || "current coding task"}`,
+    `Task type: ${taskType}`,
+    "",
+    "Candidate Files",
+    ...bulletList(changedFiles),
+    "",
+    ...taskProtocol,
+    "",
+    "Impact Scan",
+    ...bulletList(["target files", "call sites", "existing tests", "runtime/config entry points", "side effects"]),
+    "",
+    "Safe Edit Engine v3.4",
+    ...bulletList(["keep patch narrow", "preserve user work", "avoid unrelated cleanup", "review imports/exports", "review error paths"]),
+    "",
+    "Verification Brain v3.2",
+    ...bulletList(verificationCommandsForFiles(changedFiles)),
+    "",
+    "Risk Review",
+    ...bulletList(["diff scope", "missing tests", "backward compatibility", "release/version impact", "residual unknowns"]),
+    "",
+    "Autonomous Debug Loop v3.5",
+    ...bulletList(["parse exact error", "map to file/function", "form one hypothesis", "make one focused fix", "rerun smallest failing command", "After three failed focused fixes, stop and rethink or delegate to oracle"]),
+  ].join("\n");
+}
+
+export interface ProjectLearningInput {
+  packageJson?: string;
+  files?: GitStatusFile[];
+}
+
+function parsePackageJson(value: string | undefined): { scripts?: Record<string, string>; dependencies?: Record<string, string>; devDependencies?: Record<string, string> } {
+  if (!value) return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function detectAreas(files: GitStatusFile[]): string[] {
+  return unique(files.map((file) => {
+    const path = file.path.replace(/\\/g, "/");
+    if (path.startsWith("src/plugin/")) return "plugin";
+    if (path.startsWith("src/commands/") || path.startsWith("install.")) return "installer";
+    if (path.startsWith("tests/")) return "tests";
+    if (path.startsWith("docs/")) return "docs";
+    if (path.includes("config") || path.endsWith(".json")) return "config";
+    return undefined;
+  }));
+}
+
+export function buildProjectLearningReport(input: ProjectLearningInput = {}): string {
+  const pkg = parsePackageJson(input.packageJson);
+  const scripts = pkg.scripts ?? {};
+  const dependencyNames = Object.keys({ ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) });
+  const packageManager = dependencyNames.includes("@types/bun") || Object.values(scripts).some((script) => script.includes("bun")) ? "bun" : "unknown";
+  const testCommand = scripts.test ?? "unknown";
+  const typecheckCommand = scripts.typecheck ?? scripts.tsc ?? "unknown";
+  const buildCommand = scripts.build ?? "unknown";
+  const areas = detectAreas(input.files ?? []);
+
+  return [
+    "Project Learning v3.3",
+    `Package manager: ${packageManager}`,
+    `Test command: ${testCommand}`,
+    `Typecheck command: ${typecheckCommand}`,
+    `Build command: ${buildCommand}`,
+    "",
+    "Detected areas",
+    ...bulletList(areas),
+    "",
+    "Memory candidates",
+    ...bulletList(["package manager", "test/typecheck/build scripts", "release files", "risky areas touched often"]),
   ].join("\n");
 }
 

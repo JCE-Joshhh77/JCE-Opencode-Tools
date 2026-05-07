@@ -58,7 +58,7 @@ export function cleanupLegacyMcpEntries(config: MutableConfig): boolean {
 /**
  * Current version of the config schema.
  */
-export const CURRENT_CONFIG_VERSION = "2.0.9";
+export const CURRENT_CONFIG_VERSION = "2.0.10";
 
 /**
  * Get the path to the version.json file.

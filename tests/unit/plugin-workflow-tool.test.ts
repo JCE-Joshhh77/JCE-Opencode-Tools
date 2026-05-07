@@ -47,7 +47,7 @@ describe("jce workflow tool", () => {
 
     expect(result).toContain("Summary");
     expect(result).toContain("Scope: Task 5");
-    expect(result).toContain("Current version: 2.0.9");
+    expect(result).toContain("Current version: 2.0.10");
     expect(result).toContain("Changed Files");
     expect(result).toContain("M src/plugin/tools/workflow.ts");
     expect(result).toContain("Local-Only / Excluded Files");
@@ -58,10 +58,10 @@ describe("jce workflow tool", () => {
     const tool = buildWorkflowTool();
     const result = await tool.execute({
       action: "release_ready",
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       gitStatus: " M package.json\n",
       includeDocs: true,
-      verificationEvidence: "bun run typecheck exit 0\nbun test 0 fail\nbun ./src/index.ts validate exit 0\nbash -n install.sh exit 0\nbun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck exit 0\nbun test 0 fail\nbun ./src/index.ts validate exit 0\nbash -n install.sh exit 0\nbun ./src/index.ts --version 2.0.10",
     } as any, context());
 
     expect(result).toContain("Status");
@@ -69,5 +69,33 @@ describe("jce workflow tool", () => {
     expect(result).toContain("Required Verification");
     expect(result).toContain("Safe Commit Plan");
     expect(result).toContain("Blockers");
+  });
+
+  test("returns coding plan for safe editing and debug loop", async () => {
+    const tool = buildWorkflowTool();
+    const result = await tool.execute({
+      action: "code_task_plan",
+      taskType: "bugfix",
+      scope: "fix update handoff",
+      gitStatus: " M src/commands/update.ts\n M tests/unit/audit-fixes.test.ts\n",
+    } as any, context());
+
+    expect(result).toContain("Coding Brain v3.1");
+    expect(result).toContain("Bugfix Protocol");
+    expect(result).toContain("Safe Edit Engine v3.4");
+    expect(result).toContain("Autonomous Debug Loop v3.5");
+    expect(result).toContain("src/commands/update.ts");
+  });
+
+  test("returns project learning report", async () => {
+    const tool = buildWorkflowTool();
+    const result = await tool.execute({
+      action: "project_learning",
+      gitStatus: " M package.json\n M src/plugin/index.ts\n",
+    } as any, context());
+
+    expect(result).toContain("Project Learning v3.3");
+    expect(result).toContain("Package manager: bun");
+    expect(result).toContain("Detected areas");
   });
 });

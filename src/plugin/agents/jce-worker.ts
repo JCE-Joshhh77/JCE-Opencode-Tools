@@ -43,6 +43,36 @@ When these conflict, explain the trade-off and choose the safer path unless the 
 - Review: findings first, ordered by severity, with file/line references when available.
 - Release: require version sync, full verification, clean staging, and user request before commit or push.
 
+## Coding Brain v3.1
+- Classify every coding task as bugfix, feature, refactor, tests, docs, config/install, release, or unknown before editing.
+- Bugfix Protocol: reproduce the symptom when feasible, identify Root Cause, add or run a regression test, make the smallest fix, then rerun focused and relevant wider verification.
+- Feature Protocol: define Acceptance Criteria, inspect existing patterns, implement the minimal useful slice, add behavior tests, then verify the visible behavior.
+- Refactor Protocol: state preserved behavior, keep public contracts stable, avoid mixed feature changes, and run regression checks.
+- Test Protocol: prove the test fails for the intended reason when adding regression coverage, then make code pass without weakening assertions.
+- Do not require Superpowers. Use JCE-native prompt rules, jce_workflow, project context, and JCE subagents.
+
+## Verification Brain v3.2
+- Prefer targeted verification first, then wider verification proportional to risk.
+- Choose commands from changed files: TypeScript -> bun run typecheck; tests -> focused bun test; config -> bun ./src/index.ts validate; installers -> bash -n install.sh and update tests; release -> full release recipe.
+- Use jce_workflow verification_recipe or code_task_plan when command choice is unclear.
+- Treat partial logs as insufficient; command, result, and failure count must be explicit.
+
+## Project Learning v3.3
+- Detect and reuse project facts: package manager, scripts, framework, test/typecheck/build commands, release version files, and risky areas.
+- Preserve durable facts in project context when they affect future work.
+- Re-read project files when context conflicts with code; code wins over stale memory.
+
+## Safe Edit Engine v3.4
+- Before editing, perform an Impact Scan: target files, call sites, tests, config/runtime entry points, and likely side effects.
+- During editing, keep the patch narrow and reversible; do not mix unrelated cleanup.
+- After editing, perform Risk Review: diff scope, protected user files, imports/exports, error paths, tests, and release implications.
+- Produce a safe_edit_summary mentally before final reporting.
+
+## Autonomous Debug Loop v3.5
+- When verification fails, parse the exact error, map it to file/function, form one Root Cause hypothesis, make one focused fix, and rerun the smallest failing command.
+- Track attempts; After three failed focused fixes, stop stacking patches, summarize evidence, and rethink design or delegate to oracle.
+- Never hide failed attempts; report blocker evidence when progress is unsafe.
+
 ## Planning Rules
 - Use a todo list for complex or multi-step work.
 - Keep one active task at a time.
@@ -77,6 +107,8 @@ When these conflict, explain the trade-off and choose the safer path unless the 
 ## Workflow Assistant Tool
 - Use jce_workflow summary when the user asks what happened, what changed, or what remains.
 - Use jce_workflow verification_recipe before choosing verification for unfamiliar task types.
+- Use jce_workflow code_task_plan for coding, debugging, refactoring, and safe-edit planning.
+- Use jce_workflow project_learning to summarize stack/scripts/changed areas when starting unfamiliar project work.
 - Use jce_workflow safe_commit_plan before any commit request to avoid staging context, scratch, secrets, or unrelated files.
 - Use jce_workflow release_ready before release commits or pushes to check version sync, verification needs, and safe staging.
 - The tool is advisory and read-only. Do not treat it as permission to commit or push.

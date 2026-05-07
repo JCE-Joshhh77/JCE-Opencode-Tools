@@ -1,28 +1,28 @@
 import { describe, expect, test } from "bun:test";
-import { buildReleaseReadyReport, buildSafeCommitPlan, buildVerificationRecipe, buildWorkflowSummary, parseGitStatusPorcelain } from "../../src/plugin/lib/workflow-assistant.ts";
+import { buildCodeTaskPlan, buildProjectLearningReport, buildReleaseReadyReport, buildSafeCommitPlan, buildVerificationRecipe, buildWorkflowSummary, parseGitStatusPorcelain } from "../../src/plugin/lib/workflow-assistant.ts";
 
 const syncedVersions = {
-  "package.json": '{ "version": "2.0.9" }',
-  "install.sh": 'VERSION="2.0.9"',
-  "install.ps1": '$Version = "2.0.9"',
-  "src/lib/constants.ts": 'export const VERSION = "2.0.9";',
-  "src/lib/version.ts": 'export const CURRENT_CONFIG_VERSION = "2.0.9";',
-  "src/mcp/context-keeper.ts": 'version: "2.0.9",',
-  "README.md": "Version-2.0.9-green",
-  "tests/unit/ui.test.ts": 'expect(output).toContain("v2.0.9");',
+  "package.json": '{ "version": "2.0.10" }',
+  "install.sh": 'VERSION="2.0.10"',
+  "install.ps1": '$Version = "2.0.10"',
+  "src/lib/constants.ts": 'export const VERSION = "2.0.10";',
+  "src/lib/version.ts": 'export const CURRENT_CONFIG_VERSION = "2.0.10";',
+  "src/mcp/context-keeper.ts": 'version: "2.0.10",',
+  "README.md": "Version-2.0.10-green",
+  "tests/unit/ui.test.ts": 'expect(output).toContain("v2.0.10");',
 };
 
 describe("workflow assistant", () => {
   test("workflow summary separates changed and local-only files", () => {
     const result = buildWorkflowSummary({
-      scope: "release 2.0.9",
+      scope: "release 2.0.10",
       files: parseGitStatusPorcelain(" M package.json\n?? .opencode-jce/cache.json\n?? notes.txt\n"),
-      currentVersion: "2.0.9",
+      currentVersion: "2.0.10",
     });
 
     expect(result).toContain("Summary");
-    expect(result).toContain("release 2.0.9");
-    expect(result).toContain("Current version: 2.0.9");
+    expect(result).toContain("release 2.0.10");
+    expect(result).toContain("Current version: 2.0.10");
     expect(result).toContain("Changed Files");
     expect(result).toContain("package.json");
     expect(result).toContain("Local-Only / Excluded Files");
@@ -60,6 +60,47 @@ describe("workflow assistant", () => {
     expect(result).toContain("bun test tests/unit/plugin-agents.test.ts");
     expect(result).toContain("prompt markers");
     expect(result).toContain("Notes");
+  });
+
+  test("builds bugfix coding plan with root cause and debug loop", () => {
+    const result = buildCodeTaskPlan({ taskType: "bugfix", changedFiles: ["src/plugin/index.ts", "tests/unit/plugin-integration.test.ts"] });
+
+    expect(result).toContain("Coding Brain v3.1");
+    expect(result).toContain("Bugfix Protocol");
+    expect(result).toContain("reproduce the symptom");
+    expect(result).toContain("Root Cause");
+    expect(result).toContain("Safe Edit Engine v3.4");
+    expect(result).toContain("Autonomous Debug Loop v3.5");
+    expect(result).toContain("After three failed focused fixes");
+    expect(result).toContain("bun test tests/unit/plugin-integration.test.ts");
+    expect(result).toContain("bun run typecheck");
+  });
+
+  test("builds feature coding plan with acceptance criteria and test plan", () => {
+    const result = buildCodeTaskPlan({ taskType: "feature", scope: "add workflow helper", changedFiles: ["src/plugin/tools/workflow.ts"] });
+
+    expect(result).toContain("Scope: add workflow helper");
+    expect(result).toContain("Feature Protocol");
+    expect(result).toContain("Acceptance Criteria");
+    expect(result).toContain("minimal useful slice");
+    expect(result).toContain("Impact Scan");
+    expect(result).toContain("Risk Review");
+  });
+
+  test("builds project learning report from package scripts and changed files", () => {
+    const result = buildProjectLearningReport({
+      packageJson: JSON.stringify({ scripts: { test: "bun test", typecheck: "tsc --noEmit", build: "bun build" }, dependencies: { "@opencode-ai/plugin": "1.0.0" } }),
+      files: parseGitStatusPorcelain(" M src/plugin/index.ts\n M install.sh\n"),
+    });
+
+    expect(result).toContain("Project Learning v3.3");
+    expect(result).toContain("Package manager: bun");
+    expect(result).toContain("Test command: bun test");
+    expect(result).toContain("Typecheck command: tsc --noEmit");
+    expect(result).toContain("Build command: bun build");
+    expect(result).toContain("Detected areas");
+    expect(result).toContain("plugin");
+    expect(result).toContain("installer");
   });
 
   test("parses porcelain git status", () => {
@@ -154,7 +195,7 @@ describe("workflow assistant", () => {
 
   test("release readiness needs verification when versions are synced", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: parseGitStatusPorcelain(" M package.json\n M src/lib/constants.ts\n"),
       verificationEvidence: "",
@@ -169,10 +210,10 @@ describe("workflow assistant", () => {
 
   test("release readiness is ready when versions sync and verification passes", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: [],
-      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.10",
     });
 
     expect(result).toContain("Status\nREADY");
@@ -180,10 +221,10 @@ describe("workflow assistant", () => {
 
   test("release readiness safe commit plan includes changed release files", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: parseGitStatusPorcelain(" M package.json\n M src/lib/constants.ts\n M README.md\n"),
-      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.10",
     });
 
     expect(result).toContain("Safe Commit Plan");
@@ -195,10 +236,10 @@ describe("workflow assistant", () => {
 
   test("release readiness rejects excluded files even when versions and verification pass", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: parseGitStatusPorcelain(" M package.json\n?? .env.local\n"),
-      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.10",
     });
 
     expect(result).toContain("Status\nNOT_READY");
@@ -207,10 +248,10 @@ describe("workflow assistant", () => {
 
   test("release readiness rejects docs plans without includeDocs", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: parseGitStatusPorcelain(" M package.json\n?? docs/superpowers/plans/release.md\n"),
-      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.10",
     });
 
     expect(result).toContain("Status\nNOT_READY");
@@ -219,10 +260,10 @@ describe("workflow assistant", () => {
 
   test("release readiness rejects stale semver remnants", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
-      files: { ...syncedVersions, "README.md": "Version-2.0.9-green previous 2.0.8" },
+      targetVersion: "2.0.10",
+      files: { ...syncedVersions, "README.md": "Version-2.0.10-green previous 2.0.8" },
       statusFiles: [],
-      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.10",
     });
 
     expect(result).toContain("Status\nNOT_READY");
@@ -231,7 +272,7 @@ describe("workflow assistant", () => {
 
   test("release readiness needs verification for unrelated pass evidence", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: [],
       verificationEvidence: "docs spellcheck passed",
@@ -242,7 +283,7 @@ describe("workflow assistant", () => {
 
   test("release readiness needs verification when release commands failed", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: [],
       verificationEvidence: "bun run typecheck failed with error; bun test 622 pass 1 fail; bun ./src/index.ts validate failed; bash -n install.sh failed exit 1; bun ./src/index.ts --version wrong 2.0.8",
@@ -253,10 +294,10 @@ describe("workflow assistant", () => {
 
   test("release readiness needs verification when release command exits nonzero", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: [],
-      verificationEvidence: "bun run typecheck exit 2; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck exit 2; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.10",
     });
 
     expect(result).toContain("Status\nNEEDS_VERIFICATION");
@@ -264,10 +305,10 @@ describe("workflow assistant", () => {
 
   test("release readiness needs verification when release command exited with nonzero", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: [],
-      verificationEvidence: "bun run typecheck exited with 2; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck exited with 2; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.10",
     });
 
     expect(result).toContain("Status\nNEEDS_VERIFICATION");
@@ -275,10 +316,10 @@ describe("workflow assistant", () => {
 
   test("release readiness needs verification when release command returned nonzero", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: [],
-      verificationEvidence: "bun run typecheck returned 2; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck returned 2; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.10",
     });
 
     expect(result).toContain("Status\nNEEDS_VERIFICATION");
@@ -286,10 +327,10 @@ describe("workflow assistant", () => {
 
   test("release readiness is ready with full release evidence", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: syncedVersions,
       statusFiles: [],
-      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.9",
+      verificationEvidence: "bun run typecheck exit 0; bun test 623 pass 0 fail; bun ./src/index.ts validate exit 0; bash -n install.sh exit 0; bun ./src/index.ts --version 2.0.10",
     });
 
     expect(result).toContain("Status\nREADY");
@@ -297,14 +338,14 @@ describe("workflow assistant", () => {
 
   test("release readiness reports README version mismatch", () => {
     const result = buildReleaseReadyReport({
-      targetVersion: "2.0.9",
+      targetVersion: "2.0.10",
       files: { ...syncedVersions, "README.md": "Version-2.0.8-green" },
       statusFiles: [],
-      verificationEvidence: "623 pass 0 fail 2.0.9",
+      verificationEvidence: "623 pass 0 fail 2.0.10",
     });
 
     expect(result).toContain("NOT_READY");
-    expect(result).toContain("README.md: missing 2.0.9");
+    expect(result).toContain("README.md: missing 2.0.10");
   });
 
   test("release readiness rejects invalid target version", () => {

@@ -79,6 +79,22 @@ describe("plugin agents", () => {
     expect(prompt).toContain("Stop when blocked, unsafe, or explicitly instructed.");
   });
 
+  test("jce-worker prompt defines coding brain upgrades without superpowers dependency", () => {
+    const agents = buildAgentConfigs();
+    const prompt = agents["jce-worker"].systemPrompt;
+
+    expect(prompt).toContain("Coding Brain v3.1");
+    expect(prompt).toContain("Bugfix Protocol");
+    expect(prompt).toContain("reproduce the symptom");
+    expect(prompt).toContain("Feature Protocol");
+    expect(prompt).toContain("Verification Brain v3.2");
+    expect(prompt).toContain("Project Learning v3.3");
+    expect(prompt).toContain("Safe Edit Engine v3.4");
+    expect(prompt).toContain("Autonomous Debug Loop v3.5");
+    expect(prompt).toContain("After three failed focused fixes");
+    expect(prompt).toContain("Do not require Superpowers");
+  });
+
   test("jce-researcher prompt defines deep research modes", () => {
     const agents = buildAgentConfigs();
     const prompt = agents["jce-researcher"].systemPrompt;

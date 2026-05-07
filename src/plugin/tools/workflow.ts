@@ -5,6 +5,8 @@ import { tool } from "@opencode-ai/plugin";
 import type { ToolDefinition } from "@opencode-ai/plugin";
 import {
   buildReleaseReadyReport,
+  buildCodeTaskPlan,
+  buildProjectLearningReport,
   buildSafeCommitPlan,
   buildVerificationRecipe,
   buildWorkflowSummary,
@@ -51,9 +53,9 @@ export function buildWorkflowTool(): ToolDefinition {
   return tool({
     description: "Read-only JCE workflow helper for summaries, verification recipes, safe commit plans, and release readiness.",
     args: {
-      action: z.enum(["summary", "verification_recipe", "safe_commit_plan", "release_ready"]),
+      action: z.enum(["summary", "verification_recipe", "safe_commit_plan", "release_ready", "code_task_plan", "project_learning"]),
       scope: z.string().optional(),
-      taskType: z.enum(["agent_prompt", "config", "installer", "release", "docs", "tests", "unknown"]).optional(),
+      taskType: z.enum(["agent_prompt", "bugfix", "feature", "refactor", "config", "installer", "release", "docs", "tests", "unknown"]).optional(),
       includeDocs: z.boolean().optional(),
       release: z.boolean().optional(),
       targetVersion: z.string().optional(),
@@ -81,6 +83,19 @@ export function buildWorkflowTool(): ToolDefinition {
           includeDocs: Boolean(args.includeDocs),
           verificationEvidence: args.verificationEvidence as string | undefined,
         });
+      case "code_task_plan":
+        return buildCodeTaskPlan({
+          taskType: args.taskType as any,
+          scope: args.scope as string | undefined,
+          changedFiles: statusFiles.map((file) => file.path),
+        });
+      case "project_learning": {
+        const packageJsonPath = join(cwd, "package.json");
+        return buildProjectLearningReport({
+          packageJson: existsSync(packageJsonPath) ? readFileSync(packageJsonPath, "utf8") : undefined,
+          files: statusFiles,
+        });
+      }
       default:
         return "Unknown jce_workflow action.";
       }
