@@ -218,7 +218,10 @@ describe("audit fixes", () => {
 
     expect(source).toContain("OPENCODE_JCE_UPDATED_CLI_HANDOFF");
     expect(source).toContain("handoffToUpdatedCli");
-    expect(source).toContain('["opencode-jce", "update"]');
+    expect(source).toContain("resolveHandoffCommand");
+    expect(source).toContain('Bun.spawn(resolveHandoffCommand()');
+    expect(source).toContain('Bun.which("opencode-jce")');
+    expect(source).toContain('join(getConfigDir(), "cli", "src", "index.ts")');
   });
 
   test("Windows update shim separates bun run script from forwarded args", () => {

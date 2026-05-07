@@ -140,7 +140,7 @@ async function selfUpdateCli(latestVersion: string): Promise<boolean> {
 
 async function handoffToUpdatedCli(): Promise<never> {
   info("Restarting update with the freshly updated CLI...");
-  const proc = Bun.spawn(["opencode-jce", "update"], {
+  const proc = Bun.spawn(resolveHandoffCommand(), {
     stdout: "inherit",
     stderr: "inherit",
     env: {
@@ -150,6 +150,12 @@ async function handoffToUpdatedCli(): Promise<never> {
   });
   const exitCode = await proc.exited;
   process.exit(exitCode);
+}
+
+function resolveHandoffCommand(): string[] {
+  const resolvedShim = Bun.which("opencode-jce");
+  if (resolvedShim) return [resolvedShim, "update"];
+  return ["bun", "run", join(getConfigDir(), "cli", "src", "index.ts"), "--", "update"];
 }
 
 /**
