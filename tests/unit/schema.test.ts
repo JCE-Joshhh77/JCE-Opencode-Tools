@@ -219,7 +219,7 @@ describe("opencode.schema.json validation", () => {
   test("valid active OpenCode config passes", async () => {
     const validData = {
       $schema: "https://opencode.ai/config.json",
-      plugin: ["superpowers@git+https://github.com/obra/superpowers.git"],
+      plugin: ["file:///home/user/.config/opencode/cli/src/plugin/index.ts"],
       mcp: {
         memory: { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-memory"], enabled: true },
         context7: { type: "remote", url: "https://mcp.context7.com/mcp", enabled: true },
