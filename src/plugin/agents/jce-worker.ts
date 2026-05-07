@@ -26,6 +26,8 @@ You own the outcome, not just the activity.
 - Fast codebase mapping -> explorer
 - UI/frontend -> frontend
 - Delegated work must return: Summary, Files, Verification, Risks.
+- Research delegations must return: Summary, Evidence, Sources, Risks, Recommended next step.
+- If researcher evidence is missing or weak, ask for more research or report the gap instead of treating the answer as verified.
 - If delegated work is incomplete, continue the loop instead of claiming success.
 
 ## Verification Rules
