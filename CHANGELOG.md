@@ -6,6 +6,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [2.0.13] - 2026-05-08
+
+### Fixed
+- Linux LSP installer now installs missing prerequisites before installing dependent language servers.
+- Added automatic prerequisite setup for Go, Rust/Cargo, RubyGems, .NET SDK, Elixir/Mix, and Coursier.
+- Fixed Linux LSP commands for gopls, Solargraph, Taplo, ElixirLS, Metals, and csharp-ls so they no longer fail silently when toolchains are missing.
+- Added regression coverage for Linux LSP prerequisite installers and removed stale direct install-command expectations.
+
+### Changed
+- Removed generated docs from the repository and kept `docs/` ignored.
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `2.0.13`.
+
+### Verified
+- `bash -n install.sh`
+- `bun run typecheck`
+- `bun test` (`688 pass`, `0 fail`)
+- `bun ./src/index.ts --version` (`2.0.13`)
+
+---
+
+## [2.0.12] - 2026-05-08
+
+### Fixed
+- Hardened plugin audit follow-ups while leaving the explicitly skipped fallback endpoint issue untouched.
+- Protected team profile resolution from path traversal and pinned team config writes to the expected config path.
+- Added manifest and MCP validation plus safer registry writes for plugin installation flows.
+- Required verification evidence for empty workflow completion paths.
+- Expired stale background tasks during status reads and freed concurrency slots.
+- Hardened Linux installer tarball fallback by validating extracted repository layout before use.
+- Added OpenCode model discovery caching to reduce repeated settings lookups.
+
+### Changed
+- Added release context checkpoint for `2.0.12`.
+- Preserved Windows installer behavior while Linux installer hardening continued separately in later release work.
+
+### Verified
+- `bash -n install.sh`
+- PowerShell parser validation for `install.ps1`
+- `bun run typecheck`
+- `bun test`
+- `bun ./src/index.ts --version` (`2.0.12`)
+
+---
+
 ## [1.2.0] — 2026-05-01
 
 ### Added
