@@ -113,6 +113,17 @@ describe("audit fixes", () => {
     expect(sh).toContain("install_dart_linux");
     expect(sh).toContain("install_terraform_ls_linux");
     expect(sh).toContain("install_zls_linux");
+    expect(sh).toContain("install_gopls");
+    expect(sh).toContain("install_solargraph");
+    expect(sh).toContain("install_taplo");
+    expect(sh).toContain("install_elixir_ls");
+    expect(sh).toContain("install_metals");
+    expect(sh).toContain("ensure_cargo");
+    expect(sh).toContain("ensure_go");
+    expect(sh).toContain("ensure_ruby");
+    expect(sh).toContain("ensure_dotnet");
+    expect(sh).toContain("ensure_elixir");
+    expect(sh).toContain("ensure_coursier");
     expect(sh).toContain("download_github_release_asset");
     expect(sh).toContain("jdt-language-server-latest.tar.gz");
     expect(sh).toContain('mkdir -p "$TEMP_DIR"');
@@ -136,6 +147,11 @@ describe("audit fixes", () => {
     expect(sh).not.toContain("brew install metals || cs install metals");
     expect(sh).not.toContain("command -v cargo >/dev/null && cargo install zls");
     expect(sh).not.toContain("command -v sdk >/dev/null && sdk install kotlin-language-server");
+    expect(sh).not.toContain('3)  echo "go install golang.org/x/tools/gopls@latest"');
+    expect(sh).not.toContain('9)  echo "gem install solargraph"');
+    expect(sh).not.toContain('24) echo "cargo install taplo-cli --features lsp"');
+    expect(sh).not.toContain("command -v mix >/dev/null && mix archive.install hex elixir_ls --force");
+    expect(sh).not.toContain("command -v cs >/dev/null && cs install metals");
   });
 
   test("default LSP install commands avoid macOS and Windows commands for Linux-only config guidance", () => {

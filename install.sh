@@ -512,7 +512,100 @@ precache_mcp_packages() {
     fi
 }
 
+install_system_packages() {
+    case "$PKG_MGR" in
+        apt)    sudo apt-get update && sudo apt-get install -y "$@";;
+        dnf)    sudo dnf install -y "$@";;
+        pacman) sudo pacman -S --noconfirm "$@";;
+        brew)   brew install "$@";;
+        *)      return 1;;
+    esac
+}
+
+ensure_cargo() {
+    if command -v cargo &>/dev/null; then return 0; fi
+    info "Rust/Cargo is required for this LSP. Installing Rust toolchain..."
+    case "$PKG_MGR" in
+        apt)    install_system_packages curl build-essential pkg-config libssl-dev;;
+        dnf)    install_system_packages curl gcc gcc-c++ make openssl-devel;;
+        pacman) install_system_packages curl base-devel openssl;;
+        brew)   install_system_packages rust; return 0;;
+        *)      return 1;;
+    esac
+    curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y
+    export PATH="${HOME}/.cargo/bin:${PATH}"
+    command -v cargo &>/dev/null
+}
+
+ensure_go() {
+    if command -v go &>/dev/null; then return 0; fi
+    info "Go is required for gopls. Installing Go..."
+    case "$PKG_MGR" in
+        apt)    install_system_packages golang-go;;
+        dnf)    install_system_packages golang;;
+        pacman) install_system_packages go;;
+        brew)   install_system_packages go;;
+        *)      return 1;;
+    esac
+    command -v go &>/dev/null
+}
+
+ensure_ruby() {
+    if command -v gem &>/dev/null; then return 0; fi
+    info "RubyGems is required for Solargraph. Installing Ruby..."
+    case "$PKG_MGR" in
+        apt)    install_system_packages ruby ruby-dev build-essential;;
+        dnf)    install_system_packages ruby ruby-devel gcc make;;
+        pacman) install_system_packages ruby base-devel;;
+        brew)   install_system_packages ruby;;
+        *)      return 1;;
+    esac
+    command -v gem &>/dev/null
+}
+
+ensure_dotnet() {
+    if command -v dotnet &>/dev/null; then return 0; fi
+    info ".NET SDK is required for csharp-ls. Installing .NET SDK..."
+    case "$PKG_MGR" in
+        apt)    install_system_packages dotnet-sdk-8.0 || install_system_packages dotnet-sdk-7.0;;
+        dnf)    install_system_packages dotnet-sdk-8.0 || install_system_packages dotnet-sdk-7.0;;
+        pacman) install_system_packages dotnet-sdk;;
+        brew)   install_system_packages dotnet-sdk;;
+        *)      return 1;;
+    esac
+    command -v dotnet &>/dev/null
+}
+
+ensure_elixir() {
+    if command -v mix &>/dev/null; then return 0; fi
+    info "Elixir/Mix is required for elixir-ls. Installing Elixir..."
+    case "$PKG_MGR" in
+        apt)    install_system_packages elixir erlang;;
+        dnf)    install_system_packages elixir erlang;;
+        pacman) install_system_packages elixir erlang;;
+        brew)   install_system_packages elixir;;
+        *)      return 1;;
+    esac
+    command -v mix &>/dev/null
+}
+
+ensure_coursier() {
+    if command -v cs &>/dev/null; then return 0; fi
+    info "Coursier is required for Metals. Installing Coursier..."
+    local jce_bin="${HOME}/.local/bin"
+    mkdir -p "$jce_bin"
+    curl -fLo "$jce_bin/cs" https://github.com/coursier/launchers/raw/master/cs-x86_64-pc-linux.gz
+    gunzip -f "$jce_bin/cs"
+    chmod 755 "$jce_bin/cs"
+    export PATH="$jce_bin:$PATH"
+    command -v cs &>/dev/null
+}
+
 install_rust_analyzer() {
+    if ! command -v rustup &>/dev/null; then
+        ensure_cargo || return 1
+    fi
+
     if command -v rustup &>/dev/null; then
         rustup component add rust-analyzer
         return
@@ -572,7 +665,7 @@ EOF
 }
 
 install_csharp_ls() {
-    command -v dotnet &>/dev/null || return 1
+    ensure_dotnet || return 1
     dotnet tool install -g csharp-ls || dotnet tool update -g csharp-ls
     export PATH="${HOME}/.dotnet/tools:${PATH}"
     command -v csharp-ls &>/dev/null
@@ -655,6 +748,40 @@ install_dart_linux() {
     esac
 }
 
+install_gopls() {
+    ensure_go || return 1
+    go install golang.org/x/tools/gopls@latest
+    export PATH="${HOME}/go/bin:${PATH}"
+    command -v gopls &>/dev/null
+}
+
+install_solargraph() {
+    ensure_ruby || return 1
+    gem install solargraph
+    command -v solargraph &>/dev/null
+}
+
+install_taplo() {
+    ensure_cargo || return 1
+    cargo install taplo-cli --features lsp
+    export PATH="${HOME}/.cargo/bin:${PATH}"
+    command -v taplo &>/dev/null
+}
+
+install_elixir_ls() {
+    ensure_elixir || return 1
+    mix local.hex --force
+    mix archive.install hex elixir_ls --force
+    command -v elixir-ls &>/dev/null || command -v elixir_ls &>/dev/null
+}
+
+install_metals() {
+    ensure_coursier || return 1
+    cs install metals
+    export PATH="${HOME}/.local/share/coursier/bin:${HOME}/.local/bin:${PATH}"
+    command -v metals &>/dev/null
+}
+
 install_terraform_ls_linux() {
     local jce_bin="${HOME}/.local/bin"
     local archive="${TEMP_DIR}/terraform-ls.zip"
@@ -717,13 +844,13 @@ lsp_install_command() {
         0)  echo "npm install -g pyright";;
         1)  echo "npm install -g typescript-language-server typescript";;
         2)  echo "install_rust_analyzer";;
-        3)  echo "go install golang.org/x/tools/gopls@latest";;
+        3)  echo "install_gopls";;
         4)  echo "npm install -g dockerfile-language-server-nodejs";;
         5)  echo "npm install -g sql-language-server";;
         6)  [ "$OS" = "macos" ] && echo "brew install jdtls" || echo "install_jdtls_linux";;
         7)  lsp_system_install_command clangd clang-tools-extra clang llvm;;
         8)  echo "npm install -g intelephense";;
-        9)  echo "gem install solargraph";;
+        9)  echo "install_solargraph";;
         10) echo "install_csharp_ls";;
         11) echo "npm install -g bash-language-server";;
         12) echo "npm install -g yaml-language-server";;
@@ -750,20 +877,20 @@ lsp_install_command() {
             fi
             ;;
         23) [ "$OS" = "macos" ] && echo "brew install marksman" || echo "install_marksman_linux";;
-        24) echo "cargo install taplo-cli --features lsp";;
+        24) echo "install_taplo";;
         25) echo "npm install -g graphql-language-service-cli";;
         26)
             if [ "$OS" = "macos" ]; then
                 echo "brew install elixir-ls"
             else
-                echo "command -v mix >/dev/null && mix archive.install hex elixir_ls --force"
+                echo "install_elixir_ls"
             fi
             ;;
         27)
             if [ "$OS" = "macos" ]; then
                 echo "brew install metals"
             else
-                echo "command -v cs >/dev/null && cs install metals"
+                echo "install_metals"
             fi
             ;;
         *)  return 1;;
