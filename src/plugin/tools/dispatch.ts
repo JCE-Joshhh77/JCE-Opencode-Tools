@@ -138,6 +138,13 @@ function formatRetryStatus(task: BackgroundTask): string {
   return `retries: ${task.retryCount}/${task.maxRetries}${availableBudget}`;
 }
 
+function formatContextBudget(task: BackgroundTask): string {
+  const budget = task.contextBudget;
+  if (!budget) return "budget: pending";
+  if (!budget.changed) return `budget: 0% saved (${budget.originalChars}->${budget.compressedChars} chars)`;
+  return `budget: ${budget.estimatedSavingsPercent}% saved (${budget.originalChars}->${budget.compressedChars} chars)`;
+}
+
 export function buildDispatchTool(
   manager: BackgroundManager,
   client: any,
@@ -185,7 +192,7 @@ export function buildStatusTool(manager: BackgroundManager): ToolDefinition {
       return tasks
         .map(
           (t) =>
-            `[${t.status.toUpperCase()}] ${t.id} — ${t.description} (agent: ${t.agent}, state: ${t.logicalState}, review: ${t.reviewStatus}, stale: ${t.stale}, ${formatRetryStatus(t)}${t.failureReason ? `, failure: ${t.failureReason}` : ""}${t.reviewNotes.length ? `, notes: ${t.reviewNotes.join(", ")}` : ""})`,
+            `[${t.status.toUpperCase()}] ${t.id} — ${t.description} (agent: ${t.agent}, state: ${t.logicalState}, review: ${t.reviewStatus}, stale: ${t.stale}, ${formatRetryStatus(t)}, ${formatContextBudget(t)}${t.failureReason ? `, failure: ${t.failureReason}` : ""}${t.reviewNotes.length ? `, notes: ${t.reviewNotes.join(", ")}` : ""})`,
         )
         .join("\n");
     },

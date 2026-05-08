@@ -1,5 +1,6 @@
 import type { BackgroundManager } from "./manager.js";
 import type { LaunchInput } from "./types.js";
+import { applyContextBudget } from "../lib/context-budget.js";
 
 export function extractPromptText(result: unknown): string {
   if (typeof result === "string" && result.trim().length > 0) return result;
@@ -22,22 +23,22 @@ export function extractPromptText(result: unknown): string {
   return "Task completed";
 }
 
-function buildPromptRequest(sessionId: string, input: LaunchInput) {
+function buildPromptRequest(sessionId: string, input: LaunchInput, prompt: string) {
   return {
     path: { id: sessionId },
-    body: { agent: input.agent, parts: [{ type: "text" as const, text: input.prompt }] },
+    body: { agent: input.agent, parts: [{ type: "text" as const, text: prompt }] },
   };
 }
 
-function runSessionPrompt(client: any, sessionId: string, input: LaunchInput): Promise<unknown> {
+function runSessionPrompt(client: any, sessionId: string, input: LaunchInput, prompt: string): Promise<unknown> {
   if (typeof client.session?.prompt === "function") {
-    return client.session.prompt(buildPromptRequest(sessionId, input));
+    return client.session.prompt(buildPromptRequest(sessionId, input, prompt));
   }
   if (typeof client.session?.promptAsync === "function") {
-    return client.session.promptAsync(buildPromptRequest(sessionId, input));
+    return client.session.promptAsync(buildPromptRequest(sessionId, input, prompt));
   }
   if (typeof client.session?.chat === "function") {
-    return client.session.chat({ params: { id: sessionId }, body: { content: input.prompt, agent: input.agent } });
+    return client.session.chat({ params: { id: sessionId }, body: { content: prompt, agent: input.agent } });
   }
   return Promise.reject(new Error("No supported session prompt method found: expected session.prompt, session.promptAsync, or session.chat"));
 }
@@ -59,8 +60,15 @@ export async function launchExistingBackgroundTask(manager: BackgroundManager, c
     }
 
     manager.markRunning(task.id, session.id);
+    const budgeted = applyContextBudget(task.prompt);
+    manager.recordContextBudget(task.id, {
+      originalChars: budgeted.originalChars,
+      compressedChars: budgeted.compressedChars,
+      estimatedSavingsPercent: budgeted.estimatedSavingsPercent,
+      changed: budgeted.changed,
+    });
 
-    runSessionPrompt(client, session.id, task)
+    runSessionPrompt(client, session.id, task, budgeted.text)
       .then((result: unknown) => {
         manager.completeTask(task.id, extractPromptText(result));
       })

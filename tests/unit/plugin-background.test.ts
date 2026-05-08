@@ -148,6 +148,36 @@ describe("background manager reliability metadata", () => {
     expect(manager.getTask(taskId)?.result).toBe("## Summary\nDone");
   });
 
+  test("spawner records context budget telemetry for delegated prompts", async () => {
+    const manager = new BackgroundManager({ maxConcurrency: 3, now: () => "2026-05-06T00:00:00.000Z" } as any);
+    const requests: any[] = [];
+    const repeated = "same low value context line repeated";
+    const client = {
+      session: {
+        create: async () => ({ id: "child-session" }),
+        prompt: async (request: unknown) => {
+          requests.push(request);
+          return { parts: [{ type: "text", text: "## Summary\nDone" }] };
+        },
+      },
+    } as any;
+
+    const taskId = await spawnBackgroundTask(manager, client, {
+      description: "Check plugin",
+      prompt: [repeated, repeated, repeated].join("\n"),
+      agent: "explorer",
+      parentSessionId: "s",
+      parentMessageId: "m",
+    });
+    await Promise.resolve();
+
+    const task = manager.getTask(taskId)!;
+    expect(task.contextBudget?.changed).toBe(true);
+    expect(task.contextBudget?.estimatedSavingsPercent).toBeGreaterThan(0);
+    expect(task.contextBudget?.originalChars).toBeGreaterThan(task.contextBudget?.compressedChars ?? 0);
+    expect(requests[0].body.parts[0].text.match(/same low value context line repeated/g)).toHaveLength(1);
+  });
+
   test("spawner uses promptAsync fallback with prompt parts request shape", async () => {
     const manager = new BackgroundManager({ maxConcurrency: 3, now: () => "2026-05-06T00:00:00.000Z" } as any);
     const requests: unknown[] = [];

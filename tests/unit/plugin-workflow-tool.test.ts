@@ -47,7 +47,7 @@ describe("jce workflow tool", () => {
 
     expect(result).toContain("Summary");
     expect(result).toContain("Scope: Task 5");
-    expect(result).toContain("Current version: 2.0.13");
+    expect(result).toContain("Current version: 2.0.14");
     expect(result).toContain("Changed Files");
     expect(result).toContain("M src/plugin/tools/workflow.ts");
     expect(result).toContain("Local-Only / Excluded Files");
@@ -58,10 +58,10 @@ describe("jce workflow tool", () => {
     const tool = buildWorkflowTool();
     const result = await tool.execute({
       action: "release_ready",
-      targetVersion: "2.0.13",
+      targetVersion: "2.0.14",
       gitStatus: " M package.json\n",
       includeDocs: true,
-      verificationEvidence: "bun run typecheck exit 0\nbun test 0 fail\nbun ./src/index.ts validate exit 0\nbash -n install.sh exit 0\nbun ./src/index.ts --version 2.0.13",
+      verificationEvidence: "bun run typecheck exit 0\nbun test 0 fail\nbun ./src/index.ts validate exit 0\nbash -n install.sh exit 0\nbun ./src/index.ts --version 2.0.14",
     } as any, context());
 
     expect(result).toContain("Status");

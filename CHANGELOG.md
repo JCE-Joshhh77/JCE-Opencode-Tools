@@ -6,6 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [2.0.14] - 2026-05-08
+
+### Added
+- Added a safe context budget pipeline for delegated background AI prompts.
+- Added DCP-style duplicate low-value line removal and long passing-log compaction before delegated prompts are sent.
+- Added protected-line handling so caveman instructions, RTK/workflow metadata, latest user text, commands, paths, exact errors, and nonzero exit evidence are preserved.
+- Added context budget telemetry per background task: original chars, compressed chars, savings percent, and whether prompt changed.
+
+### Changed
+- `bg_status` now reports prompt budget savings, for example `budget: 30% saved (100->70 chars)`.
+- Background prompt dispatch now sends the compressed prompt while retaining original task prompt for retry/recovery metadata.
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `2.0.14`.
+
+### Verified
+- `bun test tests/unit/plugin-context-budget.test.ts tests/unit/plugin-background.test.ts tests/unit/plugin-tools.test.ts`
+- `bun run typecheck`
+- `bun test` (`694 pass`, `0 fail`)
+
+---
+
 ## [2.0.13] - 2026-05-08
 
 ### Fixed

@@ -33,6 +33,12 @@ export interface BackgroundTask {
   traceEvents?: TraceEvent[];
   result?: string;
   error?: string;
+  contextBudget?: {
+    originalChars: number;
+    compressedChars: number;
+    estimatedSavingsPercent: number;
+    changed: boolean;
+  };
   createdAt: string;
   completedAt?: string;
 }

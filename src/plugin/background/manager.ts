@@ -148,6 +148,13 @@ export class BackgroundManager {
     this.recordTrace("task.running", task.id, "Task running", { sessionId });
   }
 
+  recordContextBudget(id: string, budget: NonNullable<BackgroundTask["contextBudget"]>): void {
+    const task = this.tasks.get(id);
+    if (!task) return;
+    task.contextBudget = budget;
+    this.recordTrace("verification.recorded", task.id, "Context budget applied", budget);
+  }
+
   markReview(id: string, reviewStatus: ReviewStatus, reviewNotes: string[], verificationSummary?: string): void {
     const task = this.tasks.get(id);
     if (!task) return;

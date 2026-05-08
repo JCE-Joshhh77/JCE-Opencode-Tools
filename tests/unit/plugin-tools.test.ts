@@ -33,6 +33,32 @@ describe("plugin tools", () => {
     expect(result).toContain("Find endpoints");
     expect(result).toContain("PENDING");
     expect(result).toContain("explorer");
+    expect(result).toContain("budget: pending");
+  });
+
+  test("status tool includes context budget savings when available", async () => {
+    const manager = new BackgroundManager({ maxConcurrency: 3 });
+    const task = manager.createTask({
+      description: "Find endpoints",
+      prompt: "p",
+      agent: "explorer",
+      parentSessionId: "s",
+      parentMessageId: "m",
+    });
+    manager.recordContextBudget(task.id, { originalChars: 100, compressedChars: 70, estimatedSavingsPercent: 30, changed: true });
+    const tool = buildStatusTool(manager);
+    const result = await tool.execute({} as any, {
+      sessionID: "s",
+      messageID: "m",
+      agent: "explorer",
+      directory: "/tmp",
+      worktree: "/tmp",
+      abort: new AbortController().signal,
+      metadata: () => {},
+      ask: () => { throw new Error("not implemented"); },
+    } as any);
+
+    expect(result).toContain("budget: 30% saved (100->70 chars)");
   });
 
   test("dispatch tool wraps prompt with delegated result contract", async () => {
