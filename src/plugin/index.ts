@@ -19,6 +19,7 @@ import type { WorkflowIntentRouteSource } from "./lib/workflow.js";
 import { buildWorkflowTool } from "./tools/workflow.js";
 import { createWorkflowRun } from "./lib/workflow.js";
 import { isRecord } from "./lib/shared-predicates.js";
+import { determineSkillsForMessage, resolveSkills } from "./lib/skill-loader.js";
 
 function delegatedReviewStrings(memory: ExecutionMemory): string[] {
   return [...memory.completedSummaries, ...memory.verificationEvidence]
@@ -80,6 +81,7 @@ const jcePlugin: Plugin = async (input) => {
   const projectRoot = input.directory || input.worktree || process.cwd();
   const loadedMemory = loadExecutionMemory(projectRoot);
   let currentMemory = loadedMemory.memory;
+  let lastUserMessage = "";
 
   const persistCurrentMemory = () => {
     currentMemory = saveExecutionMemory(projectRoot, mergeExecutionMemorySnapshot(currentMemory, manager.toExecutionMemory(), { preserveWorkflowRuntime: true })).memory;
@@ -165,6 +167,25 @@ const jcePlugin: Plugin = async (input) => {
       bg_status: buildStatusTool(manager),
       bg_collect: buildCollectTool(manager, client, persistCurrentMemory, chineseTranslator),
       jce_workflow: buildWorkflowTool(),
+    },
+
+    "chat.message": async (_input, output) => {
+      // Track the latest user message for skill injection
+      const msg = output.message;
+      const text = typeof msg === "string" ? msg : output.parts?.filter((p: any) => p.type === "text").map((p: any) => p.text).join(" ") || "";
+      if (typeof text === "string" && text.trim()) {
+        lastUserMessage = text;
+      }
+    },
+
+    "experimental.chat.system.transform": async (_input, output) => {
+      if (!lastUserMessage) return;
+      const skillNames = determineSkillsForMessage(lastUserMessage);
+      if (skillNames.length === 0) return;
+      const skillContents = await resolveSkills(skillNames);
+      if (skillContents.length > 0) {
+        output.system.push("\n\n<!-- JCE Skills (auto-injected based on task context) -->\n" + skillContents.join("\n\n"));
+      }
     },
 
     "tool.execute.after": async (input, output) => {
