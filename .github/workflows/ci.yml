@@ -65,6 +65,7 @@ jobs:
       - name: CLI --version
         run: bun ./src/index.ts --version
       - name: CLI validate
+        shell: bash
         run: |
           bun ./src/index.ts validate || if [ $? -eq 1 ]; then echo "Expected: config not deployed in CI"; else exit 1; fi
 
