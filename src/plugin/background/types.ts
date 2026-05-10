@@ -123,3 +123,36 @@ export function resolveModelForCategory(agent: string, category?: TaskCategory):
   if (agent === "explorer" || agent === "jce-researcher") return undefined;
   return CATEGORY_MODEL_MAP[category];
 }
+
+/**
+ * Auto-detect task category from prompt content and agent type.
+ * Returns the most appropriate category based on keywords in the prompt.
+ */
+export function detectTaskCategory(agent: string, prompt: string): TaskCategory {
+  // Agent-based defaults
+  if (agent === "explorer") return "exploration";
+  if (agent === "jce-researcher") return "research";
+  if (agent === "frontend") return "frontend";
+
+  const lower = prompt.toLowerCase();
+
+  // Architecture patterns
+  if (/\b(architect|design\s*decision|trade.?off|system\s*design|scaling|migration\s*strategy|database\s*choice|service\s*boundary)\b/i.test(lower)) return "architecture";
+
+  // Frontend patterns
+  if (/\b(component|ui|ux|css|styling|responsive|accessibility|a11y|layout|animation|visual)\b/i.test(lower)) return "frontend";
+
+  // Research patterns
+  if (/\b(research|investigate|find\s*(out|docs|examples)|compare|evaluate|what\s*is|how\s*does|best\s*practice|library\s*for)\b/i.test(lower)) return "research";
+
+  // Deep work patterns (complex implementation, debugging, refactoring)
+  if (/\b(refactor|rewrite|implement\s*(from|the|a|full)|complex|multi.?file|debug.*root\s*cause|performance\s*optim)\b/i.test(lower)) return "deep";
+
+  // Quick patterns (simple, small, typo, rename)
+  if (/\b(typo|rename|simple|one.?liner|quick\s*fix|small\s*change|update\s*version|bump)\b/i.test(lower)) return "quick";
+
+  // Default for oracle is architecture (that's its specialty)
+  if (agent === "oracle") return "architecture";
+
+  return "default";
+}

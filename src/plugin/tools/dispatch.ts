@@ -3,7 +3,7 @@ import type { ToolDefinition } from "@opencode-ai/plugin";
 import type { BackgroundManager } from "../background/manager.js";
 import type { BackgroundTask, OpenCodeClient, TaskCategory } from "../background/types.js";
 import { launchExistingBackgroundTask, spawnBackgroundTask } from "../background/spawner.js";
-import { resolveModelForCategory } from "../background/types.js";
+import { resolveModelForCategory, detectTaskCategory } from "../background/types.js";
 import { buildDelegatedResultContractInstructions } from "../lib/contracts.js";
 import { buildDelegationEnvelope, formatDelegationEnvelope } from "../lib/delegation-envelope.js";
 import { buildExecutionSummary } from "../lib/execution-summary.js";
@@ -181,8 +181,8 @@ export function buildDispatchTool(
         ? `${args.prompt as string}${skillContent}`
         : args.prompt as string;
 
-      // Resolve model hint from category
-      const category = (args.category as TaskCategory | undefined) ?? "default";
+      // Resolve model hint from category (auto-detect if not provided)
+      const category = (args.category as TaskCategory | undefined) ?? detectTaskCategory(args.agent as string, args.prompt as string);
       const modelHint = resolveModelForCategory(args.agent as string, category);
 
       const taskId = await spawnBackgroundTask(manager, client, {
