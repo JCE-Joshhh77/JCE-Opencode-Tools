@@ -75,6 +75,7 @@ export class BackgroundManager {
       lastActivityAt: timestamp,
       stale: false,
       failureReason: input.failureReason,
+      modelHint: input.modelHint,
       createdAt: timestamp,
     };
     this.tasks.set(task.id, task);

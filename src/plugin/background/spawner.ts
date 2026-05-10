@@ -1,5 +1,5 @@
 import type { BackgroundManager } from "./manager.js";
-import type { LaunchInput, OpenCodeClient } from "./types.js";
+import type { LaunchInput, OpenCodeClient, ModelHint } from "./types.js";
 import { applyContextBudget } from "../lib/context-budget.js";
 
 export function extractPromptText(result: unknown): string {
@@ -23,19 +23,19 @@ export function extractPromptText(result: unknown): string {
   return "Task completed";
 }
 
-function buildPromptRequest(sessionId: string, input: LaunchInput, prompt: string) {
+function buildPromptRequest(sessionId: string, input: LaunchInput, prompt: string, model?: ModelHint) {
   return {
     path: { id: sessionId },
-    body: { agent: input.agent, parts: [{ type: "text" as const, text: prompt }] },
+    body: { agent: input.agent, ...(model ? { model } : {}), parts: [{ type: "text" as const, text: prompt }] },
   };
 }
 
-function runSessionPrompt(client: OpenCodeClient, sessionId: string, input: LaunchInput, prompt: string): Promise<unknown> {
+function runSessionPrompt(client: OpenCodeClient, sessionId: string, input: LaunchInput, prompt: string, model?: ModelHint): Promise<unknown> {
   if (typeof client.session?.prompt === "function") {
-    return client.session.prompt(buildPromptRequest(sessionId, input, prompt));
+    return client.session.prompt(buildPromptRequest(sessionId, input, prompt, model));
   }
   if (typeof client.session?.promptAsync === "function") {
-    return client.session.promptAsync(buildPromptRequest(sessionId, input, prompt));
+    return client.session.promptAsync(buildPromptRequest(sessionId, input, prompt, model));
   }
   if (typeof client.session?.chat === "function") {
     return client.session.chat({ params: { id: sessionId }, body: { content: prompt, agent: input.agent } });
@@ -70,7 +70,7 @@ export async function launchExistingBackgroundTask(manager: BackgroundManager, c
       changed: budgeted.changed,
     });
 
-    runSessionPrompt(client, sessionId, task, budgeted.text)
+    runSessionPrompt(client, sessionId, task, budgeted.text, task.modelHint)
       .then((result: unknown) => {
         manager.completeTask(task.id, extractPromptText(result));
       })

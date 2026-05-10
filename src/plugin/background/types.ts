@@ -33,6 +33,7 @@ export interface BackgroundTask {
   traceEvents?: TraceEvent[];
   result?: string;
   error?: string;
+  modelHint?: ModelHint;
   contextBudget?: {
     originalChars: number;
     compressedChars: number;
@@ -56,6 +57,7 @@ export interface LaunchInput {
   rootTaskId?: string;
   recoveryCategory?: JceWorkerErrorCategory;
   failureReason?: string;
+  modelHint?: ModelHint;
 }
 
 export interface BackgroundManagerOptions {
@@ -66,9 +68,14 @@ export interface BackgroundManagerOptions {
 
 // ─── OpenCode SDK Client Interface ───────────────────────────
 
+export interface ModelHint {
+  providerID: string;
+  modelID: string;
+}
+
 export interface SessionPromptRequest {
   path: { id: string };
-  body: { agent: string; parts: Array<{ type: "text"; text: string }> };
+  body: { agent: string; model?: ModelHint; parts: Array<{ type: "text"; text: string }> };
 }
 
 export interface SessionChatRequest {
@@ -87,4 +94,32 @@ export interface OpenCodeClient {
     promptAsync?: (request: SessionPromptRequest) => Promise<unknown>;
     chat?: (request: SessionChatRequest) => Promise<unknown>;
   };
+}
+
+// ─── Multi-Model Category Routing ────────────────────────────
+
+export type TaskCategory = "architecture" | "frontend" | "research" | "exploration" | "quick" | "deep" | "default";
+
+/**
+ * Category-to-model mapping. Users can override via JCE plugin settings.
+ * Models are hints — if the provider/model is unavailable, OpenCode falls back gracefully.
+ */
+export const CATEGORY_MODEL_MAP: Record<TaskCategory, ModelHint | undefined> = {
+  architecture: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+  frontend: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+  research: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+  exploration: undefined, // use default (fast/cheap)
+  quick: undefined, // use default
+  deep: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+  default: undefined, // use session default
+};
+
+/**
+ * Resolve a model hint for a given agent + category combination.
+ */
+export function resolveModelForCategory(agent: string, category?: TaskCategory): ModelHint | undefined {
+  if (!category || category === "default") return undefined;
+  // Explorer and researcher are intentionally cheap/fast — no model override
+  if (agent === "explorer" || agent === "jce-researcher") return undefined;
+  return CATEGORY_MODEL_MAP[category];
 }

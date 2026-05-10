@@ -1,8 +1,9 @@
 import { tool } from "@opencode-ai/plugin";
 import type { ToolDefinition } from "@opencode-ai/plugin";
 import type { BackgroundManager } from "../background/manager.js";
-import type { BackgroundTask, OpenCodeClient } from "../background/types.js";
+import type { BackgroundTask, OpenCodeClient, TaskCategory } from "../background/types.js";
 import { launchExistingBackgroundTask, spawnBackgroundTask } from "../background/spawner.js";
+import { resolveModelForCategory } from "../background/types.js";
 import { buildDelegatedResultContractInstructions } from "../lib/contracts.js";
 import { buildDelegationEnvelope, formatDelegationEnvelope } from "../lib/delegation-envelope.js";
 import { buildExecutionSummary } from "../lib/execution-summary.js";
@@ -163,6 +164,10 @@ export function buildDispatchTool(
       agent: z
         .enum(["oracle", "jce-researcher", "explorer", "frontend"])
         .describe("Which agent to use"),
+      category: z
+        .enum(["architecture", "frontend", "research", "exploration", "quick", "deep", "default"])
+        .optional()
+        .describe("Task category for model routing. Determines which model handles the task. Defaults to 'default'."),
     },
     async execute(args, context) {
       const routeText = `${args.description}\n${args.prompt}`;
@@ -176,15 +181,21 @@ export function buildDispatchTool(
         ? `${args.prompt as string}${skillContent}`
         : args.prompt as string;
 
+      // Resolve model hint from category
+      const category = (args.category as TaskCategory | undefined) ?? "default";
+      const modelHint = resolveModelForCategory(args.agent as string, category);
+
       const taskId = await spawnBackgroundTask(manager, client, {
         description: args.description as string,
         prompt: buildDelegatedPrompt(enrichedPrompt, args.description as string, args.agent as string),
         agent: args.agent as string,
         parentSessionId: context.sessionID,
         parentMessageId: context.messageID,
+        modelHint,
       });
       const warning = policy?.status === "warn" && policy.message ? `\n\n${policy.message}` : "";
-      return `Background task launched: ${taskId}\nAgent: ${args.agent}\nDescription: ${args.description}\n\nUse bg_status to check progress or bg_collect to retrieve results.${warning}`;
+      const modelInfo = modelHint ? `\nModel: ${modelHint.providerID}/${modelHint.modelID}` : "";
+      return `Background task launched: ${taskId}\nAgent: ${args.agent}\nCategory: ${category}${modelInfo}\nDescription: ${args.description}\n\nUse bg_status to check progress or bg_collect to retrieve results.${warning}`;
     },
   });
 }
