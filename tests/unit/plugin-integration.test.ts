@@ -318,6 +318,7 @@ describe("plugin integration", () => {
     let run = createWorkflowRun({ id: "wf-final", goal: "Ship final gate", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
+    memory.activeTasks = [{ id: "bg-live" }];
     saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
@@ -331,6 +332,25 @@ describe("plugin integration", () => {
     expect(output.output).toMatch(/passing relevant command evidence|Completion certificate is not valid/);
   });
 
+  test("tool.execute.after ignores stale persisted workflow gates until current session activates them", async () => {
+    const root = tempRoot();
+    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    let run = createWorkflowRun({ id: "wf-stale", goal: "Old blocked workflow", acceptanceCriteria: ["tests pass"] });
+    run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
+    memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
+    memory.blockers = [{ id: "bg-old", failureReason: "Failed to create child session" }];
+    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root });
+    const output = { title: "Task", output: "Here is a neutral progress update.", metadata: {} };
+
+    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "fresh-session", callID: "c", args: {} }, output);
+
+    expect(output.output).not.toContain("EXECUTION POLICY: blocked");
+    expect(output.output).not.toContain("FINAL REVIEW GATE");
+  });
+
   test("tool.execute.after uses session policy profile for final review gate", async () => {
     const root = tempRoot();
     saveSessionPolicyProfile(root, "strict");
@@ -339,6 +359,7 @@ describe("plugin integration", () => {
     run = addWorkflowStep(run, { id: "step-1", title: "Research", taskType: "research", expectedOutput: "notes", verification: ["manual source review"] });
     run = attachStepEvidence(run, "step-1", { kind: "manual", summary: "manual review", passed: true });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
+    memory.activeTasks = [{ id: "bg-live" }];
     saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
@@ -358,6 +379,7 @@ describe("plugin integration", () => {
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     run = attachStepEvidence(run, "step-1", { kind: "command", command: "bun test", summary: "bun test: pass", passed: true });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
+    memory.activeTasks = [{ id: "bg-live" }];
     saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
@@ -374,6 +396,7 @@ describe("plugin integration", () => {
     const root = tempRoot();
     const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-route", goal: "Complete routed workflow", acceptanceCriteria: ["tests pass"] });
+    memory.activeTasks = [{ id: "bg-live" }];
     saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
@@ -446,6 +469,7 @@ describe("plugin integration", () => {
     let run = createWorkflowRun({ id: "wf-policy", goal: "Complete safely", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
+    memory.activeTasks = [{ id: "bg-live" }];
     saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
@@ -467,6 +491,7 @@ describe("plugin integration", () => {
     run = attachStepEvidence(run, "step-docs", { kind: "command", command: "bun test", summary: "bun test: pass", passed: true });
     run = updateWorkflowStepStatus(run, "step-docs", "completed");
     memory.activeWorkflow = run;
+    memory.activeTasks = [{ id: "bg-live" }];
     saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
@@ -502,9 +527,8 @@ describe("plugin integration", () => {
     await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
     const persisted = loadExecutionMemory(root).memory;
 
-    expect(output.output).toContain("EXECUTION POLICY: blocked");
-    expect(output.output).toContain("Review route requires accepted review evidence before completion.");
-    expect(output.output).toContain("FINAL REVIEW GATE");
+    expect(output.output).not.toContain("EXECUTION POLICY: blocked");
+    expect(output.output).not.toContain("FINAL REVIEW GATE");
     expect(persisted.activeWorkflow?.route?.intent).toBe("review");
   });
 
@@ -516,6 +540,7 @@ describe("plugin integration", () => {
     run = attachStepEvidence(run, "step-1", { kind: "command", command: "bun test", summary: "bun test: pass", passed: true });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
     memory.completedSummaries = [{ id: "bg-1", description: "Delegated review", reviewStatus: "pending_review", result: "delegated output" }];
+    memory.activeTasks = [{ id: "bg-live" }];
     saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
@@ -658,6 +683,7 @@ describe("plugin integration", () => {
     let run = createWorkflowRun({ id: "wf-chinese-final", goal: "Ship final gate", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
+    memory.activeTasks = [{ id: "bg-live" }];
     saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
     const promptMessages: string[] = [];
     const client = {

@@ -46,7 +46,8 @@ export const validateCommand = new Command("validate")
     if (!existsSync(configDir)) {
       error(`Config directory not found: ${configDir}`);
       info("Run the installer first to deploy configuration files.");
-      process.exit(EXIT_ERROR);
+      process.exitCode = EXIT_ERROR;
+      return;
     }
 
     const entries = getConfigFilesToValidate();
@@ -75,9 +76,10 @@ export const validateCommand = new Command("validate")
 
     console.log();
     if (hasErrors) {
-      process.exit(EXIT_ERROR);
+      process.exitCode = EXIT_ERROR;
+      return;
     } else {
       info(`All ${entries.length} config files are valid.`);
-      process.exit(EXIT_SUCCESS);
+      process.exitCode = EXIT_SUCCESS;
     }
   });

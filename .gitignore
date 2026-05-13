@@ -8,3 +8,5 @@ coverage/
 *.tgz
 AUDIT*.txt
 docs/
+.opencode-jce/
+.playwright-mcp/

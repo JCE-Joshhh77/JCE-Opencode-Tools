@@ -14,7 +14,9 @@ if (!isWindows) process.exit(0);
 
 const home = process.env.USERPROFILE || process.env.HOME || "";
 const bunBinDir = join(home, ".bun", "bin");
-const configCliDir = join(process.env.XDG_CONFIG_HOME || join(home, ".config"), "opencode", "cli");
+
+const { getConfigDir } = await import("../src/lib/config.ts");
+const configCliDir = join(getConfigDir(), "cli");
 
 // Remove .exe and .bunx that take precedence over .cmd
 for (const file of ["opencode-jce.exe", "opencode-jce.bunx", "opencode-jce"]) {
@@ -34,5 +36,5 @@ if (!existsSync(bunBinDir)) {
 }
 
 const cmdPath = join(bunBinDir, "opencode-jce.cmd");
-const cmdContent = `@echo off\r\nbun run "${join(configCliDir, "src", "index.ts")}" %*\r\n`;
+const cmdContent = `@echo off\r\nbun run "${join(configCliDir, "src", "index.ts")}" -- %*\r\n`;
 writeFileSync(cmdPath, cmdContent, "ascii");

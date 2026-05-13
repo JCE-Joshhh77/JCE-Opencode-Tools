@@ -19,8 +19,6 @@ const ROLE_PROFILE_MAP: Record<string, string[]> = {
   frontend: ["gemini", "gemini-pro", "google-gemini"],
 };
 
-const FALLBACK: AgentModelConfig = { provider: "anthropic", model: "claude-sonnet-4-20250514" };
-
 function readJsonFile<T>(path: string): T | null {
   try {
     return JSON.parse(readFileSync(path, "utf-8")) as T;
@@ -60,11 +58,11 @@ function resolveFromConfiguredProviders(configDir: string): AgentModelConfig | n
   return null;
 }
 
-export function resolveAgentModel(role: string): AgentModelConfig {
+export function resolveAgentModel(role: string): AgentModelConfig | null {
   const configDir = getConfigDir();
   const profilesDir = join(configDir, "profiles");
 
-  if (!existsSync(profilesDir)) return resolveFromConfiguredProviders(configDir) ?? FALLBACK;
+  if (!existsSync(profilesDir)) return resolveFromConfiguredProviders(configDir);
 
   const profileFiles = readdirSync(profilesDir).filter((f) => f.endsWith(".json"));
   const candidates = ROLE_PROFILE_MAP[role] ?? [];
@@ -83,5 +81,5 @@ export function resolveAgentModel(role: string): AgentModelConfig {
     if (profile && isConfiguredModel(configDir, profile)) return { provider: profile.provider, model: profile.model };
   }
 
-  return resolveFromConfiguredProviders(configDir) ?? FALLBACK;
+  return resolveFromConfiguredProviders(configDir);
 }

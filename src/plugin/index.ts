@@ -84,6 +84,15 @@ const jcePlugin: Plugin = async (input) => {
   const loadedMemory = loadExecutionMemory(projectRoot);
   let currentMemory = loadedMemory.memory;
   let lastUserMessage = "";
+  let workflowRuntimeActive = currentMemory.activeTasks.length > 0;
+
+  if (currentMemory.activeTasks.length === 0 && currentMemory.blockers.length > 0) {
+    currentMemory = saveExecutionMemory(projectRoot, {
+      ...currentMemory,
+      blockers: [],
+      activeWorkflow: undefined,
+    }, undefined, { preserveWorkflowRuntime: false }).memory;
+  }
 
   const persistCurrentMemory = () => {
     currentMemory = saveExecutionMemory(projectRoot, mergeExecutionMemorySnapshot(currentMemory, manager.toExecutionMemory(), { preserveWorkflowRuntime: true })).memory;
@@ -111,6 +120,7 @@ const jcePlugin: Plugin = async (input) => {
       createWorkflowRun({ id: `workflow-${Date.now()}`, goal: text.trim().slice(0, 240) || "JCE worker session" }),
       { ...route, source },
     );
+    workflowRuntimeActive = true;
     currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
   };
 
@@ -127,6 +137,7 @@ const jcePlugin: Plugin = async (input) => {
     const route = routeJceWorkerIntent(text);
     if (!shouldApplyRoute(source, route)) return;
     currentMemory.activeWorkflow = applyWorkflowIntentRoute(currentMemory.activeWorkflow, { ...route, source });
+    workflowRuntimeActive = true;
     currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
   };
 
@@ -162,6 +173,7 @@ const jcePlugin: Plugin = async (input) => {
         if (policy.status === "block") return { status: "block", message: formatExecutionPolicyDecision(policy) };
         if (shouldApplyRoute("task", route)) {
           currentMemory.activeWorkflow = applyWorkflowIntentRoute(currentMemory.activeWorkflow, routeWithSource);
+          workflowRuntimeActive = true;
           currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
         }
         if (policy.status === "warn") return { status: "warn", message: formatExecutionPolicyDecision(policy) };
@@ -191,6 +203,9 @@ const jcePlugin: Plugin = async (input) => {
     },
 
     "tool.execute.after": async (input, output) => {
+      const hadActiveWorkflow = Boolean(currentMemory.activeWorkflow);
+      const hadWorkflowRuntimeActive = workflowRuntimeActive;
+
       if (input.tool === "Write" || input.tool === "Edit") {
         const filePath = input.args?.filePath || input.args?.path || "";
         const content = output.output || "";
@@ -210,7 +225,9 @@ const jcePlugin: Plugin = async (input) => {
         applyRuntimeRoute(output.output, routeSource);
       }
 
-      if (typeof output.output === "string" && shouldInspectCompletionOutput(input.tool) && looksLikeCompletionClaim(output.output) && currentMemory.activeWorkflow) {
+      const shouldEnforceWorkflowGates = workflowRuntimeActive && (!hadActiveWorkflow || hadWorkflowRuntimeActive);
+
+      if (typeof output.output === "string" && shouldInspectCompletionOutput(input.tool) && looksLikeCompletionClaim(output.output) && currentMemory.activeWorkflow && shouldEnforceWorkflowGates) {
         const executionPolicy = evaluateExecutionPolicy({
           action: "completion_claim",
           profile: currentPolicyProfile(),

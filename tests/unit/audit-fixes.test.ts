@@ -288,9 +288,18 @@ describe("audit fixes", () => {
   test("Windows update shim separates bun run script from forwarded args", () => {
     const source = readFileSync(join(process.cwd(), "src", "commands", "update.ts"), "utf-8");
     const ps = readFileSync(join(process.cwd(), "install.ps1"), "utf-8");
+    const postinstall = readFileSync(join(process.cwd(), "scripts", "postinstall.ts"), "utf-8");
 
     expect(source).toContain('bun run "${join(cliDir, "src", "index.ts")}" -- %*');
     expect(ps).toContain('bun run `"$installDir\\src\\index.ts`" -- %*');
+    expect(postinstall).toContain('bun run "${join(configCliDir, "src", "index.ts")}" -- %*');
+  });
+
+  test("postinstall resolves CLI shim path from shared config resolver", () => {
+    const postinstall = readFileSync(join(process.cwd(), "scripts", "postinstall.ts"), "utf-8");
+
+    expect(postinstall).toContain('await import("../src/lib/config.ts")');
+    expect(postinstall).toContain('const configCliDir = join(getConfigDir(), "cli")');
   });
 
   test("Windows install and update remove stale npm opencode-jce shims", () => {

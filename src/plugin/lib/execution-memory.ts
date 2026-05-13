@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import type { TraceEvent } from "./trace.js";
 import type { WorkflowRun } from "./workflow.js";
@@ -116,8 +116,17 @@ export function mergeExecutionMemorySnapshot(previous: ExecutionMemory, next: Ex
 
 function writeJsonAtomic(path: string, value: unknown): void {
   const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
-  renameSync(tmp, path);
+  try {
+    writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
+    renameSync(tmp, path);
+  } catch (error) {
+    try {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    } catch {
+      // Best-effort cleanup path; ignore secondary failures.
+    }
+    throw error;
+  }
 }
 
 export function loadExecutionMemory(projectRoot: string, now = new Date().toISOString()): LoadExecutionMemoryResult {
@@ -136,11 +145,16 @@ export function loadExecutionMemory(projectRoot: string, now = new Date().toISOS
   }
 }
 
-export function saveExecutionMemory(projectRoot: string, memory: ExecutionMemory, now = new Date().toISOString()): { path: string; memory: ExecutionMemory } {
+export function saveExecutionMemory(
+  projectRoot: string,
+  memory: ExecutionMemory,
+  now = new Date().toISOString(),
+  options: MergeExecutionMemoryOptions = { preserveWorkflowRuntime: true },
+): { path: string; memory: ExecutionMemory } {
   const path = getExecutionMemoryPath(projectRoot);
   mkdirSync(dirname(path), { recursive: true });
   const disk = loadExecutionMemory(projectRoot, now).memory;
-  const pruned = mergeExecutionMemorySnapshot(disk, { ...memory, updatedAt: now }, { preserveWorkflowRuntime: true });
+  const pruned = mergeExecutionMemorySnapshot(disk, { ...memory, updatedAt: now }, options);
   writeJsonAtomic(path, pruned);
   return { path, memory: pruned };
 }

@@ -20,7 +20,7 @@ async function runCli(args: string[], timeoutMs = 10000): Promise<{ stdout: stri
     throw new Error(`${args.join(" ") || "CLI"} timed out after ${timeoutMs}ms`);
   }
   const [stdoutText, stderrText] = await Promise.all([stdout, stderr]);
-  return { stdout: stdoutText, stderr: stderrText, exitCode: proc.exitCode };
+  return { stdout: stdoutText, stderr: stderrText, exitCode: exited };
 }
 
 describe("CLI Commands", () => {
