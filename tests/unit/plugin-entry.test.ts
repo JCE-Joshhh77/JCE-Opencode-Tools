@@ -16,6 +16,7 @@ describe("plugin entry point", () => {
     expect(source).toContain("/** @jsxImportSource @opentui/solid */");
     expect(source).toContain('id: "opencode-jce-token-savings"');
     expect(source).toContain("tui,");
+    expect(source).toContain("top:");
     expect(source).not.toContain("server:");
   });
 

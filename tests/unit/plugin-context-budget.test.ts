@@ -51,6 +51,33 @@ describe("context budget pipeline", () => {
 
     expect(result.text.match(/Error: failed to connect/g)).toHaveLength(2);
   });
+
+  test("preserves Caveman RTK and DCP protocol blocks exactly", () => {
+    const caveman = "CAVEMAN:\nRespond terse. No verbose prose. Keep user intent.";
+    const rtk = "RTK:\nroute=review\nfinal_gate=required\nverification=bun test";
+    const dcp = "DCP:\nDo not mutate protected instructions. Preserve constraints.";
+    const noisy = "low value repeated context line for compression";
+    const text = [caveman, "", rtk, "", dcp, "", noisy, noisy, noisy].join("\n");
+
+    const result = applyContextBudget(text, { level: "aggressive" });
+
+    expect(result.text).toContain(caveman);
+    expect(result.text).toContain(rtk);
+    expect(result.text).toContain(dcp);
+    expect(result.text).toContain("removed 2 duplicate low-value lines");
+  });
+
+  test("preserves markdown verification and final gate sections", () => {
+    const verification = "## Verification Criteria\n- bun test must pass\n- bun run typecheck must pass";
+    const finalGate = "## Final Gate\n- no completion without accepted evidence\n- blockers must be resolved";
+    const repeated = "generated low-value summary line";
+
+    const result = applyContextBudget([verification, finalGate, "", repeated, repeated, repeated].join("\n"), { level: "aggressive" });
+
+    expect(result.text).toContain(verification);
+    expect(result.text).toContain(finalGate);
+    expect(result.text).toContain("removed 2 duplicate low-value lines");
+  });
 });
 
 describe("context budget — empty section removal", () => {

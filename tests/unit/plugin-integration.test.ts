@@ -46,6 +46,28 @@ describe("plugin integration", () => {
     expect(hooks["tool.execute.after"]).toBeDefined();
   });
 
+  test("tool.execute.after applies Token Savings to verbose direct tool output", async () => {
+    const root = tempRoot();
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
+    const repeated = "same verbose low value output line for token savings";
+    const output = {
+      title: "Read",
+      output: [repeated, repeated, repeated, "final important line"].join("\n"),
+      metadata: {},
+    };
+
+    await hooks["tool.execute.after"]!({ tool: "Read", sessionID: "s", callID: "c", args: {} }, output);
+
+    const persisted = loadExecutionMemory(root).memory;
+    expect(output.output).toContain("[context-budget: removed 2 duplicate low-value lines]");
+    expect(persisted.contextBudgetSummary?.estimatedTokensSaved).toBeGreaterThan(0);
+    expect(persisted.contextBudgetSummary?.tasks).toBe(1);
+    expect(persisted.contextBudgetSummary?.byTool?.Read?.tasks).toBe(1);
+    expect(persisted.contextBudgetSummary?.byTool?.Read?.estimatedTokensSaved).toBeGreaterThan(0);
+    expect(persisted.traceEvents.some((event) => event.message === "Context budget applied to Read output")).toBe(true);
+  });
+
   test("plugin bg_collect launches recovery retry through registered client", async () => {
     const promptCalls: unknown[] = [];
     const client = {

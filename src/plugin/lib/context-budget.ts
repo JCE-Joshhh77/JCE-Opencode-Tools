@@ -28,6 +28,7 @@ const DEFAULT_MIN_DUPLICATE_LINE_LENGTH = 24;
 const DEFAULT_MAX_CODE_BLOCK_LINES = 30;
 const DEFAULT_MAX_STACK_TRACE_LINES = 8;
 const APPROX_CHARS_PER_TOKEN = 4;
+const PROTECTED_BLOCK_PLACEHOLDER = "__JCE_CONTEXT_BUDGET_PROTECTED_BLOCK__";
 
 export function estimateTokensFromChars(chars: number): number {
   return Math.max(0, Math.ceil(chars / APPROX_CHARS_PER_TOKEN));
@@ -39,12 +40,55 @@ function isProtectedLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
   if (/^(system|developer|user):/i.test(trimmed)) return true;
+  if (/^(?:#{1,6}\s*)?(?:caveman|rtk|dcp|protocol|constraints?|acceptance criteria|verification (?:criteria|policy|requirements?)|final gate)\b/i.test(trimmed)) return true;
   if (/^(error|fatal|failed|exception|traceback|caused by):/i.test(trimmed)) return true;
   if (/\b(exit|returned|exited)\s+[1-9]\d*\b/i.test(trimmed)) return true;
   if (/\b[A-Z]:\\[^\s]+/.test(trimmed) || /(^|\s)(\.\/|\.\.\/|\/)[\w.-]+/.test(trimmed)) return true;
   if (/`[^`]+`/.test(trimmed)) return true;
   if (/^\s*(git|bun|npm|pnpm|yarn|bash|gh|curl|sudo|docker|kubectl)\s+/.test(trimmed)) return true;
   return false;
+}
+
+function isProtectedBlockStart(line: string): boolean {
+  return /^(?:#{1,6}\s*)?(?:caveman|rtk|dcp|protocol|constraints?|acceptance criteria|verification (?:criteria|policy|requirements?)|final gate)\b/i.test(line.trim());
+}
+
+function extractProtectedBlocks(text: string): { text: string; blocks: string[] } {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const output: string[] = [];
+  const blocks: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!isProtectedBlockStart(line)) {
+      output.push(line);
+      continue;
+    }
+
+    const block: string[] = [line];
+    const markdownHeading = /^#{1,6}\s+/.test(line.trim());
+    index += 1;
+    while (index < lines.length) {
+      const candidate = lines[index];
+      const candidateTrimmed = candidate.trim();
+      const startsNextProtected = isProtectedBlockStart(candidate);
+      const startsNextHeading = markdownHeading && /^#{1,6}\s+/.test(candidateTrimmed);
+      const endsBlock = candidateTrimmed === "";
+      if (startsNextProtected || startsNextHeading || endsBlock) {
+        index -= 1;
+        break;
+      }
+      block.push(candidate);
+      index += 1;
+    }
+    const placeholder = `${PROTECTED_BLOCK_PLACEHOLDER}${blocks.length}__`;
+    blocks.push(block.join("\n"));
+    output.push(placeholder);
+  }
+  return { text: output.join("\n"), blocks };
+}
+
+function restoreProtectedBlocks(text: string, blocks: string[]): string {
+  return blocks.reduce((result, block, index) => result.replace(`${PROTECTED_BLOCK_PLACEHOLDER}${index}__`, block), text);
 }
 
 function isPassingLogLine(line: string): boolean {
@@ -339,13 +383,14 @@ function compactWhitespace(lines: string[]): string[] {
 
 export function applyContextBudget(text: string, options: ContextBudgetOptions = {}): ContextBudgetResult {
   const originalChars = text.length;
+  const protectedBlocks = extractProtectedBlocks(text);
   const level = options.level ?? "standard";
   const maxLines = options.maxLinesPerBlock ?? DEFAULT_MAX_LINES_PER_BLOCK;
   const minLength = options.minDuplicateLineLength ?? DEFAULT_MIN_DUPLICATE_LINE_LENGTH;
   const maxCodeLines = options.maxCodeBlockLines ?? DEFAULT_MAX_CODE_BLOCK_LINES;
   const maxStackLines = options.maxStackTraceLines ?? DEFAULT_MAX_STACK_TRACE_LINES;
 
-  let lines = text.replace(/\r\n/g, "\n").split("\n");
+  let lines = protectedBlocks.text.replace(/\r\n/g, "\n").split("\n");
   let processed: string;
 
   if (level === "light") {
@@ -379,6 +424,7 @@ export function applyContextBudget(text: string, options: ContextBudgetOptions =
     }
   }
 
+  processed = restoreProtectedBlocks(processed, protectedBlocks.blocks);
   const compressedChars = processed.length;
   const estimatedTokensSaved = Math.max(0, estimateTokensFromChars(originalChars) - estimateTokensFromChars(compressedChars));
   const estimatedSavingsPercent = originalChars === 0 ? 0 : Math.max(0, Math.round((1 - compressedChars / originalChars) * 100));

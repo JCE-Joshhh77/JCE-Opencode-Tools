@@ -40,6 +40,7 @@ export interface BackgroundTask {
     estimatedTokensSaved: number;
     estimatedSavingsPercent: number;
     changed: boolean;
+    source?: string;
   };
   createdAt: string;
   completedAt?: string;

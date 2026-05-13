@@ -365,6 +365,7 @@ describe("plugin tools", () => {
     expect(memory.contextBudgetSummary).toBeDefined();
     expect(memory.contextBudgetSummary!.estimatedTokensSaved).toBeGreaterThan(0);
     expect(memory.contextBudgetSummary!.tasks).toBe(1);
+    expect(memory.contextBudgetSummary!.byTool?.bg_collect?.tasks).toBe(1);
   });
 
   test("collect tool records learning for accepted delegated evidence", async () => {

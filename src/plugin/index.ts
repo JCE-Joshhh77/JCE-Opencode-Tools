@@ -22,6 +22,7 @@ import { buildWorkflowTool } from "./tools/workflow.js";
 import { createWorkflowRun } from "./lib/workflow.js";
 import { isRecord } from "./lib/shared-predicates.js";
 import { determineSkillsForMessage, resolveSkills } from "./lib/skill-loader.js";
+import { applyContextBudget } from "./lib/context-budget.js";
 
 function delegatedReviewStrings(memory: ExecutionMemory): string[] {
   return [...memory.completedSummaries, ...memory.verificationEvidence]
@@ -75,6 +76,10 @@ function shouldInspectCompletionOutput(tool: string): boolean {
   return !["Read", "Grep", "Glob", "LS", "Bash", "TodoWrite"].includes(tool);
 }
 
+function shouldApplyDirectContextBudget(tool: string): boolean {
+  return ["Read", "Grep", "Glob", "LS", "Bash"].includes(tool);
+}
+
 const jcePlugin: Plugin = async (input) => {
   const { client } = input;
   const chineseTranslator = buildChineseTranslator(client);
@@ -97,6 +102,44 @@ const jcePlugin: Plugin = async (input) => {
   const persistCurrentMemory = () => {
     currentMemory = saveExecutionMemory(projectRoot, mergeExecutionMemorySnapshot(currentMemory, manager.toExecutionMemory(), { preserveWorkflowRuntime: true })).memory;
     return currentMemory;
+  };
+
+  const recordDirectContextBudget = (tool: string, originalText: string, compressedText: string, budget: ReturnType<typeof applyContextBudget>) => {
+    if (!budget.changed && budget.estimatedTokensSaved === 0) return;
+    const previous = currentMemory.contextBudgetSummary;
+    const originalChars = (previous?.originalChars ?? 0) + budget.originalChars;
+    const compressedChars = (previous?.compressedChars ?? 0) + budget.compressedChars;
+    currentMemory.contextBudgetSummary = {
+      originalChars,
+      compressedChars,
+      estimatedTokensSaved: (previous?.estimatedTokensSaved ?? 0) + budget.estimatedTokensSaved,
+      estimatedSavingsPercent: originalChars === 0 ? 0 : Math.max(0, Math.round((1 - compressedChars / originalChars) * 100)),
+      tasks: (previous?.tasks ?? 0) + 1,
+      byTool: {
+        ...(previous?.byTool ?? {}),
+        [tool]: {
+          originalChars: (previous?.byTool?.[tool]?.originalChars ?? 0) + budget.originalChars,
+          compressedChars: (previous?.byTool?.[tool]?.compressedChars ?? 0) + budget.compressedChars,
+          estimatedTokensSaved: (previous?.byTool?.[tool]?.estimatedTokensSaved ?? 0) + budget.estimatedTokensSaved,
+          tasks: (previous?.byTool?.[tool]?.tasks ?? 0) + 1,
+        },
+      },
+    };
+    currentMemory.traceEvents = [
+      ...(currentMemory.traceEvents ?? []),
+      {
+        type: "verification.recorded",
+        message: `Context budget applied to ${tool} output`,
+        at: new Date().toISOString(),
+        metadata: {
+          tool,
+          originalChars: originalText.length,
+          compressedChars: compressedText.length,
+          estimatedTokensSaved: budget.estimatedTokensSaved,
+        },
+      },
+    ];
+    currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: false }).memory;
   };
 
   const currentPolicyProfile = () => resolvePolicyProfile(projectRoot).profile;
@@ -214,6 +257,15 @@ const jcePlugin: Plugin = async (input) => {
           if (analysis.excessive) {
             output.output = `${output.output}\n\n${COMMENT_WARNING}`;
           }
+        }
+      }
+
+      if (typeof output.output === "string" && shouldApplyDirectContextBudget(input.tool)) {
+        const originalOutput = output.output;
+        const budget = applyContextBudget(originalOutput, { level: "aggressive" });
+        if (budget.changed || budget.estimatedTokensSaved > 0) {
+          output.output = budget.text;
+          recordDirectContextBudget(input.tool, originalOutput, budget.text, budget);
         }
       }
 

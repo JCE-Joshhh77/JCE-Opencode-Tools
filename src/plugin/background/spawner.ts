@@ -68,6 +68,7 @@ export async function launchExistingBackgroundTask(manager: BackgroundManager, c
       estimatedTokensSaved: budgeted.estimatedTokensSaved,
       estimatedSavingsPercent: budgeted.estimatedSavingsPercent,
       changed: budgeted.changed,
+      source: "dispatch",
     });
 
     runSessionPrompt(client, sessionId, task, budgeted.text, task.modelHint)

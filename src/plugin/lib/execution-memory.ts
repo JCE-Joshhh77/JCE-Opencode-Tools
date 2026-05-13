@@ -44,6 +44,12 @@ export interface ContextBudgetSummary {
   estimatedTokensSaved: number;
   estimatedSavingsPercent: number;
   tasks: number;
+  byTool?: Record<string, {
+    originalChars: number;
+    compressedChars: number;
+    estimatedTokensSaved: number;
+    tasks: number;
+  }>;
 }
 
 export interface LoadExecutionMemoryResult {
@@ -141,6 +147,31 @@ function mergeById(previous: unknown[], next: unknown[]): unknown[] {
   return merged;
 }
 
+function mergeContextBudgetSummary(previous?: ContextBudgetSummary, next?: ContextBudgetSummary): ContextBudgetSummary | undefined {
+  if (!previous) return next;
+  if (!next) return previous;
+  const originalChars = previous.originalChars + next.originalChars;
+  const compressedChars = previous.compressedChars + next.compressedChars;
+  const byTool: NonNullable<ContextBudgetSummary["byTool"]> = { ...(previous.byTool ?? {}) };
+  for (const [tool, value] of Object.entries(next.byTool ?? {})) {
+    const prior = byTool[tool] ?? { originalChars: 0, compressedChars: 0, estimatedTokensSaved: 0, tasks: 0 };
+    byTool[tool] = {
+      originalChars: prior.originalChars + value.originalChars,
+      compressedChars: prior.compressedChars + value.compressedChars,
+      estimatedTokensSaved: prior.estimatedTokensSaved + value.estimatedTokensSaved,
+      tasks: prior.tasks + value.tasks,
+    };
+  }
+  return {
+    originalChars,
+    compressedChars,
+    estimatedTokensSaved: previous.estimatedTokensSaved + next.estimatedTokensSaved,
+    estimatedSavingsPercent: originalChars === 0 ? 0 : Math.max(0, Math.round((1 - compressedChars / originalChars) * 100)),
+    tasks: previous.tasks + next.tasks,
+    byTool,
+  };
+}
+
 export function pruneExecutionMemory(memory: ExecutionMemory): ExecutionMemory {
   return {
     ...memory,
@@ -167,7 +198,7 @@ export function mergeExecutionMemorySnapshot(previous: ExecutionMemory, next: Ex
     traceEvents: next.traceEvents.length > 0 ? next.traceEvents : previous.traceEvents,
     activeWorkflow: options.clearWorkflowRuntime ? next.activeWorkflow : next.activeWorkflow ?? previous.activeWorkflow,
     workflowRuns: options.clearWorkflowRuntime ? next.workflowRuns : next.workflowRuns.length > 0 ? next.workflowRuns : previous.workflowRuns,
-    contextBudgetSummary: next.contextBudgetSummary ?? previous.contextBudgetSummary,
+    contextBudgetSummary: mergeContextBudgetSummary(previous.contextBudgetSummary, next.contextBudgetSummary),
     wisdom: [...(previous.wisdom ?? []), ...(next.wisdom ?? [])],
   });
 }

@@ -105,6 +105,7 @@ function compressAndRecordResultBudget(manager: BackgroundManager, task: Backgro
     estimatedTokensSaved: delegationTokensSaved,
     estimatedSavingsPercent: delegationSavingsPercent,
     changed: budgeted.changed || delegationTokensSaved > 0,
+    source: "bg_collect",
   });
 
   return budgeted.text;

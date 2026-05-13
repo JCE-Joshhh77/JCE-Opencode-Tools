@@ -315,6 +315,17 @@ export class BackgroundManager {
     const originalChars = budgets.reduce((sum, budget) => sum + budget.originalChars, 0);
     const compressedChars = budgets.reduce((sum, budget) => sum + budget.compressedChars, 0);
     const estimatedTokensSaved = budgets.reduce((sum, budget) => sum + budget.estimatedTokensSaved, 0);
+    const byTool = budgets.reduce<Record<string, { originalChars: number; compressedChars: number; estimatedTokensSaved: number; tasks: number }>>((summary, budget) => {
+      const source = budget.source ?? "delegation";
+      const previous = summary[source] ?? { originalChars: 0, compressedChars: 0, estimatedTokensSaved: 0, tasks: 0 };
+      summary[source] = {
+        originalChars: previous.originalChars + budget.originalChars,
+        compressedChars: previous.compressedChars + budget.compressedChars,
+        estimatedTokensSaved: previous.estimatedTokensSaved + budget.estimatedTokensSaved,
+        tasks: previous.tasks + 1,
+      };
+      return summary;
+    }, {});
     const resolvedRetryRootIds = new Set(
       tasks
         .filter((task) => task.status === "completed" && task.reviewStatus === "accepted" && task.rootTaskId)
@@ -376,6 +387,7 @@ export class BackgroundManager {
         estimatedTokensSaved,
         estimatedSavingsPercent: originalChars === 0 ? 0 : Math.max(0, Math.round((1 - compressedChars / originalChars) * 100)),
         tasks: budgets.length,
+        byTool,
       } : undefined,
     };
   }

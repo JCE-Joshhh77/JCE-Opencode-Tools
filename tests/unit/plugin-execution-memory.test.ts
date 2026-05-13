@@ -182,6 +182,7 @@ describe("execution memory", () => {
       estimatedTokensSaved: 75,
       estimatedSavingsPercent: 30,
       tasks: 2,
+      byTool: { Read: { originalChars: 1000, compressedChars: 700, estimatedTokensSaved: 75, tasks: 2 } },
     };
     const next = createEmptyExecutionMemory("2026-05-06T00:01:00.000Z");
 
