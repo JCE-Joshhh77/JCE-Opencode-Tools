@@ -14,8 +14,6 @@ import { evaluateExecutionPolicy, formatExecutionPolicyDecision } from "./lib/ex
 import type { ExecutionPolicyDecision } from "./lib/execution-policy.js";
 import { evaluateFinalReviewGate } from "./lib/final-review-gate.js";
 import { resolvePolicyProfile } from "./lib/policy-profile.js";
-import { routeJceWorkerIntent } from "./lib/skill-router.js";
-import type { JceWorkerAgentHint } from "./lib/skill-router.js";
 import { applyWorkflowIntentRoute } from "./lib/workflow.js";
 import type { WorkflowIntentRouteSource } from "./lib/workflow.js";
 import { buildWorkflowTool } from "./tools/workflow.js";
@@ -23,6 +21,9 @@ import { createWorkflowRun } from "./lib/workflow.js";
 import { isRecord } from "./lib/shared-predicates.js";
 import { determineSkillsForMessage, resolveSkills } from "./lib/skill-loader.js";
 import { applyContextBudget } from "./lib/context-budget.js";
+import { scoreIntent, toLegacyRoute } from "./lib/orchestration/intent-router.js";
+import type { ScoredIntent } from "./lib/orchestration/types.js";
+import type { AgentRole } from "./lib/orchestration/types.js";
 
 function delegatedReviewStrings(memory: ExecutionMemory): string[] {
   return [...memory.completedSummaries, ...memory.verificationEvidence]
@@ -39,7 +40,7 @@ function hasDelegatedWork(memory: ExecutionMemory): boolean {
   return [...memory.completedSummaries, ...memory.verificationEvidence].some((entry) => isRecord(entry) && typeof entry.reviewStatus === "string" && entry.reviewStatus !== "not_applicable");
 }
 
-function isJceWorkerAgentHint(value: string): value is JceWorkerAgentHint {
+function isJceWorkerAgentHint(value: string): value is "oracle" | "jce-researcher" | "explorer" | "frontend" {
   return value === "oracle" || value === "jce-researcher" || value === "explorer" || value === "frontend";
 }
 
@@ -73,7 +74,7 @@ function shouldTranslateToolOutput(tool: string): boolean {
 }
 
 function shouldInspectCompletionOutput(tool: string): boolean {
-  return !["Read", "Grep", "Glob", "LS", "Bash", "TodoWrite"].includes(tool);
+  return !["Read", "Grep", "Glob", "LS", "Bash", "TodoWrite", "dispatch", "bg_status", "bg_collect"].includes(tool);
 }
 
 function shouldApplyDirectContextBudget(tool: string): boolean {
@@ -142,6 +143,12 @@ const jcePlugin: Plugin = async (input) => {
     currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: false }).memory;
   };
 
+  const routeJceWorkerIntent = (text: string) => {
+    const scored = scoreIntent(text);
+    const legacy = toLegacyRoute(scored);
+    return legacy as unknown as { intent: any; skills: string[]; reason: string; agentHint?: any };
+  };
+
   const currentPolicyProfile = () => resolvePolicyProfile(projectRoot).profile;
 
   const evaluateRouteUpdatePolicy = (source: WorkflowIntentRouteSource, nextRoute: ReturnType<typeof routeJceWorkerIntent>): ExecutionPolicyDecision => {
@@ -172,7 +179,9 @@ const jcePlugin: Plugin = async (input) => {
     const policy = evaluateRouteUpdatePolicy(source, nextRoute);
     if (policy.status === "block") return false;
     if (nextRoute.intent !== "general") return true;
-    return !currentMemory.activeWorkflow.route && source !== "completion";
+    // Completion claims always apply route (even if intent is general)
+    if (source === "completion") return true;
+    return !currentMemory.activeWorkflow.route;
   };
 
   const applyRuntimeRoute = (text: string, source: WorkflowIntentRouteSource) => {

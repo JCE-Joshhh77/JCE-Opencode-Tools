@@ -2,7 +2,7 @@ import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { getConfigDir } from "../../lib/config.js";
-import { routeJceWorkerIntent } from "./skill-router.js";
+import { scoreIntent, toLegacyRoute } from "./orchestration/intent-router.js";
 
 /**
  * Map skill-router skill names to actual .md filenames in ~/.config/opencode/skills/
@@ -224,7 +224,8 @@ export async function resolveSkills(skillNames: string[]): Promise<string[]> {
  * Always includes software-engineering.md for coding tasks.
  */
 export function determineSkillsForMessage(text: string): string[] {
-  const route = routeJceWorkerIntent(text);
+  const scored = scoreIntent(text);
+  const route = toLegacyRoute(scored);
   const contextSkills = detectContextSkills(text);
 
   // Always include software-engineering for coding intents
@@ -252,7 +253,8 @@ const MAX_SUBAGENT_SKILLS = 2;
 export async function resolveSubAgentSkills(agent: string, delegationPrompt: string): Promise<string> {
   if (!SKILL_ELIGIBLE_AGENTS.has(agent)) return "";
 
-  const route = routeJceWorkerIntent(delegationPrompt);
+  const scored = scoreIntent(delegationPrompt);
+  const route = toLegacyRoute(scored);
   const contextSkills = detectContextSkills(delegationPrompt);
   const combined = [...new Set([...route.skills, ...contextSkills])];
 

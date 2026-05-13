@@ -77,7 +77,7 @@ function evaluateRouteUpdate(input: ExecutionPolicyInput): ExecutionPolicyDecisi
 
 function evaluateDispatch(input: ExecutionPolicyInput): ExecutionPolicyDecision {
   const route = input.nextRoute ?? input.route;
-  if (route?.intent !== "parallel_work" || !route.agentHint || !input.dispatchAgent || route.agentHint === input.dispatchAgent) return allow("dispatch.allow");
+  if (!route?.agentHint || !input.dispatchAgent || route.agentHint === input.dispatchAgent) return allow("dispatch.allow");
   const warning = `Dispatch agent ${input.dispatchAgent} does not match route hint ${route.agentHint}.`;
   if (input.profile === "strict") return decision("block", "dispatch.agent_hint.mismatch", [warning], [], [`dispatch agent ${route.agentHint}`]);
   if (input.profile === "balanced") return decision("warn", "dispatch.agent_hint.mismatch", [], [warning]);

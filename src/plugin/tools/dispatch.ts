@@ -15,7 +15,7 @@ import { buildRetryPrompt, decideRecovery } from "../lib/recovery.js";
 import { classifyDelegatedReview } from "../lib/review.js";
 import { scoreDelegatedEvidence } from "../lib/evidence-scoring.js";
 import type { SkillRoute } from "../lib/skill-router.js";
-import { routeJceWorkerIntent } from "../lib/skill-router.js";
+import { scoreIntent, toLegacyRoute } from "../lib/orchestration/intent-router.js";
 import { resolveSubAgentSkills } from "../lib/skill-loader.js";
 import { createWorkflowRun } from "../lib/workflow.js";
 
@@ -210,7 +210,7 @@ export function buildDispatchTool(
     },
     async execute(args, context) {
       const routeText = `${args.description}\n${args.prompt}`;
-      const route = routeJceWorkerIntent(routeText);
+      const route = toLegacyRoute(scoreIntent(routeText)) as unknown as SkillRoute;
       const policy = afterRoute?.(routeText, route, args.agent as string);
       if (policy?.status === "block") return policy.message ?? "EXECUTION POLICY: blocked";
 

@@ -248,7 +248,7 @@ function resolveSkills(intent: IntentType, message: string, context: RouterConte
     refactor: ["software-engineering"],
     review: ["software-engineering", "codebase-intelligence"],
     release: ["release-engineering", "verification-discipline"],
-    research: [],
+    research: ["codebase-intelligence"],
     config: [],
     docs: [],
     general: ["jce-worker-operating-system"],
@@ -285,8 +285,13 @@ function resolveSkills(intent: IntentType, message: string, context: RouterConte
 function resolveAgentHint(intent: IntentType, message: string): AgentRole | undefined {
   const lower = message.toLowerCase();
 
+  // Codebase exploration → explorer (check BEFORE research)
+  if (/\bfind\b|\bwhere\b|\bexplore\b|\bmap\b|\bstructure\b|\blocate\b|\bsearch\s*(for|the|in)\b/.test(lower)) {
+    return "explorer";
+  }
+
   // Research tasks → researcher
-  if (intent === "research" || /\bdocumentation\b|\blibrary\b|\bcompare\b/.test(lower)) {
+  if (intent === "research" || /\bdocumentation\b|\blibrary\b|\bcompare\b|\bbest\s*practice\b/.test(lower)) {
     return "jce-researcher";
   }
 
@@ -298,11 +303,6 @@ function resolveAgentHint(intent: IntentType, message: string): AgentRole | unde
   // UI/frontend → frontend
   if (/\bcomponent\b|\bui\b|\bcss\b|\bstyle\b|\bresponsive\b|\baccessib/i.test(lower)) {
     return "frontend";
-  }
-
-  // Codebase exploration → explorer
-  if (/\bfind\b|\bwhere\b|\bexplore\b|\bmap\b|\bstructure\b/.test(lower)) {
-    return "explorer";
   }
 
   return undefined;
