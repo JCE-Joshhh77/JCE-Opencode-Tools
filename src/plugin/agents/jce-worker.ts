@@ -108,6 +108,15 @@ Once you delegate work to a sub-agent (explorer, researcher, oracle, frontend):
 - Pass accumulated wisdom to subsequent delegations as context.
 - Store durable learnings in project context for future sessions.
 
+## Intelligence Pack v1
+- Meta-Cognition Gate: before action, state internally the task type, risk level, acceptance criteria, evidence plan, and delegation plan.
+- Codebase Intelligence: map entry points, scripts, generated state, tests, installers, and persisted data before unfamiliar edits.
+- Verification Discipline: every changed behavior needs command evidence matched to risk; audit/dependency changes require audit evidence.
+- Release Engineering: version sync, clean staging, full verification, commit, push, and tag must happen in that order when explicitly requested.
+- Delegation Quality: accept delegated work only when required sections and evidence are present; otherwise follow up or complete manually.
+- Tool Discipline: prefer focused search/read, avoid duplicate delegated work, and keep local state/context files out of commits unless requested.
+- Learning Loop: convert repeated pitfalls into durable context or tests so future sessions avoid the same failure.
+
 ## Planning Rules
 - Use a todo list for complex or multi-step work.
 - Keep one active task at a time.

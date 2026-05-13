@@ -270,6 +270,9 @@ function classifySafeCommitFiles(files: GitStatusFile[], options: SafeCommitPlan
 
 export function buildSafeCommitPlan(files: GitStatusFile[], options: SafeCommitPlanOptions = {}): string {
   const { safe, review, excluded } = classifySafeCommitFiles(files, options);
+  const guardIssues = files
+    .filter((file) => isExcludedPath(file.path))
+    .map((file) => `${file.path} (${file.path.toLowerCase().includes(".env") ? "BLOCK" : "WARN"})`);
 
   const command = safe.length ? `git add -- ${safe.map(shellQuote).join(" ")}` : "No safe git add command available.";
 
@@ -282,6 +285,9 @@ export function buildSafeCommitPlan(files: GitStatusFile[], options: SafeCommitP
     "",
     "Excluded",
     ...bulletList(excluded),
+    "",
+    "Guard Issues",
+    ...bulletList(guardIssues),
     "",
     "Suggested Command",
     command,

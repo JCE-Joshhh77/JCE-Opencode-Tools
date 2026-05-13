@@ -13,6 +13,7 @@ import { filterChineseOutput, type ChineseTranslator } from "../lib/chinese-outp
 import { appendResearchOutputWarning } from "../lib/research-output-guard.js";
 import { buildRetryPrompt, decideRecovery } from "../lib/recovery.js";
 import { classifyDelegatedReview } from "../lib/review.js";
+import { scoreDelegatedEvidence } from "../lib/evidence-scoring.js";
 import type { SkillRoute } from "../lib/skill-router.js";
 import { routeJceWorkerIntent } from "../lib/skill-router.js";
 import { resolveSubAgentSkills } from "../lib/skill-loader.js";
@@ -283,18 +284,23 @@ export function buildCollectTool(
       const review = task.result
         ? classifyDelegatedReview(task.result)
         : { status: "needs_followup" as const, missing: ["Summary", "Files", "Verification", "Risks"], notes: ["Missing delegated result"], retryable: false };
+      const evidenceScore = task.result ? scoreDelegatedEvidence(task.result) : undefined;
+      const evidenceNotes = evidenceScore ? [`evidence: ${evidenceScore.evidenceStrength}`] : [];
+      const reviewStatus = evidenceScore?.needsFollowUp && review.status === "accepted" ? "needs_followup" as const : review.status;
+      const reviewMissing = evidenceScore?.needsFollowUp && review.missing.length === 0 ? ["strong Verification evidence"] : review.missing;
+      const reviewNotes = [...(review.notes.length ? review.notes : reviewMissing), ...evidenceNotes];
 
       manager.markReview(
         task.id,
-        review.status,
-        review.notes.length ? review.notes : review.missing,
-        review.status === "accepted" ? "delegated output includes required sections" : undefined,
+        reviewStatus,
+        reviewNotes,
+        reviewStatus === "accepted" ? `delegated output accepted with ${evidenceScore?.evidenceStrength ?? "unknown"} evidence` : undefined,
       );
 
       // Compress the task result to save tokens in the main agent's context
       const compressedResult = compressAndRecordResultBudget(manager, task, formatTaskResult(task));
 
-      if (review.status === "retryable_failure") {
+      if (reviewStatus === "retryable_failure") {
         const reason = review.notes.join(", ") || "Delegated result did not satisfy the required contract";
         manager.recordRetryableFailure(task.id, reason);
         const result = `${await handleRecovery(manager, client, task, reason)}\n\nOriginal task output:\n${compressedResult}`;
@@ -302,14 +308,14 @@ export function buildCollectTool(
         return filterOutput(result);
       }
 
-      if (review.status === "needs_followup" && review.missing.length) {
+      if (reviewStatus === "needs_followup" && reviewMissing.length) {
         const reason = review.notes.join(", ") || "Delegated result did not satisfy the required contract";
         const result = `${await handleRecovery(manager, client, task, reason)}\n\nOriginal task output:\n${compressedResult}`;
         afterMutation?.();
         return filterOutput(result);
       }
 
-      if (review.status === "blocked") {
+      if (reviewStatus === "blocked") {
         const handoff = {
           status: "blocked" as const,
           completed: [task.description],
@@ -336,14 +342,15 @@ export function buildCollectTool(
         status: "completed",
         files: [],
         verification: task.verificationSummary ? [task.verificationSummary] : [],
-        risks: review.status === "accepted" ? ["none"] : review.notes,
+          risks: reviewStatus === "accepted" ? ["none"] : reviewNotes,
         blockers: [],
         retries: task.retryCount > 0 ? [`${task.id} retries: ${task.retryCount}/${task.maxRetries}`] : [],
         traceHighlights: (task.traceEvents ?? []).map((event) => event.type).slice(-5),
       });
 
+      if (reviewStatus === "accepted" && evidenceScore) manager.recordAcceptedDelegationLearning(task, evidenceScore.evidenceStrength);
       afterMutation?.();
-      return filterOutput(`Task ${taskId} completed:\nReview: ${review.status}${review.missing.length ? ` (${review.missing.join(", ")})` : ""}\n\n${summary}\n\n${compressedResult}`);
+      return filterOutput(`Task ${taskId} completed:\nReview: ${reviewStatus}${reviewMissing.length ? ` (${reviewMissing.join(", ")})` : ""}${evidenceScore ? `\nEvidence score: ${evidenceScore.evidenceStrength}` : ""}\n\n${summary}\n\n${compressedResult}`);
     },
   });
 }

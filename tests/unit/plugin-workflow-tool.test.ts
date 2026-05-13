@@ -35,6 +35,7 @@ describe("jce workflow tool", () => {
     expect(result).toContain("src/plugin/index.ts");
     expect(result).toContain("Excluded");
     expect(result).toContain(".opencode-jce/cache.json");
+    expect(result).toContain("Guard Issues");
   });
 
   test("returns summary from supplied status text", async () => {
@@ -47,7 +48,7 @@ describe("jce workflow tool", () => {
 
     expect(result).toContain("Summary");
     expect(result).toContain("Scope: Task 5");
-    expect(result).toContain("Current version: 2.0.24");
+    expect(result).toContain("Current version: 2.0.25");
     expect(result).toContain("Changed Files");
     expect(result).toContain("M src/plugin/tools/workflow.ts");
     expect(result).toContain("Local-Only / Excluded Files");

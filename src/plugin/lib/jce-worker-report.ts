@@ -1,4 +1,5 @@
 import type { ExecutionMemory } from "./execution-memory.js";
+import { formatDecisionRecommendation, recommendNextDecision } from "./decision-intelligence.js";
 import { getActiveBlockers, getAttemptedCommands, getLatestVerificationEvidence, getRetryHistoryFor, getStaleActiveTasks } from "./memory-query.js";
 import type { PolicyProfileSource } from "./policy-profile.js";
 import type { WorkflowEvidence, WorkflowStep } from "./workflow.js";
@@ -51,6 +52,8 @@ function activeStepTitle(memory: ExecutionMemory): string {
 }
 
 export function getJceWorkerNextAction(memory: ExecutionMemory): string {
+  const recommendation = recommendNextDecision(memory);
+  if (recommendation.risk === "high" && recommendation.recommendedAction) return recommendation.recommendedAction;
   const workflow = memory.activeWorkflow;
   if (!workflow) return "Start a workflow or dispatch a task.";
   if (workflow.status === "blocked" || workflow.blocker) return "Resolve blocker before continuing.";
@@ -91,6 +94,7 @@ export function formatJceWorkerStatus(memory: ExecutionMemory, policy?: PolicyPr
   const latestEvidence = summarizeUnknown(getLatestVerificationEvidence(memory));
   const staleCount = getStaleActiveTasks(memory).length;
   const blockers = getActiveBlockers(memory);
+  const recommendation = recommendNextDecision(memory);
 
   return [
     "JCE-Worker Status",
@@ -102,6 +106,9 @@ export function formatJceWorkerStatus(memory: ExecutionMemory, policy?: PolicyPr
     `Blockers: ${blockers.length}`,
     `Stale tasks: ${staleCount}`,
     `Latest verification: ${latestEvidence}`,
+    `Decision risk: ${recommendation.risk}`,
+    `Decision recommendation: ${recommendation.recommendedAction}`,
+    ...(recommendation.recommendedAgent ? [`Recommended agent: ${recommendation.recommendedAgent}`] : []),
     ...policyLine(policy),
     `Next action: ${getJceWorkerNextAction(memory)}`,
   ].join("\n");
@@ -134,6 +141,7 @@ export function formatJceWorkerReport(memory: ExecutionMemory, policy?: PolicyPr
   const retryId = workflow?.id ?? "";
   const retries = retryId ? getRetryHistoryFor(memory, retryId).map(summarizeUnknown) : [];
   const staleTasks = getStaleActiveTasks(memory).map(summarizeUnknown);
+  const decisionLines = formatDecisionRecommendation(recommendNextDecision(memory));
 
   return [
     "JCE-Worker Operator Report",
@@ -144,6 +152,8 @@ export function formatJceWorkerReport(memory: ExecutionMemory, policy?: PolicyPr
     `Next action: ${getJceWorkerNextAction(memory)}`,
     "",
     ...routeReportLines(workflow),
+    "",
+    ...decisionLines,
     "",
     "Active Step",
     `- ${activeStepTitle(memory)}`,

@@ -16,12 +16,25 @@ export interface ExecutionMemory {
   workflowRuns: WorkflowRun[];
   contextBudgetSummary?: ContextBudgetSummary;
   wisdom: WisdomEntry[];
+  taskLearnings: TaskLearning[];
 }
 
 export interface WisdomEntry {
   id: string;
   learning: string;
-  source: "task" | "delegation" | "debug" | "review";
+  source: "task" | "delegation" | "debug" | "review" | "release" | "tooling";
+  createdAt: string;
+  confidence?: "low" | "medium" | "high";
+  tags?: string[];
+}
+
+export interface TaskLearning {
+  id: string;
+  taskType: "audit" | "bugfix" | "feature" | "release" | "review" | "unknown";
+  trigger: string;
+  successfulRecipe: string[];
+  verificationCommands: string[];
+  touchedAreas: string[];
   createdAt: string;
 }
 
@@ -63,7 +76,51 @@ export function createEmptyExecutionMemory(now = new Date().toISOString()): Exec
     traceEvents: [],
     workflowRuns: [],
     wisdom: [],
+    taskLearnings: [],
   };
+}
+
+export function createWisdomEntry(input: {
+  learning: string;
+  source: WisdomEntry["source"];
+  confidence?: WisdomEntry["confidence"];
+  tags?: string[];
+  now?: string;
+}): WisdomEntry {
+  const createdAt = input.now ?? new Date().toISOString();
+  const normalized = input.learning.trim().replace(/\s+/g, " ");
+  return {
+    id: `wisdom-${Date.parse(createdAt) || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    learning: normalized,
+    source: input.source,
+    createdAt,
+    confidence: input.confidence ?? "medium",
+    tags: [...new Set(input.tags ?? [])].slice(0, 8),
+  };
+}
+
+export function addWisdom(memory: ExecutionMemory, entry: WisdomEntry): ExecutionMemory {
+  const normalized = entry.learning.toLowerCase();
+  const wisdom = (memory.wisdom ?? []).filter((item) => item.learning.trim().toLowerCase() !== normalized);
+  return pruneExecutionMemory({ ...memory, wisdom: [...wisdom, entry] });
+}
+
+export function createTaskLearning(input: Omit<TaskLearning, "id" | "createdAt"> & { now?: string }): TaskLearning {
+  const createdAt = input.now ?? new Date().toISOString();
+  return {
+    id: `task-learning-${Date.parse(createdAt) || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    taskType: input.taskType,
+    trigger: input.trigger.trim(),
+    successfulRecipe: input.successfulRecipe.map((item) => item.trim()).filter(Boolean),
+    verificationCommands: input.verificationCommands.map((item) => item.trim()).filter(Boolean),
+    touchedAreas: input.touchedAreas.map((item) => item.trim()).filter(Boolean),
+    createdAt,
+  };
+}
+
+export function addTaskLearning(memory: ExecutionMemory, entry: TaskLearning): ExecutionMemory {
+  const deduped = (memory.taskLearnings ?? []).filter((item) => item.taskType !== entry.taskType || item.trigger.toLowerCase() !== entry.trigger.toLowerCase());
+  return pruneExecutionMemory({ ...memory, taskLearnings: [...deduped, entry] });
 }
 
 function newest<T>(items: T[], max: number): T[] {
@@ -97,6 +154,7 @@ export function pruneExecutionMemory(memory: ExecutionMemory): ExecutionMemory {
     workflowRuns: newest(memory.workflowRuns ?? [], 10),
     contextBudgetSummary: memory.contextBudgetSummary,
     wisdom: newest(memory.wisdom ?? [], 50),
+    taskLearnings: newest(memory.taskLearnings ?? [], 25),
   };
 }
 
@@ -137,7 +195,7 @@ export function loadExecutionMemory(projectRoot: string, now = new Date().toISOS
 
   try {
     const parsed = JSON.parse(readFileSync(path, "utf-8")) as ExecutionMemory;
-    return { path, memory: pruneExecutionMemory({ ...createEmptyExecutionMemory(now), ...parsed, workflowRuns: parsed.workflowRuns ?? [], wisdom: parsed.wisdom ?? [] }), recoveredFromInvalid: false };
+    return { path, memory: pruneExecutionMemory({ ...createEmptyExecutionMemory(now), ...parsed, workflowRuns: parsed.workflowRuns ?? [], wisdom: parsed.wisdom ?? [], taskLearnings: parsed.taskLearnings ?? [] }), recoveredFromInvalid: false };
   } catch {
     const backupPath = `${path}.invalid-${Date.now()}`;
     renameSync(path, backupPath);

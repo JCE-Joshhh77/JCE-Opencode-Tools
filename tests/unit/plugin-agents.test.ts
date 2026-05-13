@@ -95,6 +95,18 @@ describe("plugin agents", () => {
     expect(prompt).toContain("Do not require Superpowers");
   });
 
+  test("jce-worker prompt defines intelligence pack protocols", () => {
+    const agents = buildAgentConfigs();
+    const prompt = agents["jce-worker"].systemPrompt;
+
+    expect(prompt).toContain("Intelligence Pack v1");
+    expect(prompt).toContain("Meta-Cognition Gate");
+    expect(prompt).toContain("Codebase Intelligence");
+    expect(prompt).toContain("Verification Discipline");
+    expect(prompt).toContain("Release Engineering");
+    expect(prompt).toContain("Delegation Quality");
+  });
+
   test("jce-researcher prompt defines deep research modes", () => {
     const agents = buildAgentConfigs();
     const prompt = agents["jce-researcher"].systemPrompt;

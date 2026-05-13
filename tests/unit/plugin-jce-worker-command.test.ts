@@ -14,7 +14,7 @@ function createTempRoot(): string {
 describe("JCE-Worker CLI command", () => {
   test("registers operator subcommands", () => {
     expect(jceWorkerCommand.name()).toBe("jce-worker");
-    expect(jceWorkerCommand.commands.map((command) => command.name()).sort()).toEqual(["clear", "profile", "report", "status", "trace"]);
+    expect(jceWorkerCommand.commands.map((command) => command.name()).sort()).toEqual(["brain", "clear", "commit-check", "doctor", "eval", "learn", "profile", "release-check", "report", "status", "task-learn", "trace"]);
   });
 
   test("shows operator subcommands in command help", () => {
@@ -24,7 +24,14 @@ describe("JCE-Worker CLI command", () => {
     expect(help).toContain("trace");
     expect(help).toContain("report");
     expect(help).toContain("clear");
+    expect(help).toContain("doctor");
+    expect(help).toContain("learn");
+    expect(help).toContain("eval");
     expect(help).toContain("profile");
+    expect(help).toContain("brain");
+    expect(help).toContain("commit-check");
+    expect(help).toContain("release-check");
+    expect(help).toContain("task-learn");
   });
 
   test("can be registered on a root command", () => {
@@ -200,6 +207,121 @@ describe("JCE-Worker CLI command", () => {
 
       expect(output.join("\n")).toContain("Policy profile: fast (command)");
       expect(resolvePolicyProfile(root)).toEqual({ profile: "balanced", source: "default" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("learn command stores durable wisdom", async () => {
+    const root = createTempRoot();
+    const output: string[] = [];
+    try {
+      const command = createJceWorkerCommand({ exitProcess: false, cwd: () => root, success: (text) => output.push(text) });
+
+      await command.parseAsync(["learn", "Version must stay synced before tagging", "--source", "release", "--confidence", "high", "--tag", "release"], { from: "user" });
+
+      const saved = JSON.parse(readFileSync(getExecutionMemoryPath(root), "utf-8"));
+      expect(output).toContain("JCE-Worker learning saved.");
+      expect(saved.wisdom[0]).toMatchObject({ learning: "Version must stay synced before tagging", source: "release", confidence: "high", tags: ["release"] });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("doctor reports runtime health and tool discipline warnings", async () => {
+    const root = createTempRoot();
+    const output: string[] = [];
+    try {
+      const command = createJceWorkerCommand({ exitProcess: false, cwd: () => root, write: (text) => output.push(text) });
+
+      await command.parseAsync(["doctor", "--path", ".opencode-jce/jce-worker-execution.json", ".env"], { from: "user" });
+
+      const text = output.join("\n");
+      expect(text).toContain("JCE-Worker Doctor");
+      expect(text).toContain("WARN: .opencode-jce/jce-worker-execution.json");
+      expect(text).toContain("BLOCK: .env");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("eval command reports lightweight behavior checks", async () => {
+    const root = createTempRoot();
+    const output: string[] = [];
+    try {
+      const command = createJceWorkerCommand({ exitProcess: false, cwd: () => root, write: (text) => output.push(text) });
+
+      await command.parseAsync(["eval"], { from: "user" });
+
+      const text = output.join("\n");
+      expect(text).toContain("JCE-Worker Eval");
+      expect(text).toContain("PASS: runtime memory loads");
+      expect(text).toContain("Score: 3/3");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("eval command can print formal scenario checklist", async () => {
+    const root = createTempRoot();
+    const output: string[] = [];
+    try {
+      const command = createJceWorkerCommand({ exitProcess: false, cwd: () => root, write: (text) => output.push(text) });
+
+      await command.parseAsync(["eval", "--scenarios"], { from: "user" });
+
+      expect(output.join("\n")).toContain("audit-full-plugin");
+      expect(output.join("\n")).toContain("release-flow");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("brain command prints project intelligence", async () => {
+    const root = createTempRoot();
+    const output: string[] = [];
+    try {
+      writeFileSync(join(root, "package.json"), JSON.stringify({ version: "1.2.3", scripts: { test: "bun test" } }), "utf-8");
+      const command = createJceWorkerCommand({ exitProcess: false, cwd: () => root, write: (text) => output.push(text) });
+
+      await command.parseAsync(["brain"], { from: "user" });
+
+      const text = output.join("\n");
+      expect(text).toContain("JCE-Worker Project Brain");
+      expect(text).toContain("Version: 1.2.3");
+      expect(text).toContain("Recommended verification");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("commit-check blocks secrets and warns generated state", async () => {
+    const root = createTempRoot();
+    const output: string[] = [];
+    try {
+      const command = createJceWorkerCommand({ exitProcess: false, cwd: () => root, write: (text) => output.push(text) });
+
+      await command.parseAsync(["commit-check", ".env", ".opencode-jce/jce-worker-execution.json"], { from: "user" });
+
+      const text = output.join("\n");
+      expect(text).toContain("BLOCK: .env");
+      expect(text).toContain("WARN: .opencode-jce/jce-worker-execution.json");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("task-learn stores structured task recipe", async () => {
+    const root = createTempRoot();
+    const output: string[] = [];
+    try {
+      const command = createJceWorkerCommand({ exitProcess: false, cwd: () => root, success: (text) => output.push(text) });
+
+      await command.parseAsync(["task-learn", "release request", "--type", "release", "--recipe", "sync version", "--verify", "bun test", "--area", "installers"], { from: "user" });
+
+      const saved = JSON.parse(readFileSync(getExecutionMemoryPath(root), "utf-8"));
+      expect(output).toContain("JCE-Worker task learning saved.");
+      expect(saved.taskLearnings[0]).toMatchObject({ taskType: "release", trigger: "release request", successfulRecipe: ["sync version"], verificationCommands: ["bun test"], touchedAreas: ["installers"] });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

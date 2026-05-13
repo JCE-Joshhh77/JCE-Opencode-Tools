@@ -1,9 +1,14 @@
 import { existsSync, renameSync } from "fs";
 import { Command } from "commander";
-import { createEmptyExecutionMemory, getExecutionMemoryPath, loadExecutionMemory, saveExecutionMemory } from "../plugin/lib/execution-memory.js";
+import { addWisdom, createEmptyExecutionMemory, createWisdomEntry, getExecutionMemoryPath, loadExecutionMemory, saveExecutionMemory } from "../plugin/lib/execution-memory.js";
+import { addTaskLearning, createTaskLearning } from "../plugin/lib/execution-memory.js";
 import { clearSessionPolicyProfile, isPolicyProfile, resolvePolicyProfile, saveProjectPolicyProfile, saveSessionPolicyProfile } from "../plugin/lib/policy-profile.js";
 import type { PolicyProfile } from "../plugin/lib/verification-gate.js";
 import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace } from "../plugin/lib/jce-worker-report.js";
+import { summarizeToolDiscipline } from "../plugin/lib/tool-discipline.js";
+import { buildProjectBrain } from "../plugin/lib/project-brain.js";
+import { formatEvalScenarios } from "../plugin/lib/phase3-eval.js";
+import { checkSkillSync, formatSkillSync } from "../plugin/lib/skill-sync.js";
 import { error, info, success, warn } from "../lib/ui.js";
 import { EXIT_ERROR, EXIT_SUCCESS } from "../types.js";
 
@@ -43,6 +48,27 @@ export function clearJceWorkerRuntime(projectRoot: string, now = new Date().toIS
 
 function parsePolicyProfile(value: unknown): PolicyProfile | undefined {
   return isPolicyProfile(value) ? value : undefined;
+}
+
+function formatDoctor(memory: ReturnType<typeof loadExecutionMemory>["memory"]): string {
+  const lines = ["JCE-Worker Doctor", "================="];
+  lines.push(`Active tasks: ${memory.activeTasks.length}`);
+  lines.push(`Blockers: ${memory.blockers.length}`);
+  lines.push(`Verification evidence: ${memory.verificationEvidence.length}`);
+  lines.push(`Learnings: ${memory.wisdom.length}`);
+  if (memory.blockers.length > 0 && memory.activeTasks.length === 0) lines.push("Warning: stale blockers exist without active tasks; consider clear --confirm.");
+  if (memory.wisdom.length === 0) lines.push("Suggestion: add durable learnings with jce-worker learn.");
+  return lines.join("\n");
+}
+
+function formatEval(memory: ReturnType<typeof loadExecutionMemory>["memory"]): string {
+  const checks = [
+    { name: "runtime memory loads", passed: memory.version === 1 },
+    { name: "wisdom store available", passed: Array.isArray(memory.wisdom) },
+    { name: "no stale blocker-only state", passed: !(memory.blockers.length > 0 && memory.activeTasks.length === 0) },
+  ];
+  const passed = checks.filter((check) => check.passed).length;
+  return ["JCE-Worker Eval", "===============", ...checks.map((check) => `${check.passed ? "PASS" : "FAIL"}: ${check.name}`), `Score: ${passed}/${checks.length}`].join("\n");
 }
 
 export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = {}): Command {
@@ -144,13 +170,102 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
       }
     });
 
+  const doctorCommand = new Command("doctor")
+    .description("Diagnose JCE-Worker runtime health and tool discipline")
+    .option("--path <path...>", "Check paths for commit/tool-discipline issues")
+    .option("--skills", "Check repo skills against user config skills")
+    .action((opts: { path?: string[]; skills?: boolean }) => {
+      const loaded = loadExecutionMemory(cwd());
+      const issues = summarizeToolDiscipline(opts.path ?? []);
+      const skillOutput = opts.skills ? `\n\n${formatSkillSync(checkSkillSync(cwd()))}` : "";
+      write([formatDoctor(loaded.memory), issues.length ? "\nTool discipline issues:" : "\nTool discipline issues: none", ...issues.map((issue) => `- ${issue.severity.toUpperCase()}: ${issue.path}: ${issue.reason}`)].join("\n") + skillOutput);
+      exitIfEnabled(options, issues.some((issue) => issue.severity === "block") ? EXIT_ERROR : EXIT_SUCCESS);
+    });
+
+  const learnCommand = new Command("learn")
+    .description("Add a durable JCE-Worker learning to runtime memory")
+    .argument("<learning>", "One-line learning or fix recipe")
+    .option("--source <source>", "Source: task, delegation, debug, review, release, tooling", "task")
+    .option("--confidence <confidence>", "Confidence: low, medium, high", "medium")
+    .option("--tag <tag...>", "Learning tag")
+    .action((learning: string, opts: { source?: string; confidence?: string; tag?: string[] }) => {
+      const source = ["task", "delegation", "debug", "review", "release", "tooling"].includes(opts.source ?? "") ? opts.source as Parameters<typeof createWisdomEntry>[0]["source"] : "task";
+      const confidence = ["low", "medium", "high"].includes(opts.confidence ?? "") ? opts.confidence as Parameters<typeof createWisdomEntry>[0]["confidence"] : "medium";
+      const loaded = loadExecutionMemory(cwd());
+      const next = addWisdom(loaded.memory, createWisdomEntry({ learning, source, confidence, tags: opts.tag ?? [] }));
+      saveExecutionMemory(cwd(), next);
+      successOutput("JCE-Worker learning saved.");
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const evalCommand = new Command("eval")
+    .description("Run lightweight JCE-Worker behavioral health checks")
+    .option("--scenarios", "Run formal scenario checklist evals")
+    .action((opts: { scenarios?: boolean }) => {
+      if (opts.scenarios) {
+        write(formatEvalScenarios());
+        exitIfEnabled(options, EXIT_SUCCESS);
+        return;
+      }
+      const loaded = loadExecutionMemory(cwd());
+      const output = formatEval(loaded.memory);
+      write(output);
+      exitIfEnabled(options, output.includes("FAIL") ? EXIT_ERROR : EXIT_SUCCESS);
+    });
+
+  const brainCommand = new Command("brain")
+    .description("Show project intelligence summary for JCE-Worker")
+    .action(() => {
+      write(buildProjectBrain(cwd(), loadExecutionMemory(cwd()).memory));
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const commitCheckCommand = new Command("commit-check")
+    .description("Check paths for safe commit discipline")
+    .argument("[paths...]", "Paths intended for staging/commit")
+    .action((paths: string[]) => {
+      const issues = summarizeToolDiscipline(paths);
+      write(["JCE-Worker Commit Check", ...issues.map((issue) => `${issue.severity.toUpperCase()}: ${issue.path}: ${issue.reason}`), issues.length ? "" : "No path issues detected."].join("\n"));
+      exitIfEnabled(options, issues.some((issue) => issue.severity === "block") ? EXIT_ERROR : EXIT_SUCCESS);
+    });
+
+  const releaseCheckCommand = new Command("release-check")
+    .description("Print release guard checklist")
+    .action(() => {
+      write(["JCE-Worker Release Check", "- version sync files reviewed", "- typecheck/test/audit evidence required", "- commit before push", "- tag after push", "- generated/context files excluded"].join("\n"));
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const taskLearnCommand = new Command("task-learn")
+    .description("Store a structured task recipe")
+    .argument("<trigger>", "Trigger phrase")
+    .option("--type <type>", "audit, bugfix, feature, release, review, unknown", "unknown")
+    .option("--recipe <step...>", "Successful recipe step")
+    .option("--verify <command...>", "Verification command")
+    .option("--area <area...>", "Touched area")
+    .action((trigger: string, opts: { type?: string; recipe?: string[]; verify?: string[]; area?: string[] }) => {
+      const taskType = ["audit", "bugfix", "feature", "release", "review", "unknown"].includes(opts.type ?? "") ? opts.type as Parameters<typeof createTaskLearning>[0]["taskType"] : "unknown";
+      const loaded = loadExecutionMemory(cwd());
+      const next = addTaskLearning(loaded.memory, createTaskLearning({ taskType, trigger, successfulRecipe: opts.recipe ?? [], verificationCommands: opts.verify ?? [], touchedAreas: opts.area ?? [] }));
+      saveExecutionMemory(cwd(), next);
+      successOutput("JCE-Worker task learning saved.");
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
   return new Command("jce-worker")
     .description("Inspect and manage JCE-Worker workflow runtime")
     .addCommand(statusCommand)
     .addCommand(traceCommand)
     .addCommand(reportCommand)
     .addCommand(profileCommand)
-    .addCommand(clearCommand);
+    .addCommand(clearCommand)
+    .addCommand(doctorCommand)
+    .addCommand(learnCommand)
+    .addCommand(evalCommand)
+    .addCommand(brainCommand)
+    .addCommand(commitCheckCommand)
+    .addCommand(releaseCheckCommand)
+    .addCommand(taskLearnCommand);
 }
 
 export const jceWorkerCommand = createJceWorkerCommand();

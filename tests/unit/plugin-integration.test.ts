@@ -110,7 +110,7 @@ describe("plugin integration", () => {
 
     expect(persisted.activeWorkflow?.route).toMatchObject({
       intent: "parallel_work",
-      skills: ["dispatching-parallel-agents"],
+      skills: ["delegation-quality", "dispatching-parallel-agents"],
       agentHint: "explorer",
       source: "task",
     });
@@ -138,7 +138,7 @@ describe("plugin integration", () => {
 
     expect(persisted.activeWorkflow?.route).toMatchObject({
       intent: "parallel_work",
-      skills: ["dispatching-parallel-agents"],
+      skills: ["delegation-quality", "dispatching-parallel-agents"],
       agentHint: "explorer",
       source: "task",
     });
@@ -408,7 +408,7 @@ describe("plugin integration", () => {
 
     expect(persisted.activeWorkflow?.route).toMatchObject({
       intent: "completion_claim",
-      skills: ["verification-before-completion"],
+      skills: ["verification-discipline", "verification-before-completion"],
       source: "completion",
     });
     expect(output.output).toContain("FINAL REVIEW GATE");
@@ -513,7 +513,7 @@ describe("plugin integration", () => {
       ...createWorkflowRun({ id: "wf-policy", goal: "Complete reviewed work", acceptanceCriteria: ["review accepted"] }),
       route: {
         intent: "review",
-        skills: ["requesting-code-review"],
+        skills: ["codebase-intelligence", "verification-discipline", "requesting-code-review"],
         reason: "Review route requires accepted review evidence before completion.",
         source: "message",
       },

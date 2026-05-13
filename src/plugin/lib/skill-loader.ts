@@ -23,6 +23,11 @@ const SKILL_NAME_TO_FILE: Record<string, string> = {
   "context-preservation": "context-preservation.md",
   "testing-strategies": "testing-strategies.md",
   "api-design-patterns": "api-design-patterns.md",
+  "jce-worker-operating-system": "jce-worker-operating-system.md",
+  "codebase-intelligence": "codebase-intelligence.md",
+  "release-engineering": "release-engineering.md",
+  "verification-discipline": "verification-discipline.md",
+  "delegation-quality": "delegation-quality.md",
 
   // Distributed & Platform
   "distributed-systems": "distributed-systems.md",

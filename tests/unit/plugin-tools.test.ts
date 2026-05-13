@@ -366,4 +366,30 @@ describe("plugin tools", () => {
     expect(memory.contextBudgetSummary!.estimatedTokensSaved).toBeGreaterThan(0);
     expect(memory.contextBudgetSummary!.tasks).toBe(1);
   });
+
+  test("collect tool records learning for accepted delegated evidence", async () => {
+    const manager = new BackgroundManager({ maxConcurrency: 3, now: () => "2026-05-06T00:00:00.000Z" });
+    const task = manager.createTask({ description: "Review release", prompt: "review", agent: "explorer", parentSessionId: "s", parentMessageId: "m" });
+    manager.completeTask(task.id, "## Summary\nLooks good.\n\n## Files\n- package.json\n\n## Verification\n- bun test passed\n\n## Risks\n- none");
+
+    const tool = buildCollectTool(manager);
+    const result = await tool.execute({ taskId: task.id } as any, {} as any);
+    const memory = manager.toExecutionMemory();
+
+    expect(String(result)).toContain("Evidence score: strong");
+    expect(memory.wisdom[0].learning).toContain("Accepted explorer delegation");
+    expect(memory.taskLearnings[0].trigger).toBe("Review release");
+  });
+
+  test("collect tool requests follow-up when delegated verification says not run", async () => {
+    const manager = new BackgroundManager({ maxConcurrency: 3 });
+    const task = manager.createTask({ description: "Review weak evidence", prompt: "review", agent: "explorer", parentSessionId: "s", parentMessageId: "m" });
+    manager.completeTask(task.id, "## Summary\nDone.\n\n## Files\n- none\n\n## Verification\n- not run\n\n## Risks\n- none");
+
+    const tool = buildCollectTool(manager);
+    const result = await tool.execute({ taskId: task.id } as any, {} as any);
+
+    expect(String(result)).toContain("Recovery:");
+    expect(String(result)).toContain("strong Verification evidence");
+  });
 });

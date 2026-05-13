@@ -1,4 +1,4 @@
-import type { ExecutionMemory } from "../lib/execution-memory.js";
+import { createTaskLearning, createWisdomEntry, type ExecutionMemory, type TaskLearning, type WisdomEntry } from "../lib/execution-memory.js";
 import type { JceWorkerErrorCategory } from "../lib/error-taxonomy.js";
 import type { HandoffReportInput } from "../lib/handoff.js";
 import { appendTraceEvent, createTraceEvent } from "../lib/trace.js";
@@ -21,6 +21,8 @@ export class BackgroundManager {
   private staleAfterMs: number;
   private now: () => string;
   private traceEvents: TraceEvent[] = [];
+  private wisdom: WisdomEntry[] = [];
+  private taskLearnings: TaskLearning[] = [];
   private launchPending?: (taskId: string) => void;
 
   constructor(options: BackgroundManagerOptions) {
@@ -95,6 +97,24 @@ export class BackgroundManager {
 
   getTraceEvents(): TraceEvent[] {
     return [...this.traceEvents];
+  }
+
+  recordAcceptedDelegationLearning(task: BackgroundTask, evidenceStrength: string): void {
+    this.wisdom.push(createWisdomEntry({
+      learning: `Accepted ${task.agent} delegation for ${task.description} with ${evidenceStrength} evidence.`,
+      source: "delegation",
+      confidence: evidenceStrength === "strong" ? "high" : "medium",
+      tags: ["delegation", task.agent],
+      now: this.now(),
+    }));
+    this.taskLearnings.push(createTaskLearning({
+      taskType: task.agent === "jce-researcher" ? "review" : "unknown",
+      trigger: task.description,
+      successfulRecipe: ["delegate atomic work", "collect result", "review evidence contract"],
+      verificationCommands: task.verificationSummary ? [task.verificationSummary] : [],
+      touchedAreas: [task.agent],
+      now: this.now(),
+    }));
   }
 
   cancelTask(id: string): boolean {
@@ -348,7 +368,8 @@ export class BackgroundManager {
       })),
       traceEvents: this.getTraceEvents(),
       workflowRuns: [],
-      wisdom: [],
+      wisdom: [...this.wisdom],
+      taskLearnings: [...this.taskLearnings],
       contextBudgetSummary: budgets.length > 0 ? {
         originalChars,
         compressedChars,

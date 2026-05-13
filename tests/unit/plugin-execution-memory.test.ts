@@ -4,6 +4,10 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   createEmptyExecutionMemory,
+  createWisdomEntry,
+  addWisdom,
+  createTaskLearning,
+  addTaskLearning,
   getExecutionMemoryPath,
   loadExecutionMemory,
   mergeExecutionMemorySnapshot,
@@ -238,5 +242,27 @@ describe("execution memory", () => {
 
     expect(merged.activeWorkflow).toBeUndefined();
     expect(merged.workflowRuns).toEqual([]);
+  });
+
+  test("adds structured wisdom entries and deduplicates by learning text", () => {
+    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const first = createWisdomEntry({ learning: " Run focused tests before full suite ", source: "debug", confidence: "high", tags: ["tests", "tests"], now: "2026-05-06T00:00:00.000Z" });
+    const second = createWisdomEntry({ learning: "Run focused tests before full suite", source: "debug", confidence: "medium", tags: ["debug"], now: "2026-05-06T00:01:00.000Z" });
+
+    const updated = addWisdom(addWisdom(memory, first), second);
+
+    expect(updated.wisdom).toHaveLength(1);
+    expect(updated.wisdom[0]).toMatchObject({ learning: "Run focused tests before full suite", confidence: "medium", tags: ["debug"] });
+  });
+
+  test("adds structured task learnings and deduplicates by task type and trigger", () => {
+    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const first = createTaskLearning({ taskType: "release", trigger: "release", successfulRecipe: ["old"], verificationCommands: ["bun test"], touchedAreas: ["package"], now: "2026-05-06T00:00:00.000Z" });
+    const second = createTaskLearning({ taskType: "release", trigger: "release", successfulRecipe: ["new"], verificationCommands: ["bun audit"], touchedAreas: ["lockfile"], now: "2026-05-06T00:01:00.000Z" });
+
+    const updated = addTaskLearning(addTaskLearning(memory, first), second);
+
+    expect(updated.taskLearnings).toHaveLength(1);
+    expect(updated.taskLearnings[0]).toMatchObject({ successfulRecipe: ["new"], verificationCommands: ["bun audit"], touchedAreas: ["lockfile"] });
   });
 });
