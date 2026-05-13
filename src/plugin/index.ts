@@ -25,6 +25,7 @@ import { scoreIntent, toLegacyRoute } from "./lib/orchestration/intent-router.js
 import type { ScoredIntent } from "./lib/orchestration/types.js";
 import type { AgentRole } from "./lib/orchestration/types.js";
 import { OrchestrationController } from "./lib/orchestration/controller.js";
+import { OrchestrationBridge } from "./lib/orchestration/bridge.js";
 
 function delegatedReviewStrings(memory: ExecutionMemory): string[] {
   return [...memory.completedSummaries, ...memory.verificationEvidence]
@@ -82,6 +83,37 @@ function shouldApplyDirectContextBudget(tool: string): boolean {
   return ["Read", "Grep", "Glob", "LS", "Bash"].includes(tool);
 }
 
+/**
+ * Extract facts from tool outputs into orchestration shared memory.
+ * Lightweight heuristic extraction — not exhaustive, just high-value signals.
+ */
+function extractFactsFromToolOutput(orchestrator: OrchestrationController, tool: string, output: string): void {
+  // Only extract from informational tools
+  if (!["Bash", "Read", "Grep", "Task", "bg_collect"].includes(tool)) return;
+  if (output.length < 20 || output.length > 10000) return;
+
+  // Detect test framework from output
+  if (/\bbun test\b/i.test(output)) orchestrator.addFact("test.runner", "bun test", "tool", 0.9);
+  else if (/\bjest\b/i.test(output) && /\bpass/i.test(output)) orchestrator.addFact("test.runner", "jest", "tool", 0.8);
+  else if (/\bpytest\b/i.test(output)) orchestrator.addFact("test.runner", "pytest", "tool", 0.8);
+  else if (/\bcargo test\b/i.test(output)) orchestrator.addFact("test.runner", "cargo test", "tool", 0.8);
+
+  // Detect build tool
+  if (/\btsc\b.*\b(error|no\s*emit)\b/i.test(output)) orchestrator.addFact("build.typecheck", "tsc", "tool", 0.9);
+  if (/\bvite\b/i.test(output)) orchestrator.addFact("build.bundler", "vite", "tool", 0.7);
+  if (/\bwebpack\b/i.test(output)) orchestrator.addFact("build.bundler", "webpack", "tool", 0.7);
+
+  // Detect package manager
+  if (/\bbun\s+(install|add|remove)\b/i.test(output)) orchestrator.addFact("package.manager", "bun", "tool", 0.9);
+  else if (/\bnpm\s+(install|ci)\b/i.test(output)) orchestrator.addFact("package.manager", "npm", "tool", 0.8);
+  else if (/\bpnpm\s+(install|add)\b/i.test(output)) orchestrator.addFact("package.manager", "pnpm", "tool", 0.8);
+
+  // Detect errors/failures (useful for re-planning)
+  if (/error TS\d+/i.test(output)) orchestrator.addFact("last.error.type", "typescript", "tool", 0.9);
+  else if (/\bSyntaxError\b/i.test(output)) orchestrator.addFact("last.error.type", "syntax", "tool", 0.9);
+  else if (/\bReferenceError\b/i.test(output)) orchestrator.addFact("last.error.type", "reference", "tool", 0.9);
+}
+
 const jcePlugin: Plugin = async (input) => {
   const { client } = input;
   const chineseTranslator = buildChineseTranslator(client);
@@ -95,6 +127,13 @@ const jcePlugin: Plugin = async (input) => {
 
   // Initialize orchestration controller (v2 system — runs alongside BackgroundManager)
   const orchestrator = new OrchestrationController({ projectRoot });
+  const bridge = new OrchestrationBridge({
+    manager,
+    client,
+    orchestrator,
+    chineseTranslator,
+    onPersist: () => persistCurrentMemory(),
+  });
 
   if (currentMemory.activeTasks.length === 0 && currentMemory.blockers.length > 0) {
     currentMemory = saveExecutionMemory(projectRoot, {
@@ -235,7 +274,19 @@ const jcePlugin: Plugin = async (input) => {
         if (policy.status === "warn") return { status: "warn", message: formatExecutionPolicyDecision(policy) };
       }),
       bg_status: buildStatusTool(manager),
-      bg_collect: buildCollectTool(manager, client, persistCurrentMemory, chineseTranslator),
+      bg_collect: buildCollectTool(manager, client, () => {
+        persistCurrentMemory();
+        // After collecting, check if orchestration loop should continue
+        if (bridge.hasActivePlan()) {
+          const tasks = manager.listTasks();
+          const lastCompleted = tasks.filter((t) => t.status === "completed").pop();
+          if (lastCompleted?.result) {
+            const context = { sessionID: "", messageID: "" };
+            // Feed result through orchestration bridge (async, fire-and-forget for loop continuation)
+            bridge.collectAndContinue(lastCompleted.id, lastCompleted.result, lastCompleted.parentSessionId ?? "", lastCompleted.parentMessageId ?? "").catch(() => {});
+          }
+        }
+      }, chineseTranslator),
       jce_workflow: buildWorkflowTool(),
     },
 
@@ -247,6 +298,11 @@ const jcePlugin: Plugin = async (input) => {
         lastUserMessage = text;
         // Route intent through orchestration controller (v2)
         orchestrator.routeIntent(text);
+        // Extract user constraints (simple heuristic: "don't", "must not", "never")
+        const constraintMatch = text.match(/\b(don'?t|must not|never|do not|cannot)\s+(.{5,80})/i);
+        if (constraintMatch) {
+          orchestrator.addConstraint(constraintMatch[0].trim(), "user");
+        }
       }
     },
 
@@ -263,6 +319,11 @@ const jcePlugin: Plugin = async (input) => {
     "tool.execute.after": async (input, output) => {
       const hadActiveWorkflow = Boolean(currentMemory.activeWorkflow);
       const hadWorkflowRuntimeActive = workflowRuntimeActive;
+
+      // Extract facts from tool outputs into orchestration memory
+      if (typeof output.output === "string" && output.output.length > 0) {
+        extractFactsFromToolOutput(orchestrator, input.tool, output.output);
+      }
 
       if (input.tool === "Write" || input.tool === "Edit") {
         const filePath = input.args?.filePath || input.args?.path || "";

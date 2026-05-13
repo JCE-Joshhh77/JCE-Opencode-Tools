@@ -153,3 +153,7 @@ export type { LoadMemoryResult } from "./execution-memory-v2.js";
 // Orchestration Controller
 export { OrchestrationController } from "./controller.js";
 export type { OrchestrationControllerConfig, DispatchResult, CollectResult, OrchestrationStatus } from "./controller.js";
+
+// Orchestration Bridge
+export { OrchestrationBridge } from "./bridge.js";
+export type { OrchestrationBridgeConfig, DispatchLoopResult, CollectLoopResult } from "./bridge.js";
