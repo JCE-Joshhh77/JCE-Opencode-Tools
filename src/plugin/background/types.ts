@@ -128,8 +128,13 @@ export const CATEGORY_MODEL_MAP: Record<TaskCategory, ModelHint | undefined> = {
  */
 export function resolveModelForCategory(agent: string, category?: TaskCategory): ModelHint | undefined {
   if (!category || category === "default") return undefined;
-  // Explorer and researcher are intentionally cheap/fast — no model override
-  if (agent === "explorer" || agent === "jce-researcher") return undefined;
+  // Explorer is intentionally cheap/fast — no model override
+  if (agent === "explorer") return undefined;
+  // Researcher gets model upgrade for deep/architecture categories (complex multi-source analysis)
+  if (agent === "jce-researcher") {
+    if (category === "deep" || category === "architecture") return CATEGORY_MODEL_MAP[category];
+    return undefined;
+  }
   return CATEGORY_MODEL_MAP[category];
 }
 

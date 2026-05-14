@@ -285,9 +285,9 @@ export function buildCollectTool(
       }
 
       const review = task.result
-        ? classifyDelegatedReview(task.result)
+        ? classifyDelegatedReview(task.result, { agent: task.agent })
         : { status: "needs_followup" as const, missing: ["Summary", "Files", "Verification", "Risks"], notes: ["Missing delegated result"], retryable: false };
-      const evidenceScore = task.result ? scoreDelegatedEvidence(task.result) : undefined;
+      const evidenceScore = task.result ? scoreDelegatedEvidence(task.result, { agent: task.agent }) : undefined;
       const evidenceNotes = evidenceScore ? [`evidence: ${evidenceScore.evidenceStrength}`] : [];
       const reviewStatus = evidenceScore?.needsFollowUp && review.status === "accepted" ? "needs_followup" as const : review.status;
       const reviewMissing = evidenceScore?.needsFollowUp && review.missing.length === 0 ? ["strong Verification evidence"] : review.missing;

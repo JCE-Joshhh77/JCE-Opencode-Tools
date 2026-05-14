@@ -10,11 +10,41 @@ export interface DelegatedReviewVerdict {
   retryable: boolean;
 }
 
+export interface DelegatedReviewOptions {
+  agent?: string;
+}
+
 const BLOCKED_PATTERNS = [/\bblocked\b/i, /missing credentials/i, /approval required/i, /access denied/i, /merge conflict/i, /user action/i];
 const RETRYABLE_PATTERNS = [/timeout/i, /rate limit/i, /network/i, /temporar/i, /retry may succeed/i, /service unavailable/i];
 
-export function classifyDelegatedReview(text: string): DelegatedReviewVerdict {
-  const contract = validateDelegatedResult(text);
+/** Research-specific sections that satisfy the contract for jce-researcher */
+const RESEARCH_EQUIVALENT_SECTIONS: Record<string, string[]> = {
+  Summary: ["Short Answer", "Research Scope"],
+  Files: [], // Not required for research
+  Verification: ["Evidence", "Findings"],
+  Risks: ["Risks & Unknowns", "Risks"],
+};
+
+function validateResearchResult(text: string): { valid: boolean; missing: string[] } {
+  const missing: string[] = [];
+  // Research needs: Short Answer OR Research Scope, Evidence OR Findings, Risks & Unknowns
+  const hasShortAnswer = /## (Short Answer|Research Scope)/i.test(text);
+  const hasEvidence = /## (Evidence|Findings)/i.test(text);
+  const hasRisks = /## (Risks|Risks & Unknowns)/i.test(text);
+
+  if (!hasShortAnswer) missing.push("Summary (Short Answer or Research Scope)");
+  if (!hasEvidence) missing.push("Evidence (Evidence or Findings)");
+  if (!hasRisks) missing.push("Risks (Risks & Unknowns)");
+
+  return { valid: missing.length === 0, missing };
+}
+
+export function classifyDelegatedReview(text: string, options: DelegatedReviewOptions = {}): DelegatedReviewVerdict {
+  // Use research-specific validation for jce-researcher
+  const contract = options.agent === "jce-researcher"
+    ? validateResearchResult(text)
+    : validateDelegatedResult(text);
+
   const blocked = BLOCKED_PATTERNS.some((pattern) => pattern.test(text));
   const retryable = RETRYABLE_PATTERNS.some((pattern) => pattern.test(text));
 

@@ -108,7 +108,7 @@ export class BackgroundManager {
       now: this.now(),
     }));
     this.taskLearnings.push(createTaskLearning({
-      taskType: task.agent === "jce-researcher" ? "review" : "unknown",
+      taskType: task.agent === "jce-researcher" ? "research" : "unknown",
       trigger: task.description,
       successfulRecipe: ["delegate atomic work", "collect result", "review evidence contract"],
       verificationCommands: task.verificationSummary ? [task.verificationSummary] : [],

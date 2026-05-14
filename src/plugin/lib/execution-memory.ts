@@ -30,7 +30,7 @@ export interface WisdomEntry {
 
 export interface TaskLearning {
   id: string;
-  taskType: "audit" | "bugfix" | "feature" | "release" | "review" | "unknown";
+  taskType: "audit" | "bugfix" | "feature" | "release" | "review" | "research" | "unknown";
   trigger: string;
   successfulRecipe: string[];
   verificationCommands: string[];

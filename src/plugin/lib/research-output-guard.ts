@@ -8,7 +8,7 @@ export const RESEARCH_QUALITY_WARNING_PREFIX = "RESEARCH QUALITY WARNING: missin
 
 const REQUIRED_SECTIONS = ["Research Scope", "Short Answer", "Evidence", "Risks & Unknowns", "Implementation Readiness", "Recommended Next Step"] as const;
 const REQUIRED_EVIDENCE_COLUMNS = ["Claim", "Source", "Strength", "Confidence"] as const;
-const READINESS_LABELS = ["Ready", "Needs Validation", "Not Ready"] as const;
+const READINESS_LABELS = ["Ready to implement", "Needs verification", "Needs more research", "Ready", "Needs Validation", "Not Ready"] as const;
 
 function hasSection(text: string, section: string): boolean {
   const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

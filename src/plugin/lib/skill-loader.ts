@@ -240,10 +240,13 @@ export function determineSkillsForMessage(text: string): string[] {
 // ─── Sub-Agent Skill Injection ───────────────────────────────
 
 /** Agents eligible for skill injection when dispatched as sub-agents. */
-const SKILL_ELIGIBLE_AGENTS = new Set(["oracle", "frontend"]);
+const SKILL_ELIGIBLE_AGENTS = new Set(["oracle", "frontend", "jce-researcher"]);
 
 /** Max skills to inject into sub-agent prompts (lower than main chat to preserve token budget). */
 const MAX_SUBAGENT_SKILLS = 2;
+
+/** Max skills for researcher (lower to keep focus on research quality). */
+const MAX_RESEARCHER_SKILLS = 1;
 
 /**
  * Determine and resolve skills for a sub-agent delegation prompt.
@@ -260,11 +263,12 @@ export async function resolveSubAgentSkills(agent: string, delegationPrompt: str
 
   if (combined.length === 0) return "";
 
+  const maxSkills = agent === "jce-researcher" ? MAX_RESEARCHER_SKILLS : MAX_SUBAGENT_SKILLS;
   const loadedFiles = new Set<string>();
   const results: string[] = [];
 
   for (const name of combined) {
-    if (results.length >= MAX_SUBAGENT_SKILLS) break;
+    if (results.length >= maxSkills) break;
 
     const fileName = SKILL_NAME_TO_FILE[name];
     if (!fileName || loadedFiles.has(fileName)) continue;
