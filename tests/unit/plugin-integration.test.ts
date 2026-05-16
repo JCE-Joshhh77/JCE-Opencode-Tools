@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createEmptyExecutionMemory, loadExecutionMemory, saveExecutionMemory } from "../../src/plugin/lib/execution-memory.ts";
 import { saveSessionPolicyProfile } from "../../src/plugin/lib/policy-profile.ts";
 import { addWorkflowStep, attachStepEvidence, createWorkflowRun, updateWorkflowStepStatus } from "../../src/plugin/lib/workflow.ts";
+import { getMemoryPath } from "../../src/plugin/lib/orchestration/execution-memory-v2.ts";
 
 const roots: string[] = [];
 
@@ -66,6 +67,20 @@ describe("plugin integration", () => {
     expect(persisted.contextBudgetSummary?.byTool?.Read?.tasks).toBe(1);
     expect(persisted.contextBudgetSummary?.byTool?.Read?.estimatedTokensSaved).toBeGreaterThan(0);
     expect(persisted.traceEvents.some((event) => event.message === "Context budget applied to Read output")).toBe(true);
+  });
+
+  test("plugin runtime persistence writes orchestration memory v2", async () => {
+    const root = tempRoot();
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
+
+    await hooks["chat.message"]!({} as any, {
+      message: "Fix broken tests, update config, verify the workflow, and audit every related file across the project.",
+      parts: [{ type: "text", text: "Fix broken tests, update config, verify the workflow, and audit every related file across the project." }],
+    } as any);
+    await hooks.event!({ event: { type: "session.idle" } } as any);
+
+    expect(existsSync(getMemoryPath(root))).toBe(true);
   });
 
   test("plugin bg_collect launches recovery retry through registered client", async () => {

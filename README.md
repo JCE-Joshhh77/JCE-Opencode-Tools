@@ -6,10 +6,10 @@
 
 [![CI](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions/workflows/ci.yml/badge.svg)](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-2.0.16-green)]()
+[![Version](https://img.shields.io/badge/Version-3.0.0-green)]()
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen)]()
 
-**Install once. Get structured agents, workflows, MCP tools, LSP config, and safer updates.**
+**Install once. Get structured agents, workflows, orchestration, MCP tools, LSP config, and safer updates.**
 
 [Install](#install) · [Agents](#agents) · [Commands](#commands) · [Donate](#donate--buy-me-a-coffee)
 
@@ -19,9 +19,42 @@
 
 ## What Is This?
 
-OpenCode JCE is a plugin and installer for OpenCode CLI. It adds a focused set of agent workflows, config helpers, MCP integrations, LSP setup, and maintenance commands so OpenCode works more like a complete coding environment.
+OpenCode JCE is a plugin and installer for OpenCode CLI. It adds a focused set of agent workflows, orchestration helpers, config tools, MCP integrations, LSP setup, and maintenance commands so OpenCode works more like a complete coding environment.
 
 It is designed for daily engineering work: building features, fixing bugs, reviewing code, researching libraries, improving UI, and keeping project context across sessions.
+
+## How JCE-Worker Works
+
+`jce-worker` is the main execution coordinator. It is designed to behave more like a disciplined engineering lead than a single general chatbot.
+
+Simple workflow:
+
+```text
+User request
+  -> Understand intent
+  -> Plan the work
+  -> Execute directly or delegate to specialist agents
+  -> Review the result
+  -> Verify with evidence
+  -> Report completion or blockers
+```
+
+That means JCE-Worker does not stop at "I changed the code". It is expected to carry work through planning, execution, review, and verification before claiming completion.
+
+Typical specialist routing:
+
+- `explorer` -> fast codebase mapping and file discovery
+- `jce-researcher` -> docs, library behavior, GitHub and web research
+- `oracle` -> hard debugging, architecture, and trade-off analysis
+- `frontend` -> UI, styling, accessibility, and responsive work
+
+Core rule:
+
+```text
+Plan -> Execute -> Review -> Verify -> Report
+```
+
+If evidence is missing, JCE-Worker should report that explicitly instead of claiming the task is done.
 
 ## Install
 
@@ -47,11 +80,13 @@ opencode-jce doctor
 ## What Gets Installed
 
 - JCE OpenCode plugin agents
+- JCE-Worker orchestration workflow with planning, delegation, review, and verification gates
 - 42 AI agent definitions for global routing and task specialization
 - 50 skill/workflow files
 - 19 model profiles
 - 6 MCP tools
 - 28 LSP server configs
+- Token Savings TUI sidebar plugin for OpenCode
 - Safe config merge and repair helpers
 - `opencode-jce` maintenance CLI
 
@@ -82,6 +117,16 @@ User request -> JCE-Worker -> Explorer / Researcher / Oracle / Frontend -> Revie
 
 This keeps complex work organized without forcing every task into the same mode.
 
+### JCE-Worker States
+
+The workflow normally moves through these states:
+
+```text
+intake -> planning -> executing -> delegating -> verifying -> completed
+```
+
+If something cannot be completed safely, it moves to `blocked` instead of pretending the task is done.
+
 ## Core Features
 
 ### Safer Updates
@@ -99,6 +144,10 @@ The installer and update command preserve user keys, providers, plugins, MCP ent
 ### Context Keeper
 
 The bundled context keeper keeps a small project memory file so long-running work can continue across sessions without losing decisions, stack details, or current status.
+
+### Token Savings Sidebar
+
+OpenCode JCE also registers a TUI-only sidebar widget that displays estimated token savings from context-budget compression and delegated work. The widget is installed through `tui.json` and is separate from the main server plugin.
 
 ### LSP Setup
 

@@ -345,7 +345,7 @@ export function buildCollectTool(
         status: "completed",
         files: [],
         verification: task.verificationSummary ? [task.verificationSummary] : [],
-          risks: reviewStatus === "accepted" ? ["none"] : reviewNotes,
+        risks: reviewStatus === "accepted" ? ["none"] : reviewNotes,
         blockers: [],
         retries: task.retryCount > 0 ? [`${task.id} retries: ${task.retryCount}/${task.maxRetries}`] : [],
         traceHighlights: (task.traceEvents ?? []).map((event) => event.type).slice(-5),

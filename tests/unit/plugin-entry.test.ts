@@ -23,11 +23,18 @@ describe("plugin entry point", () => {
 
   test("provides a TUI-only Token Savings module", () => {
     const source = readFileSync(join(process.cwd(), "src", "plugin", "tui.tsx"), "utf8");
-    expect(source).toContain("/** @jsxImportSource @opentui/solid */");
+    expect(source).toContain('import { createElement, insert, setProp } from "@opentui/solid"');
+    expect(source).not.toContain("@jsxImportSource");
     expect(source).toContain('id: "opencode-jce-token-savings"');
     expect(source).toContain("tui,");
     expect(readFileSync(join(process.cwd(), "src", "plugin", "lib", "token-savings-sidebar.ts"), "utf8")).toContain("top:");
     expect(source).not.toContain("server:");
+  });
+
+  test("TUI-only Token Savings module imports without external preload", async () => {
+    const mod = await import("../../src/plugin/tui.tsx");
+    expect(mod.default.id).toBe("opencode-jce-token-savings");
+    expect(typeof mod.default.tui).toBe("function");
   });
 
   test("Token Savings line shows diagnostics before budget events", async () => {

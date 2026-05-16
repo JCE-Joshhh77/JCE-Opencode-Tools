@@ -165,6 +165,7 @@ const jcePlugin: Plugin = async (input) => {
 
   const persistCurrentMemory = () => {
     currentMemory = saveExecutionMemory(projectRoot, mergeExecutionMemorySnapshot(currentMemory, manager.toExecutionMemory(), { preserveWorkflowRuntime: true })).memory;
+    withErrorBoundary(() => orchestrator.persist(), undefined, orchestrationLogger);
     return currentMemory;
   };
 
