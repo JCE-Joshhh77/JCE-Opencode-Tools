@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.2.0] - 2026-05-18
+
+### Added
+- Added Android Advanced Flow Pack with profile generation, flow templates, environment findings, failure-aware next actions, and persistent context hints.
+- Added Android Phase A-E modules: environment probe, command planner, evidence gate, compatibility matrix, security auditor, release readiness gate, build optimizer, device crash flow planner, and orchestration plan builder.
+- Added regression tests for Android advanced flows, Phase A-E capabilities, and installer payload verification.
+
+### Changed
+- Installers now verify required Android advanced TypeScript payload files in staging before swapping the installed CLI, protecting first install, update, and reinstall from incomplete payloads.
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `3.2.0`.
+
+### Verified
+- `bun test tests/unit/install-payload-verification.test.ts tests/unit/android-phase-a-e.test.ts tests/unit/android-advanced-flow.test.ts` (`8 pass`, `0 fail`)
+- `bun run typecheck`
+- `bun test` (`924 pass`, `0 fail`)
+
+---
+
 ## [3.1.0] - 2026-05-18
 
 ### Added

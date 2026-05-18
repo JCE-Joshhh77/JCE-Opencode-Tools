@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.1.0"
+VERSION="3.2.0"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -146,6 +146,32 @@ detect_package_manager() {
         fi
     fi
     info "Package manager: ${PKG_MGR}"
+}
+
+verify_jce_cli_payload() {
+    local dir="$1"
+    local required=(
+        "src/index.ts"
+        "src/plugin/index.ts"
+        "src/plugin/lib/android/advanced-flow.ts"
+        "src/plugin/lib/android/environment-probe.ts"
+        "src/plugin/lib/android/command-planner.ts"
+        "src/plugin/lib/android/evidence-gate.ts"
+        "src/plugin/lib/android/compatibility-matrix.ts"
+        "src/plugin/lib/android/security-auditor.ts"
+        "src/plugin/lib/android/release-readiness.ts"
+        "src/plugin/lib/android/build-optimizer.ts"
+        "src/plugin/lib/android/orchestration-plan.ts"
+        "src/plugin/lib/android/device-flow.ts"
+    )
+    local missing=()
+    local file
+    for file in "${required[@]}"; do
+        [ -f "$dir/$file" ] || missing+=("$file")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        error "CLI payload is incomplete; missing: ${missing[*]}"
+    fi
 }
 
 # ─── Installation Steps ──────────────────────────────────────
@@ -378,10 +404,7 @@ deploy_config() {
     cp "$TEMP_DIR/package.json" "$staging_dir/"
     cp "$TEMP_DIR/tsconfig.json" "$staging_dir/"
     cp -r "$TEMP_DIR/node_modules" "$staging_dir/node_modules"
-    if [ ! -f "$staging_dir/src/index.ts" ]; then
-        rm -rf "$staging_dir"
-        error "Downloaded CLI source is missing src/index.ts"
-    fi
+    verify_jce_cli_payload "$staging_dir"
     if [ -d "$install_dir" ]; then
         mv "$install_dir" "$backup_dir"
     fi

@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.1.0"
+$Version = "3.2.0"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -97,6 +97,30 @@ function Invoke-NativeCommand($exe, [string[]]$arguments) {
     $ErrorActionPreference = $prevEA
 
     if ($code -ne 0) { throw "Exit code $code" }
+}
+
+function Test-JceCliPayload($dir) {
+    $required = @(
+        "src\index.ts",
+        "src\plugin\index.ts",
+        "src\plugin\lib\android\advanced-flow.ts",
+        "src\plugin\lib\android\environment-probe.ts",
+        "src\plugin\lib\android\command-planner.ts",
+        "src\plugin\lib\android\evidence-gate.ts",
+        "src\plugin\lib\android\compatibility-matrix.ts",
+        "src\plugin\lib\android\security-auditor.ts",
+        "src\plugin\lib\android\release-readiness.ts",
+        "src\plugin\lib\android\build-optimizer.ts",
+        "src\plugin\lib\android\orchestration-plan.ts",
+        "src\plugin\lib\android\device-flow.ts"
+    )
+    $missing = @()
+    foreach ($file in $required) {
+        if (-not (Test-Path (Join-Path $dir $file))) { $missing += $file }
+    }
+    if ($missing.Count -gt 0) {
+        throw "CLI payload is incomplete; missing: $($missing -join ', ')"
+    }
 }
 
 function Install-GoLsp {
@@ -480,9 +504,7 @@ function Deploy-Config {
         Copy-Item (Join-Path $TempDir "package.json") $stagingDir
         Copy-Item (Join-Path $TempDir "tsconfig.json") $stagingDir
         Copy-Item (Join-Path $TempDir "node_modules") (Join-Path $stagingDir "node_modules") -Recurse
-        if (-not (Test-Path (Join-Path $stagingDir "src\index.ts"))) {
-            throw "Downloaded CLI source is missing src/index.ts"
-        }
+        Test-JceCliPayload $stagingDir
         if (Test-Path $installDir) { Rename-Item $installDir $backupDir -Force }
         try {
             Rename-Item $stagingDir $installDir -Force
