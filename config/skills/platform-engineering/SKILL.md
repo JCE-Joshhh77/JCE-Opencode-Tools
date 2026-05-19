@@ -1,6 +1,6 @@
 ---
 name: platform-engineering
-description: Kubernetes, Helm, ArgoCD, GitOps, Terraform, Pulumi, service mesh
+description: Kubernetes, Helm, ArgoCD, GitOps, Terraform, Pulumi, service mesh. Use when working on platform-engineering tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Platform Engineering

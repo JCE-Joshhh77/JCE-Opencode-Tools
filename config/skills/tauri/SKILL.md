@@ -1,6 +1,6 @@
 ---
 name: tauri
-description: Tauri 2, desktop/mobile apps, Rust backend, web frontend, IPC
+description: Tauri 2, desktop/mobile apps, Rust backend, web frontend, IPC. Use when working on tauri tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Tauri

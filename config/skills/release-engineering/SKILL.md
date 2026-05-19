@@ -1,6 +1,6 @@
 ---
 name: release-engineering
-description: Version sync, release verification, commits, pushes, tags, and changelog discipline
+description: Version sync, release verification, commits, pushes, tags, and changelog discipline. Use when working on release-engineering tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Release Engineering

@@ -1,6 +1,6 @@
 ---
 name: go
-description: Go modules, goroutines, interfaces
+description: Go modules, goroutines, interfaces. Use when working on go tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Go

@@ -1,6 +1,6 @@
 ---
 name: ai-optimization
-description: Token efficiency, model selection, prompt engineering
+description: Token efficiency, model selection, prompt engineering. Use when working on ai-optimization tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: AI/LLM Optimization

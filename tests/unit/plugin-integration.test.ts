@@ -83,6 +83,29 @@ describe("plugin integration", () => {
     expect(existsSync(getMemoryPath(root))).toBe(true);
   });
 
+  test("plugin injects no-task compaction guard and disables autocontinue after greeting", async () => {
+    const root = tempRoot();
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
+
+    await hooks["chat.message"]!({} as any, {
+      message: "halow",
+      parts: [{ type: "text", text: "halow" }],
+    } as any);
+
+    const systemOutput = { system: [] as string[] };
+    await hooks["experimental.chat.system.transform"]!({} as any, systemOutput as any);
+    expect(systemOutput.system.join("\n")).toContain("JCE Post-Compaction No-Task Guard");
+
+    const autocontinueOutput = { enabled: true, autocontinue: true, continue: true } as any;
+    await (hooks as any)["experimental.compaction.autocontinue"]?.({ summary: "Goal\n- Awaiting user's task or question\nProgress\nDone\n- (none)\nIn Progress\n- (none)\nRelevant Files\n- (none)" }, autocontinueOutput);
+
+    expect(autocontinueOutput.enabled).toBe(false);
+    expect(autocontinueOutput.autocontinue).toBe(false);
+    expect(autocontinueOutput.continue).toBe(false);
+    expect(autocontinueOutput.reason).toContain("no-task compaction guard");
+  });
+
   test("plugin bg_collect launches recovery retry through registered client", async () => {
     const promptCalls: unknown[] = [];
     const client = {

@@ -1,6 +1,6 @@
 ---
 name: delegation-quality
-description: High-quality sub-agent delegation, output contracts, evidence review, and follow-up discipline
+description: High-quality sub-agent delegation, output contracts, evidence review, and follow-up discipline. Use when working on delegation-quality tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Delegation Quality

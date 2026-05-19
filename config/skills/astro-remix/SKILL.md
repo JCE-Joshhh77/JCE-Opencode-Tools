@@ -1,6 +1,6 @@
 ---
 name: astro-remix
-description: Astro, Remix, islands architecture, SSR/SSG hybrid, loaders/actions
+description: Astro, Remix, islands architecture, SSR/SSG hybrid, loaders/actions. Use when working on astro-remix tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Astro & Remix

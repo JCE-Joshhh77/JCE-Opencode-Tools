@@ -1,6 +1,6 @@
 ---
 name: ruby
-description: Ruby ecosystem, gems, Bundler
+description: Ruby ecosystem, gems, Bundler. Use when working on ruby tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Ruby

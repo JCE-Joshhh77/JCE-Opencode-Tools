@@ -1,6 +1,6 @@
 ---
 name: frontend
-description: UI components, accessibility, responsive design, state management, i18n
+description: UI components, accessibility, responsive design, state management, i18n. Use when working on frontend tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: UI/UX & Frontend

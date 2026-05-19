@@ -1,6 +1,6 @@
 ---
 name: spring-boot
-description: Spring Boot, Spring Security, JPA
+description: Spring Boot, Spring Security, JPA. Use when working on spring-boot tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Spring Boot

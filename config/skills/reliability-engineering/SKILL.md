@@ -1,6 +1,6 @@
 ---
 name: reliability-engineering
-description: Chaos engineering, error budgets, incident response, load testing
+description: Chaos engineering, error budgets, incident response, load testing. Use when working on reliability-engineering tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Reliability Engineering

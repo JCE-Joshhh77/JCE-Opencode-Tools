@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.3.1"
+$Version = "3.3.2"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -106,6 +106,7 @@ function Test-JceCliPayload($dir) {
         "src\plugin\hooks\jce-worker-guard.ts",
         "src\plugin\hooks\open-work-enforcer.ts",
         "src\plugin\hooks\todo-enforcer.ts",
+        "src\plugin\lib\compaction-loop-guard.ts",
         "src\commands\analytics.ts",
         "src\commands\capabilities.ts",
         "src\commands\docs.ts",

@@ -1,6 +1,6 @@
 ---
 name: advanced-patterns
-description: SOLID, 12-Factor, performance engineering, feature flags
+description: SOLID, 12-Factor, performance engineering, feature flags. Use when working on advanced-patterns tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Advanced Patterns & Principles

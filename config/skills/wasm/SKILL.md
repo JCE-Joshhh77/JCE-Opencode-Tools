@@ -1,6 +1,6 @@
 ---
 name: wasm
-description: WebAssembly, WASI, Rust-to-WASM, wasm-bindgen, component model
+description: WebAssembly, WASI, Rust-to-WASM, wasm-bindgen, component model. Use when working on wasm tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: WebAssembly

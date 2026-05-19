@@ -1,6 +1,6 @@
 ---
 name: distributed-systems
-description: Event-driven, saga, CQRS, Kafka, RabbitMQ, circuit breakers
+description: Event-driven, saga, CQRS, Kafka, RabbitMQ, circuit breakers. Use when working on distributed-systems tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Distributed Systems

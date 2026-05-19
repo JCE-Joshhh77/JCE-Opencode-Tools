@@ -1,6 +1,6 @@
 ---
 name: laravel
-description: Laravel, Eloquent, Blade, Artisan
+description: Laravel, Eloquent, Blade, Artisan. Use when working on laravel tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Laravel

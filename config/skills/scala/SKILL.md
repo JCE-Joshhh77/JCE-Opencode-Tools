@@ -1,6 +1,6 @@
 ---
 name: scala
-description: Scala, Akka, Cats/ZIO, SBT
+description: Scala, Akka, Cats/ZIO, SBT. Use when working on scala tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Scala

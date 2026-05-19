@@ -1,6 +1,6 @@
 ---
 name: game-development
-description: ECS, game loops, physics, rendering, multiplayer networking
+description: ECS, game loops, physics, rendering, multiplayer networking. Use when working on game-development tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Game Development

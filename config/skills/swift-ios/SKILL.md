@@ -1,6 +1,6 @@
 ---
 name: swift-ios
-description: Swift, SwiftUI, iOS development
+description: Swift, SwiftUI, iOS development. Use when working on swift-ios tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Swift & iOS

@@ -1,6 +1,6 @@
 ---
 name: express-nestjs
-description: Express.js, NestJS, Node.js APIs
+description: Express.js, NestJS, Node.js APIs. Use when working on express-nestjs tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Express.js & NestJS

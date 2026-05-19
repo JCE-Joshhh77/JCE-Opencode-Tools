@@ -1,6 +1,6 @@
 ---
 name: context-preservation
-description: Maintaining project context across sessions
+description: Maintaining project context across sessions. Use when working on context-preservation tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Context Preservation

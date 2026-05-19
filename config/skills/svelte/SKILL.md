@@ -1,6 +1,6 @@
 ---
 name: svelte
-description: Svelte 5, SvelteKit, runes
+description: Svelte 5, SvelteKit, runes. Use when working on svelte tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Svelte

@@ -6,6 +6,7 @@ import { heading, info, success, error } from "../lib/ui.js";
 import { logCommandStart, logCommandSuccess, logCommandError } from "../lib/logger.js";
 import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
 import type { Agent } from "../types.js";
+import { auditAgents } from "../plugin/lib/jce-intelligence.js";
 
 /**
  * Prompt the user for input via readline.
@@ -121,6 +122,18 @@ const listCommand = new Command("list")
     process.exit(EXIT_SUCCESS);
   });
 
+const auditCommand = new Command("audit")
+  .description("Audit agent registry for JCE output/evidence contract quality")
+  .option("--json", "Print JSON")
+  .action((options) => {
+    const report = auditAgents(process.cwd());
+    if (options.json) { console.log(JSON.stringify(report, null, 2)); return; }
+    heading("Agent Registry Audit");
+    info(`${report.total} agents, ${report.errors} errors, ${report.warnings} warnings`);
+    for (const finding of report.findings.slice(0, 40)) console.log(`  ${finding.severity.toUpperCase()}: ${finding.agent}: ${finding.message}`);
+    process.exit(report.errors > 0 ? EXIT_ERROR : EXIT_SUCCESS);
+  });
+
 const removeCommand = new Command("remove")
   .description("Remove an agent by ID")
   .argument("<id>", "Agent ID to remove")
@@ -188,5 +201,6 @@ export const agentCommand = new Command("agent")
   .description("Manage custom agents (create, list, edit, remove)")
   .addCommand(createCommand)
   .addCommand(listCommand)
+  .addCommand(auditCommand)
   .addCommand(removeCommand)
   .addCommand(editCommand);

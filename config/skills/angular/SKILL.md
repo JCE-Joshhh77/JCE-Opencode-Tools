@@ -1,6 +1,6 @@
 ---
 name: angular
-description: Angular, signals, RxJS, standalone components
+description: Angular, signals, RxJS, standalone components. Use when working on angular tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Angular

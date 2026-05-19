@@ -1,6 +1,6 @@
 ---
 name: flutter-dart
-description: Flutter, Dart, widgets, Riverpod
+description: Flutter, Dart, widgets, Riverpod. Use when working on flutter-dart tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Flutter & Dart

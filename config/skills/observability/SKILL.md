@@ -1,6 +1,6 @@
 ---
 name: observability
-description: OpenTelemetry, Prometheus, Grafana, tracing, SLO/SLI, alerting
+description: OpenTelemetry, Prometheus, Grafana, tracing, SLO/SLI, alerting. Use when working on observability tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Observability

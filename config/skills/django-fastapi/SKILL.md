@@ -1,6 +1,6 @@
 ---
 name: django-fastapi
-description: Django, DRF, FastAPI, Pydantic
+description: Django, DRF, FastAPI, Pydantic. Use when working on django-fastapi tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Django & FastAPI

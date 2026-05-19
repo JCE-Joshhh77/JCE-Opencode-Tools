@@ -1,6 +1,6 @@
 ---
 name: software-engineering
-description: Core coding, testing, debugging, refactoring, and code review patterns
+description: Core coding, testing, debugging, refactoring, and code review patterns. Use when working on software-engineering tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Software Engineering

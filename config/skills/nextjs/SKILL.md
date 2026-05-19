@@ -1,6 +1,6 @@
 ---
 name: nextjs
-description: Next.js, App Router, Server Actions
+description: Next.js, App Router, Server Actions. Use when working on nextjs tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Next.js

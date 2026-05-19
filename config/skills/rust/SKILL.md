@@ -1,6 +1,6 @@
 ---
 name: rust
-description: Rust, Cargo, async Rust, ownership
+description: Rust, Cargo, async Rust, ownership. Use when working on rust tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Rust

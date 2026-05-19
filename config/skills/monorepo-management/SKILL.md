@@ -1,6 +1,6 @@
 ---
 name: monorepo-management
-description: Turborepo, Nx, pnpm workspaces, affected builds, task caching
+description: Turborepo, Nx, pnpm workspaces, affected builds, task caching. Use when working on monorepo-management tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Monorepo Management

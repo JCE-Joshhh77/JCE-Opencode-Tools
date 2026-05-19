@@ -1,6 +1,6 @@
 ---
 name: codebase-intelligence
-description: Repository mapping, impact scanning, entry point discovery, and audit orientation
+description: Repository mapping, impact scanning, entry point discovery, and audit orientation. Use when working on codebase-intelligence tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Codebase Intelligence

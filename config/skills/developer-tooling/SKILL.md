@@ -1,6 +1,6 @@
 ---
 name: developer-tooling
-description: LSP, linting, formatting, project structure, code generation
+description: LSP, linting, formatting, project structure, code generation. Use when working on developer-tooling tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Developer Tooling

@@ -1,6 +1,6 @@
 ---
 name: rails
-description: Ruby on Rails, ActiveRecord, Hotwire
+description: Ruby on Rails, ActiveRecord, Hotwire. Use when working on rails tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Ruby on Rails

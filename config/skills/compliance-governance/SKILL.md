@@ -1,6 +1,6 @@
 ---
 name: compliance-governance
-description: GDPR, SOC2, audit logging, PII handling, privacy by design
+description: GDPR, SOC2, audit logging, PII handling, privacy by design. Use when working on compliance-governance tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Compliance & Governance

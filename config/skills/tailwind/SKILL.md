@@ -1,6 +1,6 @@
 ---
 name: tailwind
-description: Tailwind CSS, utility-first styling, responsive design
+description: Tailwind CSS, utility-first styling, responsive design. Use when working on tailwind tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Tailwind CSS

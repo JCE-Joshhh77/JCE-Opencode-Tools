@@ -1,6 +1,6 @@
 ---
 name: security
-description: Auth, input validation, secrets, vulnerabilities, CORS/CSP
+description: Auth, input validation, secrets, vulnerabilities, CORS/CSP. Use when working on security tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Security Advanced

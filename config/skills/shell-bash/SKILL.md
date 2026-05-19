@@ -1,6 +1,6 @@
 ---
 name: shell-bash
-description: Bash, shell scripts, Makefile
+description: Bash, shell scripts, Makefile. Use when working on shell-bash tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Shell / Bash

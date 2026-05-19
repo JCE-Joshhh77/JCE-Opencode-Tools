@@ -1,6 +1,6 @@
 ---
 name: realtime-systems
-description: WebSocket, SSE, CRDT, presence, pub/sub, real-time sync
+description: WebSocket, SSE, CRDT, presence, pub/sub, real-time sync. Use when working on realtime-systems tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Real-Time Systems

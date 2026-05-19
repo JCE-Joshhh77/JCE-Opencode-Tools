@@ -1,6 +1,6 @@
 ---
 name: cpp
-description: C/C++, CMake, modern C++
+description: C/C++, CMake, modern C++. Use when working on cpp tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: C / C++

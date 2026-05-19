@@ -1,6 +1,6 @@
 ---
 name: react-native
-description: React Native, Expo, mobile apps
+description: React Native, Expo, mobile apps. Use when working on react-native tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: React Native

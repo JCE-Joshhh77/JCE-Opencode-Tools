@@ -1,6 +1,6 @@
 ---
 name: csharp
-description: C#, .NET, ASP.NET Core
+description: C#, .NET, ASP.NET Core. Use when working on csharp tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: C# / .NET

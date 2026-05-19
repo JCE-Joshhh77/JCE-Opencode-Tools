@@ -1,6 +1,6 @@
 ---
 name: vue
-description: Vue 3, Composition API, Pinia, Nuxt
+description: Vue 3, Composition API, Pinia, Nuxt. Use when working on vue tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Vue.js

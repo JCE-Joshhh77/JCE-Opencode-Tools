@@ -1,6 +1,6 @@
 ---
 name: ai-llm-engineering
-description: RAG, embeddings, vector DB, prompt engineering, LLM evaluation
+description: RAG, embeddings, vector DB, prompt engineering, LLM evaluation. Use when working on ai-llm-engineering tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: AI/LLM Engineering

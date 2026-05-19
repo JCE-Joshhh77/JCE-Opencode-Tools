@@ -1,6 +1,6 @@
 ---
 name: php
-description: PHP ecosystem, Composer
+description: PHP ecosystem, Composer. Use when working on php tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: PHP

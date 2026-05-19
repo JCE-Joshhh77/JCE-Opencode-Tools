@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.3.2] - 2026-05-19
+
+### Fixed
+- Added a post-compaction no-task guard to prevent greeting-only sessions from entering repeated Build/Compaction cycles when context is full, especially with Sonnet 4.5 via 9router.
+- Disabled compaction autocontinue for compacted summaries that only say the assistant is awaiting the user's task/question.
+- Prevented greeting/no-op turns from auto-activating orchestration plans.
+- Added installer, reinstall, and update payload verification for `src/plugin/lib/compaction-loop-guard.ts` so the fix is not omitted during CLI source swaps.
+
+### Changed
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `3.3.2`.
+
+### Verified
+- `bun test tests/unit/compaction-loop-guard.test.ts tests/unit/plugin-integration.test.ts`
+- `bun test tests/unit/install-payload-verification.test.ts tests/unit/plugin-workflow-tool.test.ts tests/unit/ui.test.ts`
+- `bun run typecheck`
+
+---
+
 ## [3.3.1] - 2026-05-19
 
 ### Fixed

@@ -1,6 +1,6 @@
 ---
 name: blockchain-web3
-description: Solidity, gas optimization, ERC standards, DeFi, Foundry/Hardhat
+description: Solidity, gas optimization, ERC standards, DeFi, Foundry/Hardhat. Use when working on blockchain-web3 tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Blockchain & Web3

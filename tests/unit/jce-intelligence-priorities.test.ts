@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { auditSkills, resolveSkillConflicts, buildCapabilityRegistry, appendEvidence, loadEvidence, summarizeTelemetry, assessJceDoctor } from "../../src/plugin/lib/jce-intelligence.ts";
+import { auditAgents, auditSkills, resolveSkillConflicts, resolveSkillConflictsV2, buildAnalyticsRecommendations, buildCapabilityRegistry, appendEvidence, loadEvidence, summarizeCommandEvidence, summarizeTelemetry, assessJceDoctor, generateAgentsCanonicalMarkdown } from "../../src/plugin/lib/jce-intelligence.ts";
 import { buildWebAdvancedFlow } from "../../src/plugin/lib/web/index.ts";
 import { buildApiAdvancedFlow } from "../../src/plugin/lib/api/index.ts";
 import { buildDevopsAdvancedFlow } from "../../src/plugin/lib/devops/index.ts";
@@ -28,6 +28,13 @@ describe("JCE priorities 1-10 intelligence", () => {
     expect(result.suppressed.some((item) => item.skill === "frontend")).toBe(true);
   });
 
+  test("resolver v2 uses intent and file context", () => {
+    const result = resolveSkillConflictsV2(["architecture", "api-design-patterns", "security", "auth-identity", "typescript"], { intent: "fix jwt auth endpoint", files: ["src/routes/auth.ts"], max: 3 });
+    expect(result.selected).toContain("auth-identity");
+    expect(result.selected).toContain("api-design-patterns");
+    expect(result.suppressed.some((item) => item.skill === "security")).toBe(true);
+  });
+
   test("registers priority capabilities", () => {
     const ids = buildCapabilityRegistry().capabilities.map((capability) => capability.id);
     expect(ids).toContain("jce.skill-audit");
@@ -42,9 +49,25 @@ describe("JCE priorities 1-10 intelligence", () => {
     expect(loadEvidence(root)).toHaveLength(1);
   });
 
+  test("summarizes command evidence for auto-capture", () => {
+    const evidence = summarizeCommandEvidence("bun test tests/unit/foo.test.ts", "12 pass\n0 fail");
+    expect(evidence?.status).toBe("pass");
+    expect(evidence?.type).toBe("command");
+  });
+
   test("summarizes telemetry locally", () => {
     const summary = summarizeTelemetry([{ kind: "skill_selected", name: "react", at: "now" }, { kind: "skill_selected", name: "react", at: "now" }]);
     expect(summary["skill_selected:react"]).toBe(2);
+  });
+
+  test("builds analytics recommendations from evidence gaps", () => {
+    expect(buildAnalyticsRecommendations([], [])).toContain("Enable/verify evidence auto-capture: no verification evidence has been stored.");
+  });
+
+  test("audits agent registry and generates canonical protocol docs", () => {
+    const report = auditAgents(process.cwd());
+    expect(report.total).toBeGreaterThan(0);
+    expect(generateAgentsCanonicalMarkdown()).toContain("IntentGate");
   });
 
   test("doctor reports repository intelligence checks", () => {

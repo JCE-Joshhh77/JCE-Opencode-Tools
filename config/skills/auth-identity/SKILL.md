@@ -1,6 +1,6 @@
 ---
 name: auth-identity
-description: OAuth2, OIDC, JWT, RBAC/ABAC, MFA, zero-trust, secrets rotation
+description: OAuth2, OIDC, JWT, RBAC/ABAC, MFA, zero-trust, secrets rotation. Use when working on auth-identity tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Auth & Identity

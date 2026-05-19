@@ -1,6 +1,6 @@
 ---
 name: devops
-description: Docker, CI/CD, deployment, monitoring, infrastructure
+description: Docker, CI/CD, deployment, monitoring, infrastructure. Use when working on devops tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: DevOps Advanced

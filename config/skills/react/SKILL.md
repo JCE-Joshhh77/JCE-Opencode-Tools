@@ -1,6 +1,6 @@
 ---
 name: react
-description: React, JSX/TSX, hooks, React 19, Server Components
+description: React, JSX/TSX, hooks, React 19, Server Components. Use when working on react tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: React Advanced

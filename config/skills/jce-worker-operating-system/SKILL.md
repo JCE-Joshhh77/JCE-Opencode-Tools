@@ -1,6 +1,6 @@
 ---
 name: jce-worker-operating-system
-description: JCE-Worker meta-cognition, operating loop, completion discipline, and outcome ownership
+description: JCE-Worker meta-cognition, operating loop, completion discipline, and outcome ownership. Use when working on jce-worker-operating-system tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: JCE-Worker Operating System

@@ -23,11 +23,13 @@ import { createWorkflowRun } from "./lib/workflow.js";
 import { isRecord } from "./lib/shared-predicates.js";
 import { determineSkillsForMessage, resolveSkills } from "./lib/skill-loader.js";
 import { applyContextBudget } from "./lib/context-budget.js";
+import { POST_COMPACTION_NO_TASK_GUARD, shouldSuppressCompactionAutocontinue } from "./lib/compaction-loop-guard.js";
 import { scoreIntent, toLegacyRoute } from "./lib/orchestration/intent-router.js";
 import type { ScoredIntent } from "./lib/orchestration/types.js";
 import type { AgentRole } from "./lib/orchestration/types.js";
 import { OrchestrationController } from "./lib/orchestration/controller.js";
 import { OrchestrationBridge } from "./lib/orchestration/bridge.js";
+import { appendEvidence, summarizeCommandEvidence } from "./lib/jce-intelligence.js";
 import {
   withErrorBoundary,
   withAsyncErrorBoundary,
@@ -323,11 +325,11 @@ const jcePlugin: Plugin = async (input) => {
           const lastCompleted = tasks.filter((t) => t.status === "completed").pop();
           if (lastCompleted?.result) {
             const context = { sessionID: "", messageID: "" };
-            // Feed result through orchestration bridge (async, fire-and-forget for loop continuation)
-            bridge.collectAndContinue(lastCompleted.id, lastCompleted.result, lastCompleted.parentSessionId ?? "", lastCompleted.parentMessageId ?? "").catch((err) => {
-              currentMemory.blockers = [...currentMemory.blockers, { id: `orchestration-${Date.now()}`, failureReason: err instanceof Error ? err.message : String(err) }];
-              currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
-            });
+              // Feed result through orchestration bridge; failures persist as blockers for closed-loop gating.
+              bridge.collectAndContinue(lastCompleted.id, lastCompleted.result, lastCompleted.parentSessionId ?? "", lastCompleted.parentMessageId ?? "").catch((err) => {
+                currentMemory.blockers = [...currentMemory.blockers, { id: `orchestration-${Date.now()}`, failureReason: err instanceof Error ? err.message : String(err) }];
+                currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+              });
           }
         }
       }, chineseTranslator),
@@ -359,8 +361,12 @@ const jcePlugin: Plugin = async (input) => {
           }
         }
 
-        // Auto-activation with rate limiting, approval gate, and error boundary
-        if (withErrorBoundary(() => orchestrator.shouldAutoActivate(text), false, orchestrationLogger) && rateLimiter.canActivate()) {
+        const isNoTaskTurn = shouldSuppressCompactionAutocontinue({ lastUserMessage: text });
+
+        // Auto-activation with rate limiting, approval gate, and error boundary.
+        // Greetings/no-op turns must not create plans; they can otherwise become
+        // self-perpetuating Build/Compaction loops when OpenCode compacts a full context.
+        if (!isNoTaskTurn && withErrorBoundary(() => orchestrator.shouldAutoActivate(text), false, orchestrationLogger) && rateLimiter.canActivate()) {
           const goal = text.trim().slice(0, 300);
           const graph = withErrorBoundary(() => orchestrator.createPlan(goal), null, orchestrationLogger);
 
@@ -376,7 +382,7 @@ const jcePlugin: Plugin = async (input) => {
               // Safe to auto-dispatch
               rateLimiter.recordActivation();
               orchestrationLogger.log("info", "plan.auto_activated", `Auto-activated plan: ${goal.slice(0, 80)}`);
-              withAsyncErrorBoundary(() => bridge.planAndDispatch(goal, "", ""), { dispatched: [], graphStatus: "failed", message: "Auto-dispatch failed" }, orchestrationLogger);
+              await withAsyncErrorBoundary(() => bridge.planAndDispatch(goal, "", ""), { dispatched: [], graphStatus: "failed", message: "Auto-dispatch failed" }, orchestrationLogger);
             }
           }
         }
@@ -384,12 +390,26 @@ const jcePlugin: Plugin = async (input) => {
     },
 
     "experimental.chat.system.transform": async (_input, output) => {
+      output.system.push(POST_COMPACTION_NO_TASK_GUARD);
       if (!lastUserMessage) return;
       const skillNames = determineSkillsForMessage(lastUserMessage);
       if (skillNames.length === 0) return;
       const skillContents = await resolveSkills(skillNames);
       if (skillContents.length > 0) {
         output.system.push("\n\n<!-- JCE Skills (auto-injected based on task context) -->\n" + skillContents.join("\n\n"));
+      }
+    },
+
+    "experimental.compaction.autocontinue": async (input: any, output: any) => {
+      const summary = typeof input?.summary === "string" ? input.summary : typeof output?.summary === "string" ? output.summary : "";
+      const message = typeof input?.message === "string" ? input.message : typeof output?.message === "string" ? output.message : "";
+      if (!shouldSuppressCompactionAutocontinue({ lastUserMessage, summary, message })) return;
+
+      if (typeof output === "object" && output !== null) {
+        output.enabled = false;
+        output.autocontinue = false;
+        output.continue = false;
+        output.reason = "JCE no-task compaction guard: idle greeting/awaiting-task summary must not auto-continue.";
       }
     },
 
@@ -405,6 +425,16 @@ const jcePlugin: Plugin = async (input) => {
       // Record direct tool evidence in orchestration graph (e.g., bun test run directly)
       if (typeof output.output === "string" && input.tool === "Bash") {
         withErrorBoundary(() => orchestrator.recordDirectToolEvidence(input.tool, output.output as string), undefined, orchestrationLogger);
+        const command = typeof input.args?.command === "string" ? input.args.command : typeof input.args?.cmd === "string" ? input.args.cmd : "Bash";
+        const evidence = summarizeCommandEvidence(command, output.output as string);
+        if (evidence) {
+          withErrorBoundary(() => {
+            appendEvidence(projectRoot, { ...evidence, workflowId: currentMemory.activeWorkflow?.id });
+            currentMemory.verificationEvidence = [...currentMemory.verificationEvidence, { ...evidence, captured: "auto", workflowId: currentMemory.activeWorkflow?.id }].slice(-100);
+            currentMemory.traceEvents = [...(currentMemory.traceEvents ?? []), { type: "verification.recorded", message: evidence.summary, at: new Date().toISOString(), metadata: { command } }];
+            currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: true }).memory;
+          }, undefined, orchestrationLogger);
+        }
       }
 
       // Per-node timeout detection (check on every tool output)
@@ -512,6 +542,10 @@ const jcePlugin: Plugin = async (input) => {
         const gateResult = withErrorBoundary(() => orchestrator.formatCompletionGate(), "", orchestrationLogger);
         if (gateResult) {
           output.output = `${output.output}\n\n${gateResult}`;
+        }
+        const status = withErrorBoundary(() => orchestrator.getStatus(), null, orchestrationLogger);
+        if (status?.stats && ((status.stats.pending + status.stats.ready + status.stats.running + status.stats.verifying + status.stats.blocked) > 0)) {
+          output.output = `${output.output}\n\nCLOSED-LOOP ORCHESTRATION: Active graph still has open work (${status.stats.pending} pending, ${status.stats.ready} ready, ${status.stats.running} running, ${status.stats.verifying} verifying, ${status.stats.blocked} blocked). Continue dispatch/collect before final completion.`;
         }
       }
 

@@ -1,6 +1,6 @@
 ---
 name: python
-description: Python ecosystem, pip, venv, typing
+description: Python ecosystem, pip, venv, typing. Use when working on python tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Python

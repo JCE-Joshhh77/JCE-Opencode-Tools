@@ -1,6 +1,6 @@
 ---
 name: java-kotlin
-description: Java, Kotlin, JVM ecosystem
+description: Java, Kotlin, JVM ecosystem. Use when working on java-kotlin tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Java / Kotlin

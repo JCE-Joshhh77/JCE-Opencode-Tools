@@ -1,6 +1,6 @@
 ---
 name: verification-discipline
-description: Evidence-first verification planning, failure loops, test selection, and audit proof
+description: Evidence-first verification planning, failure loops, test selection, and audit proof. Use when working on verification-discipline tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Verification Discipline

@@ -1,6 +1,6 @@
 ---
 name: typescript
-description: TypeScript, JavaScript, Node.js, Bun
+description: TypeScript, JavaScript, Node.js, Bun. Use when working on typescript tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: TypeScript Advanced

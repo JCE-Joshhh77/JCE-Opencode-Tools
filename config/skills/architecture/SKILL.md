@@ -1,6 +1,6 @@
 ---
 name: architecture
-description: API design, databases, system design, caching, resilience
+description: API design, databases, system design, caching, resilience. Use when working on architecture tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Architecture Advanced

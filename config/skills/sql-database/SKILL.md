@@ -1,6 +1,6 @@
 ---
 name: sql-database
-description: SQL queries, schema design, indexing, migrations, PostgreSQL/MySQL
+description: SQL queries, schema design, indexing, migrations, PostgreSQL/MySQL. Use when working on sql-database tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: SQL & Database

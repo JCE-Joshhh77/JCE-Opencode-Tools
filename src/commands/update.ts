@@ -23,6 +23,7 @@ const REQUIRED_CLI_PAYLOAD_FILES = [
   "src/plugin/hooks/jce-worker-guard.ts",
   "src/plugin/hooks/open-work-enforcer.ts",
   "src/plugin/hooks/todo-enforcer.ts",
+  "src/plugin/lib/compaction-loop-guard.ts",
   "src/commands/analytics.ts",
   "src/commands/capabilities.ts",
   "src/commands/docs.ts",

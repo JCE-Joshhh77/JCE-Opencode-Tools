@@ -1,6 +1,6 @@
 ---
 name: elixir
-description: Elixir, Phoenix, LiveView, OTP
+description: Elixir, Phoenix, LiveView, OTP. Use when working on elixir tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Elixir

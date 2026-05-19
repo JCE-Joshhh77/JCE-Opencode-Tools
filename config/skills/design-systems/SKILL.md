@@ -1,6 +1,6 @@
 ---
 name: design-systems
-description: Design tokens, Storybook, theming, component API, variants
+description: Design tokens, Storybook, theming, component API, variants. Use when working on design-systems tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Design Systems

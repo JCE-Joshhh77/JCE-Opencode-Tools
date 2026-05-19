@@ -1,6 +1,6 @@
 ---
 name: testing-strategies
-description: Property-based, mutation, contract, visual regression, load testing
+description: Property-based, mutation, contract, visual regression, load testing. Use when working on testing-strategies tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: Testing Strategies

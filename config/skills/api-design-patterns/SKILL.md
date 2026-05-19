@@ -1,6 +1,6 @@
 ---
 name: api-design-patterns
-description: REST maturity, GraphQL schema, gRPC, versioning, pagination, OpenAPI
+description: REST maturity, GraphQL schema, gRPC, versioning, pagination, OpenAPI. Use when working on api-design-patterns tasks, related files, debugging, implementation, review, or verification workflows.
 ---
 
 # Skill: API Design Patterns
