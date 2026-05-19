@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createEmptyExecutionMemory, loadExecutionMemory, saveExecutionMemory } from "../../src/plugin/lib/execution-memory.ts";
@@ -81,6 +81,23 @@ describe("plugin integration", () => {
     await hooks.event!({ event: { type: "session.idle" } } as any);
 
     expect(existsSync(getMemoryPath(root))).toBe(true);
+  });
+
+  test("plugin creates project context template on first chat message when missing", async () => {
+    const root = tempRoot();
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
+    const contextPath = join(root, ".opencode-context.md");
+
+    expect(existsSync(contextPath)).toBe(false);
+
+    await hooks["chat.message"]!({} as any, {
+      message: "fix this simple bug",
+      parts: [{ type: "text", text: "fix this simple bug" }],
+    } as any);
+
+    expect(existsSync(contextPath)).toBe(true);
+    expect(readFileSync(contextPath, "utf-8")).toContain("Auto-maintained by AI");
   });
 
   test("plugin injects no-task compaction guard and disables autocontinue after greeting", async () => {

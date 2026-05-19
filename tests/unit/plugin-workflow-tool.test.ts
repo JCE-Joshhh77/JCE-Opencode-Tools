@@ -48,7 +48,7 @@ describe("jce workflow tool", () => {
 
     expect(result).toContain("Summary");
     expect(result).toContain("Scope: Task 5");
-    expect(result).toContain("Current version: 3.3.2");
+    expect(result).toContain("Current version: 3.3.3");
     expect(result).toContain("Changed Files");
     expect(result).toContain("M src/plugin/tools/workflow.ts");
     expect(result).toContain("Local-Only / Excluded Files");

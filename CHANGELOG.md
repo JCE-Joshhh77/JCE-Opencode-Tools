@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.3.3] - 2026-05-19
+
+### Fixed
+- Added plugin-side project context bootstrapping so `.opencode-context.md` is created on the first chat message in a new project even when the model skips the `context_read` MCP tool.
+- Preserved MCP `context_read` behavior while adding a runtime fallback that writes the standard context template directly into the active project root.
+- Configured Fish shell PATH during Unix install so Bun global binaries such as `opencode-jce` are available in Fish sessions.
+
+### Changed
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `3.3.3`.
+
+### Verified
+- `bun test tests/unit/plugin-integration.test.ts tests/unit/context-keeper.test.ts tests/unit/plugin-workflow-tool.test.ts tests/unit/ui.test.ts tests/unit/install-payload-verification.test.ts`
+- `bun run typecheck`
+- `bun test` (`958 pass`, `0 fail`)
+
+---
+
 ## [3.3.2] - 2026-05-19
 
 ### Fixed

@@ -1,4 +1,6 @@
 import type { Plugin, Hooks } from "@opencode-ai/plugin";
+import { existsSync, writeFileSync } from "fs";
+import { join } from "path";
 import { BackgroundManager } from "./background/manager.js";
 import { extractPromptText } from "./background/spawner.js";
 import type { OpenCodeClient } from "./background/types.js";
@@ -11,6 +13,7 @@ import { evaluateOpenWork, extractTodoState, type TodoState } from "./hooks/open
 import { loadExecutionMemory, mergeExecutionMemorySnapshot, saveExecutionMemory } from "./lib/execution-memory.js";
 import type { ExecutionMemory } from "./lib/execution-memory.js";
 import { buildChineseTranslationPrompt, filterChineseOutput, type ChineseTranslator } from "./lib/chinese-output-filter.js";
+import { CONTEXT_FILENAME, getContextTemplate } from "../lib/context-template.js";
 import { evaluateExecutionPolicy, formatExecutionPolicyDecision } from "./lib/execution-policy.js";
 import type { ExecutionPolicyDecision } from "./lib/execution-policy.js";
 import { evaluateFinalReviewGate } from "./lib/final-review-gate.js";
@@ -104,6 +107,13 @@ function shouldApplyDirectContextBudget(tool: string): boolean {
   return ["Read", "Grep", "Glob", "LS", "Bash"].includes(tool);
 }
 
+function ensureProjectContextFile(projectRoot: string): boolean {
+  const contextPath = join(projectRoot, CONTEXT_FILENAME);
+  if (existsSync(contextPath)) return false;
+  writeFileSync(contextPath, getContextTemplate(), "utf-8");
+  return true;
+}
+
 /**
  * Extract facts from tool outputs into orchestration shared memory.
  * Lightweight heuristic extraction — not exhaustive, just high-value signals.
@@ -141,6 +151,7 @@ const jcePlugin: Plugin = async (input) => {
   const manager = new BackgroundManager({ maxConcurrency: 5 });
   const agents = buildAgentConfigs();
   const projectRoot = input.directory || input.worktree || process.cwd();
+  let projectContextEnsured = false;
   const loadedMemory = loadExecutionMemory(projectRoot);
   let currentMemory = loadedMemory.memory;
   let lastUserMessage = "";
@@ -338,6 +349,11 @@ const jcePlugin: Plugin = async (input) => {
     },
 
     "chat.message": async (_input, output) => {
+      if (!projectContextEnsured) {
+        withErrorBoundary(() => ensureProjectContextFile(projectRoot), false, orchestrationLogger);
+        projectContextEnsured = true;
+      }
+
       // Track the latest user message for skill injection
       const msg = output.message;
       const text = typeof msg === "string" ? msg : output.parts?.filter((p: any) => p.type === "text").map((p: any) => p.text).join(" ") || "";

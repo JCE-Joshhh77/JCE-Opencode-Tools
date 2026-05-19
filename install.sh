@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.3.2"
+VERSION="3.3.3"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -47,6 +47,33 @@ success() { echo -e "${GREEN}[✓]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 skip() { echo -e "${YELLOW}[SKIP]${NC} $1"; }
+
+ensure_fish_bun_path() {
+    local bun_bin="${HOME}/.bun/bin"
+    local fish_config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/fish"
+    local fish_config="${fish_config_dir}/config.fish"
+    local marker="# OpenCode JCE: Bun global bin"
+
+    if ! command -v fish &>/dev/null && [ ! -d "$fish_config_dir" ]; then
+        return
+    fi
+
+    mkdir -p "$fish_config_dir"
+    touch "$fish_config"
+
+    if grep -Fq "$marker" "$fish_config" || grep -Fq "set -gx PATH \"$bun_bin\" \$PATH" "$fish_config"; then
+        return
+    fi
+
+    cat >> "$fish_config" <<EOF
+
+$marker
+if not contains "$bun_bin" \$PATH
+    set -gx PATH "$bun_bin" \$PATH
+end
+EOF
+    success "Fish PATH configured: $bun_bin"
+}
 
 detect_opencode_config() {
     info "Detecting OpenCode config directory..."
@@ -271,6 +298,7 @@ install_bun() {
     # Source the updated profile to get bun in PATH
     export BUN_INSTALL="${HOME}/.bun"
     export PATH="${BUN_INSTALL}/bin:${PATH}"
+    ensure_fish_bun_path
 
     if command -v bun &>/dev/null; then
         success "Bun installed: v$(bun --version)"
@@ -290,6 +318,7 @@ install_opencode() {
 
     info "Installing OpenCode CLI..."
     bun install -g opencode || true
+    ensure_fish_bun_path
 
     if command -v opencode &>/dev/null; then
         success "OpenCode CLI installed"
@@ -474,6 +503,8 @@ deploy_config() {
 exec bun run "$install_dir/src/index.ts" "\$@"
 EOF
     chmod 755 "$bun_bin/opencode-jce"
+    export PATH="$bun_bin:$PATH"
+    ensure_fish_bun_path
 
     if command -v opencode-jce &>/dev/null; then
         success "opencode-jce CLI installed globally"

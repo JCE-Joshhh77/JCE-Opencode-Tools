@@ -82,4 +82,14 @@ describe("installer CLI payload verification", () => {
       expect(text).toContain(file);
     }
   });
+
+  test("Unix installer configures Fish PATH for Bun global binaries", () => {
+    const text = readFileSync(join(root, "install.sh"), "utf8");
+    expect(text).toContain("ensure_fish_bun_path()");
+    expect(text).toContain("${XDG_CONFIG_HOME:-$HOME/.config}/fish");
+    expect(text).toContain("command -v fish");
+    expect(text).toContain("# OpenCode JCE: Bun global bin");
+    expect(text).toContain("set -gx PATH \"$bun_bin\" \\$PATH");
+    expect(text.match(/ensure_fish_bun_path/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+  });
 });
