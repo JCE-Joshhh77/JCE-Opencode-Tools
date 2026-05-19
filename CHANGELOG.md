@@ -11,14 +11,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 ### Fixed
 - Hardened install, reinstall, and update payload verification so JCE intelligence commands and Web/API/DevOps/Security flow modules are explicitly required before CLI source swaps.
 - Added update-path payload validation in `opencode-jce update`, matching installer safety checks.
+- Stopped stale OpenCode/plugin processes after install, reinstall, and update so macOS/Linux sessions do not keep running the old plugin/CLI payload.
 
 ### Changed
 - Bumped project, installer, config, MCP, README, and release workflow test versions to `3.3.1`.
 
 ### Verified
 - `bun test tests/unit/install-payload-verification.test.ts` (`3 pass`, `0 fail`)
+- `bun test tests/unit/update-process-cleanup.test.ts` (`2 pass`, `0 fail`)
 - `bun run typecheck`
-- `bun test` (`939 pass`, `0 fail`)
+- `bun test` (`941 pass`, `0 fail`)
 
 ---
 

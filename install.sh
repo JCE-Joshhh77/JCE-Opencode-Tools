@@ -193,6 +193,28 @@ verify_jce_cli_payload() {
     fi
 }
 
+terminate_stale_opencode_processes() {
+    [ "${OPENCODE_JCE_SKIP_PROCESS_CLEANUP:-}" = "1" ] && return 0
+    command -v ps >/dev/null 2>&1 || return 0
+    local current_pid="$$"
+    local pids=()
+    while IFS= read -r line; do
+        local pid command
+        pid="$(printf '%s' "$line" | awk '{print $1}')"
+        command="$(printf '%s' "$line" | cut -d' ' -f3-)"
+        [ -n "$pid" ] || continue
+        [ "$pid" = "$current_pid" ] && continue
+        printf '%s' "$command" | grep -Eq 'opencode-jce(.cmd|.ps1|.exe)? .*update|src/index\.ts .*update' && continue
+        if printf '%s' "$command" | grep -Eq '(^|[ /])opencode( |$)|\.config/opencode/cli/src/(plugin/index|mcp/context-keeper)\.ts|src/(plugin/index|mcp/context-keeper)\.ts'; then
+            pids+=("$pid")
+        fi
+    done < <(ps -axo pid=,ppid=,command= 2>/dev/null || true)
+    if [ "${#pids[@]}" -gt 0 ]; then
+        kill -TERM "${pids[@]}" 2>/dev/null || true
+        warn "Stopped ${#pids[@]} stale OpenCode process(es) so the updated plugin/CLI is loaded next run."
+    fi
+}
+
 # ─── Installation Steps ──────────────────────────────────────
 
 install_git() {
@@ -454,6 +476,7 @@ EOF
     else
         warn "opencode-jce installed. Add $bun_bin to PATH or restart your terminal."
     fi
+    terminate_stale_opencode_processes
 
     # Cleanup
     rm -rf "$TEMP_DIR"

@@ -142,6 +142,24 @@ function Test-JceCliPayload($dir) {
     }
 }
 
+function Stop-StaleOpenCodeProcesses {
+    if ($env:OPENCODE_JCE_SKIP_PROCESS_CLEANUP -eq "1") { return }
+    try {
+        $currentPid = $PID
+        $targets = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.ProcessId -ne $currentPid -and $_.CommandLine -and
+            $_.CommandLine -notmatch 'opencode-jce(\.cmd|\.ps1|\.exe)?\s+.*\bupdate\b' -and
+            ($_.Name -match '^opencode(\.exe)?$' -or $_.CommandLine -match '\.config[\\/]opencode[\\/]cli[\\/]src[\\/](plugin[\\/]index|mcp[\\/]context-keeper)\.ts|src[\\/](plugin[\\/]index|mcp[\\/]context-keeper)\.ts')
+        }
+        foreach ($target in $targets) {
+            try { Stop-Process -Id $target.ProcessId -Force:$false -ErrorAction SilentlyContinue } catch {}
+        }
+        if ($targets.Count -gt 0) {
+            Write-Warn "Stopped $($targets.Count) stale OpenCode process(es) so the updated plugin/CLI is loaded next run."
+        }
+    } catch {}
+}
+
 function Install-GoLsp {
     if (-not (Get-KnownCommandPath "go")) {
         Invoke-InstallCommand "winget install -e --id GoLang.Go --accept-package-agreements --accept-source-agreements"
@@ -551,6 +569,7 @@ function Deploy-Config {
         } else {
             Write-Warn "opencode-jce installed. Restart PowerShell to use it."
         }
+        Stop-StaleOpenCodeProcesses
     } catch {
         Write-Warn "Could not install opencode-jce CLI globally: $_"
         $script:CliInstallFailed = $true

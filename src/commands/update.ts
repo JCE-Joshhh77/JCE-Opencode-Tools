@@ -56,6 +56,55 @@ function assertCliPayloadComplete(dir: string): void {
   if (missing.length > 0) throw new Error(`Downloaded CLI source is incomplete; missing: ${missing.join(", ")}`);
 }
 
+export interface ProcessSnapshot {
+  pid: number;
+  ppid: number;
+  command: string;
+}
+
+function isUpdateProcessCommand(command: string): boolean {
+  return /\bopencode-jce(?:\.cmd|\.ps1|\.exe)?\b[\s\S]*\bupdate\b/i.test(command) || /src[\\/]index\.ts[\s\S]*\bupdate\b/i.test(command);
+}
+
+function isStaleOpenCodeCommand(command: string): boolean {
+  const normalized = command.replace(/\\/g, "/");
+  if (isUpdateProcessCommand(normalized)) return false;
+  return /(^|[\s/])opencode(\s|$)/i.test(normalized)
+    || /\.config\/opencode\/cli\/src\/(plugin\/index|mcp\/context-keeper)\.ts/i.test(normalized)
+    || /src\/(plugin\/index|mcp\/context-keeper)\.ts/i.test(normalized);
+}
+
+export function planStaleOpenCodeProcessKills(processes: ProcessSnapshot[], currentPid = process.pid): ProcessSnapshot[] {
+  return processes
+    .filter((entry) => entry.pid > 0 && entry.pid !== currentPid)
+    .filter((entry) => isStaleOpenCodeCommand(entry.command));
+}
+
+function parseUnixProcessList(output: string): ProcessSnapshot[] {
+  return output.split(/\r?\n/).map((line) => {
+    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
+    if (!match) return undefined;
+    return { pid: Number(match[1]), ppid: Number(match[2]), command: match[3] ?? "" };
+  }).filter((entry): entry is ProcessSnapshot => Boolean(entry));
+}
+
+async function listUnixProcesses(): Promise<ProcessSnapshot[]> {
+  const proc = Bun.spawn(["ps", "-axo", "pid=,ppid=,command="], { stdout: "pipe", stderr: "pipe" });
+  const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+  if (exitCode !== 0) return [];
+  return parseUnixProcessList(stdout);
+}
+
+async function terminateStaleOpenCodeProcesses(): Promise<ProcessSnapshot[]> {
+  if (process.env.OPENCODE_JCE_SKIP_PROCESS_CLEANUP === "1") return [];
+  if (process.platform === "win32") return [];
+  const targets = planStaleOpenCodeProcessKills(await listUnixProcesses());
+  for (const target of targets) {
+    try { process.kill(target.pid, "SIGTERM"); } catch { /* Process may already have exited. */ }
+  }
+  return targets;
+}
+
 // ─── Types ───────────────────────────────────────────────────
 
 interface RemotePackageJson {
@@ -1071,6 +1120,10 @@ export const updateCommand = new Command("update")
       success(`Version: ${localVersion} → ${latestVersion}`);
     } else {
       success(`Synced to latest build (v${latestVersion}).`);
+    }
+    const terminated = await terminateStaleOpenCodeProcesses();
+    if (terminated.length > 0) {
+      warn(`Stopped ${terminated.length} stale OpenCode process(es) so the updated plugin/CLI is loaded next run.`);
     }
     info("Your existing customizations have been preserved.");
     info("Run `opencode-jce doctor` to verify your installation.");
