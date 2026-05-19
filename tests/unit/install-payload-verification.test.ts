@@ -25,8 +25,30 @@ const flutterPayloadFiles = [
   "evidence-gate.ts",
   "release-readiness.ts",
 ];
+const jceIntelligencePayloadFiles = [
+  "src/commands/analytics.ts",
+  "src/commands/capabilities.ts",
+  "src/commands/docs.ts",
+  "src/commands/evidence.ts",
+  "src/commands/flow.ts",
+  "src/commands/skills.ts",
+  "src/plugin/lib/jce-intelligence.ts",
+  "src/plugin/lib/api/index.ts",
+  "src/plugin/lib/devops/index.ts",
+  "src/plugin/lib/security-flow/index.ts",
+  "src/plugin/lib/web/index.ts",
+];
 
 describe("installer CLI payload verification", () => {
+  test("TypeScript update verifies JCE intelligence payload before swapping CLI", () => {
+    const text = readFileSync(join(root, "src", "commands", "update.ts"), "utf8");
+    expect(text).toContain("REQUIRED_CLI_PAYLOAD_FILES");
+    expect(text).toContain("assertCliPayloadComplete(stagingDir)");
+    for (const file of jceIntelligencePayloadFiles) {
+      expect(text).toContain(file);
+    }
+  });
+
   test("PowerShell installer verifies Android advanced modules before swapping CLI", () => {
     const text = readFileSync(join(root, "install.ps1"), "utf8");
     expect(text).toContain("function Test-JceCliPayload");
@@ -36,6 +58,9 @@ describe("installer CLI payload verification", () => {
     }
     for (const file of flutterPayloadFiles) {
       expect(text).toContain(`src\\plugin\\lib\\flutter\\${file}`);
+    }
+    for (const file of jceIntelligencePayloadFiles) {
+      expect(text).toContain(file.split("/").join("\\"));
     }
   });
 
@@ -48,6 +73,9 @@ describe("installer CLI payload verification", () => {
     }
     for (const file of flutterPayloadFiles) {
       expect(text).toContain(`src/plugin/lib/flutter/${file}`);
+    }
+    for (const file of jceIntelligencePayloadFiles) {
+      expect(text).toContain(file);
     }
   });
 });

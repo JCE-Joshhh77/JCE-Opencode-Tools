@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.3.0"
+$Version = "3.3.1"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -103,6 +103,17 @@ function Test-JceCliPayload($dir) {
     $required = @(
         "src\index.ts",
         "src\plugin\index.ts",
+        "src\commands\analytics.ts",
+        "src\commands\capabilities.ts",
+        "src\commands\docs.ts",
+        "src\commands\evidence.ts",
+        "src\commands\flow.ts",
+        "src\commands\skills.ts",
+        "src\plugin\lib\jce-intelligence.ts",
+        "src\plugin\lib\api\index.ts",
+        "src\plugin\lib\devops\index.ts",
+        "src\plugin\lib\security-flow\index.ts",
+        "src\plugin\lib\web\index.ts",
         "src\plugin\lib\android\advanced-flow.ts",
         "src\plugin\lib\android\environment-probe.ts",
         "src\plugin\lib\android\command-planner.ts",

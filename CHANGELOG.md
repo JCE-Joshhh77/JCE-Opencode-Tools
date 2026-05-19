@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.3.1] - 2026-05-19
+
+### Fixed
+- Hardened install, reinstall, and update payload verification so JCE intelligence commands and Web/API/DevOps/Security flow modules are explicitly required before CLI source swaps.
+- Added update-path payload validation in `opencode-jce update`, matching installer safety checks.
+
+### Changed
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `3.3.1`.
+
+### Verified
+- `bun test tests/unit/install-payload-verification.test.ts` (`3 pass`, `0 fail`)
+- `bun run typecheck`
+- `bun test` (`939 pass`, `0 fail`)
+
+---
+
 ## [3.3.0] - 2026-05-19
 
 ### Added

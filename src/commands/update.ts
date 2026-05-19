@@ -17,6 +17,45 @@ import {
 import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
 import { GITHUB_RAW_BASE, GITHUB_REPO, VERSION } from "../lib/constants.js";
 
+const REQUIRED_CLI_PAYLOAD_FILES = [
+  "src/index.ts",
+  "src/plugin/index.ts",
+  "src/commands/analytics.ts",
+  "src/commands/capabilities.ts",
+  "src/commands/docs.ts",
+  "src/commands/evidence.ts",
+  "src/commands/flow.ts",
+  "src/commands/skills.ts",
+  "src/plugin/lib/jce-intelligence.ts",
+  "src/plugin/lib/api/index.ts",
+  "src/plugin/lib/devops/index.ts",
+  "src/plugin/lib/security-flow/index.ts",
+  "src/plugin/lib/web/index.ts",
+  "src/plugin/lib/android/advanced-flow.ts",
+  "src/plugin/lib/android/environment-probe.ts",
+  "src/plugin/lib/android/command-planner.ts",
+  "src/plugin/lib/android/evidence-gate.ts",
+  "src/plugin/lib/android/compatibility-matrix.ts",
+  "src/plugin/lib/android/security-auditor.ts",
+  "src/plugin/lib/android/release-readiness.ts",
+  "src/plugin/lib/android/build-optimizer.ts",
+  "src/plugin/lib/android/orchestration-plan.ts",
+  "src/plugin/lib/android/device-flow.ts",
+  "src/plugin/lib/flutter/project-scanner.ts",
+  "src/plugin/lib/flutter/verification-recipe.ts",
+  "src/plugin/lib/flutter/failure-classifier.ts",
+  "src/plugin/lib/flutter/environment-probe.ts",
+  "src/plugin/lib/flutter/advanced-flow.ts",
+  "src/plugin/lib/flutter/command-planner.ts",
+  "src/plugin/lib/flutter/evidence-gate.ts",
+  "src/plugin/lib/flutter/release-readiness.ts",
+];
+
+function assertCliPayloadComplete(dir: string): void {
+  const missing = REQUIRED_CLI_PAYLOAD_FILES.filter((file) => !existsSync(join(dir, file)));
+  if (missing.length > 0) throw new Error(`Downloaded CLI source is incomplete; missing: ${missing.join(", ")}`);
+}
+
 // ─── Types ───────────────────────────────────────────────────
 
 interface RemotePackageJson {
@@ -263,9 +302,7 @@ async function updateLocalCliFolder(latestVersion: string): Promise<void> {
       }
     }
 
-    if (!existsSync(join(stagingDir, "src", "index.ts"))) {
-      throw new Error("Downloaded CLI source is missing src/index.ts.");
-    }
+    assertCliPayloadComplete(stagingDir);
 
     // Install dependencies
     const installProc = Bun.spawn(

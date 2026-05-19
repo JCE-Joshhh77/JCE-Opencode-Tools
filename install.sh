@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.3.0"
+VERSION="3.3.1"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -153,6 +153,17 @@ verify_jce_cli_payload() {
     local required=(
         "src/index.ts"
         "src/plugin/index.ts"
+        "src/commands/analytics.ts"
+        "src/commands/capabilities.ts"
+        "src/commands/docs.ts"
+        "src/commands/evidence.ts"
+        "src/commands/flow.ts"
+        "src/commands/skills.ts"
+        "src/plugin/lib/jce-intelligence.ts"
+        "src/plugin/lib/api/index.ts"
+        "src/plugin/lib/devops/index.ts"
+        "src/plugin/lib/security-flow/index.ts"
+        "src/plugin/lib/web/index.ts"
         "src/plugin/lib/android/advanced-flow.ts"
         "src/plugin/lib/android/environment-probe.ts"
         "src/plugin/lib/android/command-planner.ts"
