@@ -86,13 +86,18 @@ export function readOrRepairOpenCodeJson(configDir: string): ReadOpenCodeJsonRes
 
   if (!existsSync(configPath)) return { config: {}, repaired: false };
 
+  const raw = readFileSync(configPath, "utf8");
   try {
-    const parsed = JSON.parse(readFileSync(configPath, "utf8"));
+    const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return { config: parsed as Record<string, unknown>, repaired: false };
     }
   } catch {
     // handled below
+  }
+
+  if (raw.trim().length > 0) {
+    throw new Error(`Refusing to rebuild malformed opencode.json automatically. Fix the file or restore from a backup: ${configPath}`);
   }
 
   const backupPath = `${configPath}.invalid-${timestamp()}`;

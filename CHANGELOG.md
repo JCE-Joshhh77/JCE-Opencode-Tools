@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.3.5] - 2026-05-19
+
+### Fixed
+- Hardened `opencode.json` preservation: install, reinstall, and update now refuse to automatically rebuild a non-empty malformed `opencode.json`, preserving the user's original file unchanged instead of replacing it with defaults.
+- Update migrations now fail soft with warnings instead of aborting after a preserved malformed config is detected.
+
+### Changed
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `3.3.5`.
+
+### Verified
+- `bun test tests/unit/opencode-config-merge.test.ts tests/unit/install-merge-config.test.ts tests/unit/update-config-hardening.test.ts tests/unit/audit-fixes.test.ts tests/unit/plugin-workflow-tool.test.ts tests/unit/ui.test.ts`
+- `bun run typecheck`
+
+---
+
 ## [3.3.4] - 2026-05-19
 
 ### Fixed

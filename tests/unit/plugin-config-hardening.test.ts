@@ -51,14 +51,14 @@ describe("plugin config hardening", () => {
     expect(updated.mcp.demo.command).toEqual(["npx", "demo-mcp"]);
   });
 
-  test("plugin config apply repairs malformed opencode.json before merge", async () => {
+  test("plugin config apply preserves malformed opencode.json instead of rebuilding", async () => {
     const xdg = tempDir();
     const configDir = join(xdg, "opencode");
     mkdirSync(configDir, { recursive: true });
     process.env.XDG_CONFIG_HOME = xdg;
     writeFileSync(join(configDir, "opencode.json"), "{ broken", "utf8");
 
-    await applyPluginConfig({
+    await expect(applyPluginConfig({
       name: "demo-mcp",
       version: "1.0.0",
       type: "mcp",
@@ -68,10 +68,9 @@ describe("plugin config hardening", () => {
           demo: { type: "local", command: ["npx", "demo-mcp"], enabled: true },
         },
       },
-    });
+    })).rejects.toThrow("Refusing to rebuild malformed opencode.json automatically");
 
-    const updated = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"));
-    expect(updated.mcp.demo.command).toEqual(["npx", "demo-mcp"]);
+    expect(readFileSync(join(configDir, "opencode.json"), "utf8")).toBe("{ broken");
   });
 
   test("plugin config apply skips MCP collisions without corrupting config", async () => {

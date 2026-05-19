@@ -18,17 +18,13 @@ afterEach(() => {
 });
 
 describe("update config hardening", () => {
-  test("backs up malformed opencode.json and rebuilds during ensure flow", () => {
+  test("refuses to rebuild non-empty malformed opencode.json during ensure flow", () => {
     const configDir = tempConfigDir();
     const configPath = join(configDir, "opencode.json");
     writeFileSync(configPath, "{ nope", "utf8");
 
-    const result = ensureOpenCodeJsonEntries(configDir);
-    const rebuilt = JSON.parse(readFileSync(configPath, "utf8"));
-
-    expect(result.repaired).toBe(true);
-    expect(result.backupPath).toContain("opencode.json.invalid-");
-    expect(rebuilt.mcp).toBeTruthy();
+    expect(() => ensureOpenCodeJsonEntries(configDir)).toThrow("Refusing to rebuild malformed opencode.json automatically");
+    expect(readFileSync(configPath, "utf8")).toBe("{ nope");
   });
 
   test("preserves existing custom providers and plugins across repeated ensure flow", () => {

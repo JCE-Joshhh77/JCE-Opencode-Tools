@@ -11,17 +11,12 @@ function tempConfigDir(): string {
 }
 
 describe("install merge config hardening", () => {
-  test("shared merge helper repairs malformed opencode.json for installer path", () => {
+  test("shared merge helper preserves non-empty malformed opencode.json for installer path", () => {
     const configDir = tempConfigDir();
     const configPath = join(configDir, "opencode.json");
     writeFileSync(configPath, "{ broken", "utf8");
 
-    const result = ensureOpenCodeJsonEntries(configDir);
-    const repaired = JSON.parse(readFileSync(configPath, "utf8"));
-
-    expect(result.repaired).toBe(true);
-    expect(result.backupPath).toContain("opencode.json.invalid-");
-    expect(Array.isArray(repaired.plugin)).toBe(true);
-    expect(repaired.mcp).toBeTruthy();
+    expect(() => ensureOpenCodeJsonEntries(configDir)).toThrow("Refusing to rebuild malformed opencode.json automatically");
+    expect(readFileSync(configPath, "utf8")).toBe("{ broken");
   });
 });

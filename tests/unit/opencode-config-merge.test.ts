@@ -29,18 +29,13 @@ describe("opencode config merge", () => {
     expect(merged.mcp).toBeTruthy();
   });
 
-  test("backs up malformed opencode.json and rebuilds a valid file", () => {
+  test("refuses to rebuild non-empty malformed opencode.json", () => {
     const configDir = tempConfigDir();
     const configPath = join(configDir, "opencode.json");
     writeFileSync(configPath, "{ invalid json");
 
-    const result = ensureOpenCodeJsonEntries(configDir);
-
-    const rebuilt = JSON.parse(readFileSync(configPath, "utf8"));
-    expect(result.repaired).toBe(true);
-    expect(result.backupPath).toContain("opencode.json.invalid-");
-    expect(Array.isArray(rebuilt.plugin)).toBe(true);
-    expect(rebuilt.mcp).toBeTruthy();
+    expect(() => ensureOpenCodeJsonEntries(configDir)).toThrow("Refusing to rebuild malformed opencode.json automatically");
+    expect(readFileSync(configPath, "utf8")).toBe("{ invalid json");
   });
 
   test("does not duplicate JCE plugin entries on repeated merge", () => {

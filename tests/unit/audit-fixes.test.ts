@@ -246,13 +246,12 @@ describe("audit fixes", () => {
     expect(source).toContain("await rename(backupDir, cliDir);");
   });
 
-  test("install merge repairs malformed opencode.json by backing it up", () => {
+  test("install merge refuses to rebuild non-empty malformed opencode.json", () => {
     const source = readFileSync(join(process.cwd(), "scripts", "merge-config.ts"), "utf-8");
     const helper = readFileSync(join(process.cwd(), "src", "lib", "opencode-config-merge.ts"), "utf-8");
 
     expect(source).toContain("ensureOpenCodeJsonEntries(targetDir)");
-    expect(source).toContain("opencode.json created (repaired)");
-    expect(helper).toContain(".invalid-");
+    expect(helper).toContain("Refusing to rebuild malformed opencode.json automatically");
   });
 
   test("update merges default plugin entries into existing opencode.json", () => {
@@ -260,7 +259,7 @@ describe("audit fixes", () => {
     const helper = readFileSync(join(process.cwd(), "src", "lib", "opencode-config-merge.ts"), "utf-8");
 
     expect(source).toContain("ensureOpenCodeJsonEntries(configDir)");
-    expect(source).toContain("Malformed opencode.json was backed up to");
+    expect(source).toContain("Preserved existing opencode.json unchanged");
     expect(helper).toContain("needsCliPath");
   });
 

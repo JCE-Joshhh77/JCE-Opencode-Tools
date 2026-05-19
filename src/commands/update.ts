@@ -792,11 +792,19 @@ async function handleFallback(configDir: string): Promise<FallbackStatus> {
  * Ensure OpenCode's primary config exists before migrations register MCP/LSP.
  */
 async function ensureOpenCodeJson(configDir: string): Promise<boolean> {
-  const result = ensureOpenCodeJsonEntries(configDir);
-  if (result.repaired && result.backupPath) {
-    warn(`Malformed opencode.json was backed up to ${result.backupPath} and rebuilt.`);
+  try {
+    const result = ensureOpenCodeJsonEntries(configDir);
+    if (result.repaired && result.backupPath) {
+      warn(`Malformed opencode.json was backed up to ${result.backupPath} and rebuilt.`);
+    }
+    return result.changed;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    warn(msg);
+    warn("Preserved existing opencode.json unchanged. Fix the JSON syntax, then rerun `opencode-jce update`.");
+    logCommandError("update", `opencode.json merge refused: ${msg}`);
+    return false;
   }
-  return result.changed;
 }
 
 async function ensureTuiJson(configDir: string): Promise<boolean> {
@@ -1111,7 +1119,14 @@ export const updateCommand = new Command("update")
     // Run migrations based on version.json state (independent of binary version)
     console.log();
     info("Running migrations...");
-    const migrationsRun = await runMigrations(latestVersion || CURRENT_CONFIG_VERSION);
+    let migrationsRun = 0;
+    try {
+      migrationsRun = await runMigrations(latestVersion || CURRENT_CONFIG_VERSION);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warn(`Migration skipped/failed without rewriting config: ${msg}`);
+      logCommandError("update", `migration skipped/failed: ${msg}`);
+    }
     if (migrationsRun > 0) {
       success(`Ran ${migrationsRun} migration(s).`);
     } else {
