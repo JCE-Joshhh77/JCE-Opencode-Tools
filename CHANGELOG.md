@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.3.4] - 2026-05-19
+
+### Fixed
+- Added `src/lib/context-template.ts` to install, reinstall, and update payload verification so the plugin-side `.opencode-context.md` bootstrap dependency is explicitly required before CLI source swaps.
+
+### Changed
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `3.3.4`.
+
+### Verified
+- `bun test tests/unit/install-payload-verification.test.ts tests/unit/plugin-integration.test.ts tests/unit/plugin-workflow-tool.test.ts tests/unit/ui.test.ts`
+- `bun run typecheck`
+
+---
+
 ## [3.3.3] - 2026-05-19
 
 ### Fixed

@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.3.3"
+$Version = "3.3.4"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -102,6 +102,7 @@ function Invoke-NativeCommand($exe, [string[]]$arguments) {
 function Test-JceCliPayload($dir) {
     $required = @(
         "src\index.ts",
+        "src\lib\context-template.ts",
         "src\plugin\index.ts",
         "src\plugin\hooks\jce-worker-guard.ts",
         "src\plugin\hooks\open-work-enforcer.ts",

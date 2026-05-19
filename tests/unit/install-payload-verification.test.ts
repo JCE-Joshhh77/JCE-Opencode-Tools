@@ -26,6 +26,7 @@ const flutterPayloadFiles = [
   "release-readiness.ts",
 ];
 const jceIntelligencePayloadFiles = [
+  "src/lib/context-template.ts",
   "src/plugin/hooks/jce-worker-guard.ts",
   "src/plugin/hooks/open-work-enforcer.ts",
   "src/plugin/hooks/todo-enforcer.ts",
