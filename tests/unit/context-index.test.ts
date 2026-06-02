@@ -1,13 +1,17 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, normalize } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   CONTEXT_INDEX_SESSION,
+  CONTEXT_INDEX_DIR,
+  CONTEXT_NOTES_DIR,
   inferContextBucket,
   listContextBuckets,
   readContextIndex,
   writeContextIndex,
+  pruneContextIndexNotes,
+  getContextIndexStats,
 } from "../../src/lib/context-index.js";
 
 const roots: string[] = [];
@@ -47,7 +51,7 @@ describe("context index", () => {
     expect(session).toContain("# JCE Context Index");
     expect(session).toContain("`release`");
 
-    const releaseIndex = await readContextIndex(root, "release");
+    const releaseIndex = await readContextIndex(root, { bucket: "release" });
     expect(releaseIndex).toContain("Released v3.4.0");
     expect(releaseIndex).toContain("../notes/");
     const link = result!.entry.split(" -> ")[1];
@@ -73,17 +77,135 @@ describe("context index", () => {
     const result = await writeContextIndex(root, { bucket: "Release Notes!!", summary: "Recorded release notes" });
 
     expect(result!.bucket).toBe("release-notes");
-    await expect(readContextIndex(root, "Release Notes!!")).resolves.toContain("Recorded release notes");
+    await expect(readContextIndex(root, { bucket: "Release Notes!!" })).resolves.toContain("Recorded release notes");
     await expect(listContextBuckets(root)).resolves.toEqual(["release-notes"]);
   });
 
-  test("keeps duplicate summaries as separate notes", async () => {
+  test("deduplicates by summary text, not full entry", async () => {
     const root = await tempRoot();
-    const first = await writeContextIndex(root, { bucket: "testing", summary: "Repeated smoke verification" });
-    const second = await writeContextIndex(root, { bucket: "testing", summary: "Repeated smoke verification" });
+    const first = await writeContextIndex(root, { bucket: "testing", summary: "Smoke verified context index" });
+    const second = await writeContextIndex(root, { bucket: "testing", summary: "Smoke verified context index" });
 
-    expect(first!.notePath).not.toBe(second!.notePath);
-    const index = await readContextIndex(root, "testing");
-    expect(index.match(/Repeated smoke verification/g)?.length).toBe(2);
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+    const index = await readContextIndex(root, { bucket: "testing" });
+    expect(index.match(/Smoke verified context index/g)?.length).toBe(1);
+  });
+
+  test("allows different summaries in same bucket", async () => {
+    const root = await tempRoot();
+    const first = await writeContextIndex(root, { bucket: "testing", summary: "First verification run" });
+    const second = await writeContextIndex(root, { bucket: "testing", summary: "Second verification run" });
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    const index = await readContextIndex(root, { bucket: "testing" });
+    expect(index).toContain("First verification run");
+    expect(index).toContain("Second verification run");
+  });
+
+  test("noise filter rejects empty summary and no verification", async () => {
+    const root = await tempRoot();
+    const result = await writeContextIndex(root, { summary: "short" });
+    expect(result).toBeNull();
+  });
+
+  test("noise filter accepts meaningful verification", async () => {
+    const root = await tempRoot();
+    const result = await writeContextIndex(root, { verification: ["bun test passed"] });
+    expect(result).not.toBeNull();
+  });
+
+  test("noise filter accepts meaningful summary", async () => {
+    const root = await tempRoot();
+    const result = await writeContextIndex(root, { summary: "Released v3.4.2 with context index reliability fixes" });
+    expect(result).not.toBeNull();
+  });
+
+  test("search filter by keyword", async () => {
+    const root = await tempRoot();
+    await writeContextIndex(root, { bucket: "testing", summary: "Verified context index works correctly" });
+    await writeContextIndex(root, { bucket: "testing", summary: "Verified release pipeline runs" });
+
+    const filtered = await readContextIndex(root, { bucket: "testing", keyword: "release" });
+    expect(filtered).toContain("release pipeline");
+    expect(filtered).not.toContain("context index works");
+  });
+
+  test("search filter by agent", async () => {
+    const root = await tempRoot();
+    await writeContextIndex(root, { bucket: "testing", summary: "First test run completed", agent: "OpenCode" });
+    await writeContextIndex(root, { bucket: "testing", summary: "Second test run completed", agent: "JCE-Worker" });
+
+    const filtered = await readContextIndex(root, { bucket: "testing", agent: "JCE-Worker" });
+    expect(filtered).toContain("Second test run");
+    expect(filtered).not.toContain("First test run");
+  });
+
+  test("stats returns correct counts", async () => {
+    const root = await tempRoot();
+    await writeContextIndex(root, { bucket: "testing", summary: "Verified test suite one" });
+    await writeContextIndex(root, { bucket: "testing", summary: "Verified test suite two" });
+    await writeContextIndex(root, { bucket: "release", summary: "Released version one" });
+
+    const stats = await getContextIndexStats(root);
+    expect(stats.totalNotes).toBe(3);
+    expect(stats.totalEntries).toBe(3);
+    expect(stats.buckets.length).toBe(2);
+    const testing = stats.buckets.find((b) => b.name === "testing");
+    expect(testing!.entryCount).toBe(2);
+    expect(testing!.noteCount).toBe(2);
+  });
+
+  test("prune deletes old notes by age", async () => {
+    const root = await tempRoot();
+    const result = await writeContextIndex(root, { bucket: "testing", summary: "Old test note for pruning" });
+    expect(result).not.toBeNull();
+
+    // Prune with maxAge=0 (delete everything older than now)
+    const pruned = await pruneContextIndexNotes(root, "testing", { maxAge: 0 });
+    expect(pruned.deletedNotes.length).toBe(1);
+    expect(pruned.bucket).toBe("testing");
+  });
+
+  test("prune dryRun does not delete files", async () => {
+    const root = await tempRoot();
+    await writeContextIndex(root, { bucket: "testing", summary: "Dry run test note for pruning" });
+
+    const pruned = await pruneContextIndexNotes(root, "testing", { maxAge: 0, dryRun: true });
+    expect(pruned.deletedNotes.length).toBe(1);
+
+    // File should still exist
+    const notes = await readContextIndex(root, { bucket: "testing" });
+    expect(notes).toContain("Dry run test note");
+  });
+
+  test("prune by maxNotes keeps newest", async () => {
+    const root = await tempRoot();
+    await writeContextIndex(root, { bucket: "testing", summary: "Note alpha for pruning" });
+    await writeContextIndex(root, { bucket: "testing", summary: "Note beta for pruning" });
+    await writeContextIndex(root, { bucket: "testing", summary: "Note gamma for pruning" });
+
+    const pruned = await pruneContextIndexNotes(root, "testing", { maxNotes: 1 });
+    expect(pruned.deletedNotes.length).toBe(2);
+
+    const index = await readContextIndex(root, { bucket: "testing" });
+    expect(index).toContain("Note gamma");
+  });
+
+  test("bucket inference uses weighted scoring for files", () => {
+    expect(inferContextBucket({
+      summary: "Updated config",
+      changedFiles: ["install.ps1", "install.sh"],
+    })).toBe("release");
+
+    expect(inferContextBucket({
+      summary: "Updated config",
+      changedFiles: ["src/lib/context-index.ts"],
+    })).toBe("config");
+  });
+
+  test("bucket inference falls back to general for weak signals", () => {
+    expect(inferContextBucket({ summary: "Did some stuff" })).toBe("general");
   });
 });

@@ -6,6 +6,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.5.0] - 2026-06-02
+
+### Fixed
+- Fixed context index deduplication: was comparing full entry string (including timestamp) so duplicates were never detected. Now compares summary text per bucket.
+- Fixed `pruneContextIndexNotes` using `endsWith` instead of `includes` for note filename matching, so pruning actually finds notes.
+- Fixed bucket inference scoring: summary matches now get proper weight instead of being treated as weak signals.
+
+### Added
+- Notes pruning: `pruneContextIndexNotes(bucket, { maxAge?, maxNotes?, dryRun? })` deletes old notes by age or count, with index entry cleanup.
+- MCP tools: `context_index_prune` (prune old notes/entries) and `context_index_stats` (show bucket/note/entry counts).
+- Search/filter on `context_index_read`: optional `since`, `agent`, `keyword` params to filter bucket entries.
+- In-memory cache for session and index content, invalidated on write. Reduces IO for repeated reads.
+- Noise filter: `writeContextIndex` skips writes without meaningful summary (>10 chars) or verification/blockers/nextSteps/android.
+- Auto `.gitignore` entry: `ensureContextIndex` adds `.opencode-jce/context/` to `.gitignore` if not present.
+- Configurable bucket descriptions via `.opencode-jce/context-config.json`.
+- Weighted bucket inference scoring: file-path signals get 3x weight, summary matches get 2x.
+- `context_read` response now includes index stats (total notes, total entries).
+- Comprehensive test coverage: dedup, pruning, stats, search/filter, noise filter, bucket inference scoring, dryRun.
+
+### Changed
+- `readContextIndex` now takes `ContextIndexReadOptions` object instead of plain string for bucket parameter.
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `3.5.0`.
+
+### Verified
+- `bun run typecheck` (pass)
+- `bun test` (`979 pass`, `0 fail`)
+
+---
+
 ## [3.4.2] - 2026-06-02
 
 ### Fixed

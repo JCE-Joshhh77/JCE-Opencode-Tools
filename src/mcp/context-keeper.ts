@@ -52,7 +52,10 @@ import {
   listContextBuckets,
   readContextIndex,
   writeContextIndex,
+  pruneContextIndexNotes,
+  getContextIndexStats,
   type ContextIndexInput,
+  type ContextIndexReadOptions,
 } from "../lib/context-index.js";
 
 // ─── Re-export section utilities (extracted to prevent circular deps) ────
@@ -230,7 +233,7 @@ async function appendArchive(content: string): Promise<void> {
 const server = new McpServer(
   {
     name: "context-keeper",
-    version: "3.4.2",
+    version: "3.5.0",
   },
   {
     instructions: [
@@ -340,6 +343,12 @@ server.tool(
         responseParts.push("");
         responseParts.push("Context Index:");
         responseParts.push(`  - Buckets: ${buckets.join(", ")}`);
+        try {
+          const stats = await getContextIndexStats(projectRoot);
+          responseParts.push(`  - Total notes: ${stats.totalNotes}, entries: ${stats.totalEntries}`);
+        } catch {
+          // stats unavailable
+        }
         responseParts.push("  - Use context_index_read(bucket?) for focused handoff memory.");
       }
 
@@ -611,9 +620,13 @@ server.tool(
   "Read the advanced JCE context index. Omit bucket for master index, or pass a bucket such as release, agents, config, android, testing.",
   {
     bucket: z.string().optional().describe("Optional context bucket to read"),
+    since: z.string().optional().describe("Filter entries by ISO date prefix (e.g. 2026-06-02)"),
+    agent: z.string().optional().describe("Filter entries by agent name"),
+    keyword: z.string().optional().describe("Filter entries by keyword in summary"),
   },
-  async ({ bucket }) => {
-    const text = await readContextIndex(getProjectRoot(), bucket);
+  async ({ bucket, since, agent, keyword }) => {
+    const options: ContextIndexReadOptions = { bucket, since, agent, keyword };
+    const text = await readContextIndex(getProjectRoot(), options);
     return { content: [{ type: "text" as const, text }] };
   },
 );
@@ -632,6 +645,58 @@ server.tool(
     const indexed = await writeContextIndex(getProjectRoot(), input);
     if (!indexed) return { content: [{ type: "text" as const, text: "No context index entry written; provide summary, files, verification, blockers, nextSteps, or android facts." }] };
     return { content: [{ type: "text" as const, text: [`Context index updated:`, `  - Bucket: ${indexed.bucket}`, `  - Index: ${indexed.indexPath}`, `  - Note: ${indexed.notePath}`, `  - Entry: ${indexed.entry}`].join("\n") }] };
+  },
+);
+
+// ─── Tool: context_index_prune ────────────────────────────────
+
+server.tool(
+  "context_index_prune",
+  "Prune old context index notes and entries by age or count. Use dryRun to preview.",
+  {
+    bucket: z.string().describe("Bucket to prune, e.g. release, testing, agents"),
+    maxAge: z.number().optional().describe("Delete notes older than N days (default 30)"),
+    maxNotes: z.number().optional().describe("Keep at most N notes per bucket (default 50)"),
+    dryRun: z.boolean().optional().describe("Preview pruning without deleting files"),
+  },
+  async ({ bucket, maxAge, maxNotes, dryRun }) => {
+    const result = await pruneContextIndexNotes(getProjectRoot(), bucket, { maxAge, maxNotes, dryRun });
+    return {
+      content: [{
+        type: "text" as const,
+        text: [
+          dryRun ? "Context index prune dry run:" : "Context index prune complete:",
+          `  - Bucket: ${result.bucket}`,
+          `  - Notes to delete: ${result.deletedNotes.length}`,
+          `  - Index entries to remove: ${result.prunedEntries}`,
+          ...result.deletedNotes.slice(0, 10).map((n) => `    - ${n}`),
+          result.deletedNotes.length > 10 ? `    ... and ${result.deletedNotes.length - 10} more` : "",
+        ].filter(Boolean).join("\n"),
+      }],
+    };
+  },
+);
+
+// ─── Tool: context_index_stats ────────────────────────────────
+
+server.tool(
+  "context_index_stats",
+  "Show context index usage statistics: bucket counts, note counts, entry counts, last updated dates.",
+  {},
+  async () => {
+    const stats = await getContextIndexStats(getProjectRoot());
+    return {
+      content: [{
+        type: "text" as const,
+        text: [
+          "Context Index Stats:",
+          `  - Total notes: ${stats.totalNotes}`,
+          `  - Total entries: ${stats.totalEntries}`,
+          "",
+          ...stats.buckets.map((b) => `  - ${b.name}: ${b.entryCount} entries, ${b.noteCount} notes, last: ${b.lastUpdated ?? "never"}`),
+        ].join("\n"),
+      }],
+    };
   },
 );
 
