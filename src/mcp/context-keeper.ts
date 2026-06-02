@@ -233,7 +233,7 @@ async function appendArchive(content: string): Promise<void> {
 const server = new McpServer(
   {
     name: "context-keeper",
-    version: "3.5.0",
+    version: "3.5.1",
   },
   {
     instructions: [
@@ -467,14 +467,18 @@ server.tool(
     // Update content hash
     updated = refreshContentHash(updated);
 
-    const current = await readContext();
-    const currentHash = current ? computeContentHash(current) : "";
-    const conflict = detectConflict(expectedHash, currentHash);
     let conflictNote = "";
-    if (conflict.hasConflict && current) {
-      updated = mergeContexts(content, updated, current);
-      updated = markUpdated(refreshContentHash(updated));
-      conflictNote = " Conflict detected; merged non-overlapping section additions.";
+    if (expectedHash) {
+      const readHash = computeContentHash(content);
+      const conflict = detectConflict(expectedHash, readHash);
+      if (conflict.hasConflict) {
+        const current = await readContext();
+        if (current) {
+          updated = mergeContexts(content, updated, current);
+          updated = markUpdated(refreshContentHash(updated));
+          conflictNote = " Conflict detected; merged non-overlapping section additions.";
+        }
+      }
     }
 
     await writeContext(updated);

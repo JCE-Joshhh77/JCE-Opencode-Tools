@@ -292,6 +292,50 @@ function resolveHandoffCommand(): string[] {
 }
 
 /**
+ * Fetch the commit SHA for a git ref (tag or branch) from GitHub.
+ * Returns null if the ref doesn't exist or fetch fails.
+ */
+async function fetchRefSha(repo: string, ref: string): Promise<string | null> {
+  try {
+    const proc = Bun.spawn(
+      ["git", "ls-remote", `https://github.com/${repo}.git`, `refs/tags/${ref}`, `refs/heads/${ref}`],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    if (exitCode !== 0) return null;
+    
+    const lines = stdout.trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      const [sha] = line.split(/\s+/);
+      if (sha && /^[0-9a-f]{40}$/i.test(sha)) return sha;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify the cloned repository is at the expected commit SHA.
+ * Prevents TOCTOU attacks between ref fetch and git clone.
+ */
+async function verifyClonedRepoSha(cloneDir: string, expectedSha: string): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(
+      ["git", "-C", cloneDir, "rev-parse", "HEAD"],
+      { stdout: "pipe", stderr: "pipe" }
+    );
+    const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
+    if (exitCode !== 0) return false;
+    
+    const actualSha = stdout.trim();
+    return actualSha === expectedSha;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Update the local cli/ folder in the config directory.
  * Clones the latest source from GitHub, copies src/, schemas/, package.json,
  * tsconfig.json, and installs dependencies.
@@ -317,6 +361,9 @@ async function updateLocalCliFolder(latestVersion: string): Promise<void> {
     // Clone latest — try tag first, fallback to main branch
     const releaseRef = `v${latestVersion}`;
     let cloneRef = releaseRef;
+    
+    // Fetch expected SHA before clone (TOCTOU protection)
+    let expectedSha = await fetchRefSha(GITHUB_REPO, releaseRef);
     let cloneProc = Bun.spawn(
       ["git", "clone", "--depth", "1", "--branch", cloneRef, `https://github.com/${GITHUB_REPO}.git`, tempDir],
       { stdout: "pipe", stderr: "pipe" }
@@ -327,6 +374,7 @@ async function updateLocalCliFolder(latestVersion: string): Promise<void> {
     if (cloneExit !== 0) {
       if (existsSync(tempDir)) await rm(tempDir, { recursive: true, force: true });
       cloneRef = "main";
+      expectedSha = await fetchRefSha(GITHUB_REPO, cloneRef);
       cloneProc = Bun.spawn(
         ["git", "clone", "--depth", "1", "--branch", cloneRef, `https://github.com/${GITHUB_REPO}.git`, tempDir],
         { stdout: "pipe", stderr: "pipe" }
@@ -337,6 +385,18 @@ async function updateLocalCliFolder(latestVersion: string): Promise<void> {
     if (cloneExit !== 0) {
       const stderr = await new Response(cloneProc.stderr).text();
       throw new Error(`Could not clone release ${releaseRef} or main from GitHub.${stderr ? ` ${stderr}` : ""}`);
+    }
+
+    // Verify cloned repo matches expected commit (integrity check)
+    if (expectedSha) {
+      const verified = await verifyClonedRepoSha(tempDir, expectedSha);
+      if (!verified) {
+        await rm(tempDir, { recursive: true, force: true });
+        throw new Error(`Integrity check failed: cloned repository does not match expected commit ${expectedSha.slice(0, 7)}`);
+      }
+      info(`Integrity verified: ${cloneRef} @ ${expectedSha.slice(0, 7)}`);
+    } else {
+      warn("Could not verify commit integrity — proceeding without SHA check");
     }
 
     for (const dir of [stagingDir, backupDir]) {
@@ -616,12 +676,20 @@ async function mergeLspEntries(configDir: string): Promise<number> {
 async function mergeDirectory(configDir: string, dirName: string): Promise<DirectoryMergeResult> {
   const localDir = join(configDir, dirName);
   const remoteFiles = await fetchDirectoryListing(dirName);
+  // Distinguish fetch failure from genuinely empty directory via HTTP status
   if (remoteFiles.length === 0) {
-    // Distinguish "nothing new" from "fetch failed"
-    if (!existsSync(localDir) || readdirSync(localDir).length === 0) {
-      return { added: 0, failed: 0, listingFailed: true }; // Likely fetch failure — local dir is empty/missing
+    const hasLocalFiles = existsSync(localDir) && readdirSync(localDir).length > 0;
+    // Try a HEAD check to confirm the API responded (empty dir vs fetch failure)
+    try {
+      const response = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/contents/config/${dirName}`,
+        { method: "HEAD", signal: AbortSignal.timeout(15000) }
+      );
+      const fetchFailed = !response.ok;
+      return { added: 0, failed: 0, listingFailed: fetchFailed };
+    } catch {
+      return { added: 0, failed: 0, listingFailed: !hasLocalFiles };
     }
-    return { added: 0, failed: 0, listingFailed: false };
   }
 
   if (!existsSync(localDir)) {
@@ -835,8 +903,8 @@ async function backupConfigForUpdate(configDir: string): Promise<void> {
   
   await mkdir(backupDir, { recursive: true });
   
-  // Backup only critical config files
-  const filesToBackup = ["opencode.json", "tui.json"];
+  // Backup all critical config files that could be modified during update
+  const filesToBackup = ["opencode.json", "tui.json", "agents.json", "mcp.json", "lsp.json", "fallback.json"];
   for (const file of filesToBackup) {
     const src = join(configDir, file);
     const dst = join(backupDir, file);
@@ -1097,24 +1165,48 @@ export const updateCommand = new Command("update")
       warn("Check your internet connection or try again later.");
       warn("Attempting to restore configuration from backup...");
       
-      // Rollback config on fetch failure
+      // Rollback all backed-up config files on fetch failure
       const configDir = getConfigDir();
       const backupDir = join(configDir, ".backup-update");
       if (existsSync(backupDir)) {
         try {
-          const opencodeJsonBackup = join(backupDir, "opencode.json");
-          const tuiJsonBackup = join(backupDir, "tui.json");
-          
-          if (existsSync(opencodeJsonBackup)) {
-            await cp(opencodeJsonBackup, join(configDir, "opencode.json"), { force: true });
-            success("Restored opencode.json from backup.");
+          const filesToRestore = [
+            "opencode.json",
+            "tui.json",
+            "agents.json",
+            "mcp.json",
+            "lsp.json",
+            "fallback.json",
+          ];
+          for (const file of filesToRestore) {
+            const backupFile = join(backupDir, file);
+            if (existsSync(backupFile)) {
+              await cp(backupFile, join(configDir, file), { force: true });
+              success(`Restored ${file} from backup.`);
+            }
           }
-          if (existsSync(tuiJsonBackup)) {
-            await cp(tuiJsonBackup, join(configDir, "tui.json"), { force: true });
-            success("Restored tui.json from backup.");
+          
+          // Also restore AGENTS.md from timestamped backup if it exists
+          const agentsBackups = readdirSync(configDir)
+            .filter((f) => f.startsWith("AGENTS.md.backup."))
+            .sort()
+            .reverse();
+          if (agentsBackups.length > 0) {
+            await cp(
+              join(configDir, agentsBackups[0]),
+              join(configDir, "AGENTS.md"),
+              { force: true }
+            );
+            success("Restored AGENTS.md from backup.");
           }
         } catch (rollbackErr) {
-          warn(`Rollback failed: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`);
+          warn(
+            `Rollback failed: ${
+              rollbackErr instanceof Error
+                ? rollbackErr.message
+                : String(rollbackErr)
+            }`
+          );
         }
       }
       

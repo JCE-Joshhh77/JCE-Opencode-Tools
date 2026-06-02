@@ -137,7 +137,20 @@ export async function loadOpenCodeConfig(): Promise<Record<string, any>> {
       await writeFile(configPath, JSON.stringify(template, null, 2) + "\n", "utf-8");
       return template as Record<string, any>;
     }
-    throw new Error(`Invalid JSON in OpenCode config: ${configPath}`);
+    
+    // JSON parse error — backup before auto-creating (preserve user's broken config)
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const backupPath = `${configPath}.backup-${timestamp}`;
+    await writeFile(backupPath, await readFile(configPath, "utf-8"), "utf-8");
+    
+    const { buildDefaultOpenCodeJson } = await import("./opencode-json-template.js");
+    const { buildAgentConfigs } = await import("../plugin/config.js");
+    const configDir = getConfigDir();
+    const template = buildDefaultOpenCodeJson(configDir, buildAgentConfigs());
+    await writeFile(configPath, JSON.stringify(template, null, 2) + "\n", "utf-8");
+    console.warn(`⚠️  opencode.json had invalid JSON — backup saved to ${backupPath}`);
+    console.warn(`   Fix your config or copy settings from the backup.`);
+    return template as Record<string, any>;
   }
 }
 

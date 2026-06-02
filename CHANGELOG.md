@@ -6,6 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.5.1] - 2026-06-03
+
+### Security
+- **CLI update integrity**: `opencode-jce update` now verifies cloned commit SHA against `git ls-remote` before applying update, preventing TOCTOU attacks between ref fetch and git clone.
+- **MCP env sanitization**: Plugin MCP config now rejects env values containing shell expansion patterns (`${...}`, backticks, `$VAR`) to prevent command injection via malicious plugins.
+- **MCP remote URL validation**: Remote MCP URLs now require valid HTTPS hostname (no localhost/loopback, no embedded credentials, must contain a dot), preventing SSRF and injection vectors.
+- **Config backup on parse error**: `loadOpenCodeConfig` now backs up corrupted `opencode.json` before auto-creating from template, preventing silent data loss when config has invalid JSON.
+
+### Fixed
+- **Update rollback coverage**: `opencode-jce update` now backs up and restores `agents.json`, `mcp.json`, `lsp.json`, `fallback.json` alongside `opencode.json` and `tui.json` on fetch failure.
+- **Context update race condition**: `context_update` MCP tool now reads file once and computes hash from that read instead of double-read pattern, reducing window for concurrent write conflicts.
+- **Router hardcoded profile IDs**: `routeToProfile` no longer depends on hardcoded profile IDs (`"speed"`, `"budget"`, etc.). Now ranks profiles by `maxTokens` and selects based on complexity tier.
+- **listingFailed false positive**: `mergeDirectory` now uses HTTP HEAD check to distinguish genuine empty directories from fetch failures, instead of assuming empty = failure.
+- **Log rotation overflow**: Logger now keeps up to 5 rotated backups (`.log.1` through `.log.5`) instead of overwriting `.log.1` on every rotation.
+
+### Changed
+- SECURITY.md version table updated from `1.1.x` to `3.5.x` to match actual supported version.
+
+---
+
 ## [3.5.0] - 2026-06-02
 
 ### Fixed

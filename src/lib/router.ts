@@ -121,28 +121,19 @@ export function analyzeComplexity(prompt: string): "simple" | "moderate" | "comp
 export function routeToProfile(prompt: string, availableProfiles: Profile[]): RoutingDecision {
   const complexity = analyzeComplexity(prompt);
 
-  // Define preferred profile IDs for each complexity level
-  const preferenceMap: Record<string, string[]> = {
-    simple: ["speed", "budget"],
-    moderate: ["sonnet-4.6", "quality"],
-    complex: ["quality", "opus-latest"],
-  };
+  // Rank profiles by maxTokens as capability proxy (low = fast/cheap, high = powerful)
+  const sorted = [...availableProfiles].sort((a, b) => a.maxTokens - b.maxTokens);
+  const profileIds = sorted.map((p) => p.id);
 
-  const preferred = preferenceMap[complexity];
-  const profileIds = availableProfiles.map((p) => p.id);
-
-  // Find the first matching profile
+  // Select profile based on complexity and relative ranking
   let selectedId: string | null = null;
-  for (const pref of preferred) {
-    if (profileIds.includes(pref)) {
-      selectedId = pref;
-      break;
-    }
-  }
-
-  // Fallback: use the first available profile
-  if (!selectedId && availableProfiles.length > 0) {
-    selectedId = availableProfiles[0].id;
+  if (complexity === "simple") {
+    selectedId = profileIds[0] ?? null;
+  } else if (complexity === "moderate") {
+    const mid = Math.floor(profileIds.length / 2);
+    selectedId = profileIds[mid] ?? profileIds[profileIds.length - 1] ?? null;
+  } else {
+    selectedId = profileIds[profileIds.length - 1] ?? null;
   }
 
   if (!selectedId) {

@@ -1,8 +1,9 @@
 import { join } from "path";
-import { existsSync, statSync, renameSync, appendFileSync, mkdirSync } from "fs";
+import { existsSync, statSync, renameSync, appendFileSync, mkdirSync, readdirSync, unlinkSync } from "fs";
 import { getConfigDir } from "./config.js";
 
 const MAX_LOG_SIZE = 1024 * 1024; // 1MB
+const MAX_LOG_BACKUPS = 5; // Keep up to .log.5
 
 export type LogLevel = "INFO" | "WARN" | "ERROR" | "DEBUG";
 
@@ -32,7 +33,8 @@ function ensureLogsDir(): void {
 
 /**
  * Rotate the log file if it exceeds MAX_LOG_SIZE.
- * Renames current log to .log.1 and starts fresh.
+ * Shifts existing backups (.1 → .2 → .3 ...) and creates fresh log.
+ * Keeps up to MAX_LOG_BACKUPS rotated files.
  */
 function rotateIfNeeded(): void {
   const logPath = getLogFilePath();
@@ -42,11 +44,35 @@ function rotateIfNeeded(): void {
   }
 
   const stats = statSync(logPath);
-  if (stats.size >= MAX_LOG_SIZE) {
-    const rotatedPath = logPath + ".1";
-    // Overwrite any existing rotated file
-    renameSync(logPath, rotatedPath);
+  if (stats.size < MAX_LOG_SIZE) {
+    return;
   }
+
+  // Remove oldest backup if it exists
+  const oldestPath = logPath + "." + MAX_LOG_BACKUPS;
+  if (existsSync(oldestPath)) {
+    try {
+      unlinkSync(oldestPath);
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  // Shift existing backups: .4 → .5, .3 → .4, .2 → .3, .1 → .2
+  for (let i = MAX_LOG_BACKUPS - 1; i >= 1; i--) {
+    const src = logPath + "." + i;
+    const dst = logPath + "." + (i + 1);
+    if (existsSync(src)) {
+      try {
+        renameSync(src, dst);
+      } catch {
+        // Non-fatal
+      }
+    }
+  }
+
+  // Current log → .1
+  renameSync(logPath, logPath + ".1");
 }
 
 /**

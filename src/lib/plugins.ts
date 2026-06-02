@@ -44,6 +44,25 @@ export interface InstallPluginOptions {
 const PLUGIN_TYPES = ["mcp", "agent", "prompt"] as const;
 const MCP_TYPES = ["local", "remote"] as const;
 
+const SHELL_EXPANSION_PATTERN = /\$\{|\$[A-Z_]|[`;$|&<>(){}]|\\[nt]/i;
+const BLOCKED_HOSTNAMES = ["localhost", "127.0.0.1", "::1", "0.0.0.0"];
+
+function isValidMcpRemoteUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    if (parsed.username || parsed.password) return false;
+    if (BLOCKED_HOSTNAMES.includes(parsed.hostname)) return false;
+    return parsed.hostname.length > 0 && parsed.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}
+
+function isValidMcpEnvValue(value: string): boolean {
+  return !SHELL_EXPANSION_PATTERN.test(value);
+}
+
 function isPluginType(value: unknown): value is PluginManifest["type"] {
   return typeof value === "string" && (PLUGIN_TYPES as readonly string[]).includes(value);
 }
@@ -84,10 +103,10 @@ function validatePluginMcpConfig(pluginMcp: Record<string, unknown> | null): voi
       }
     }
     if (entry.type === "remote") {
-      if (typeof entry.url !== "string" || !/^https:\/\//.test(entry.url)) throw new Error(`Invalid MCP config for ${name}: remote url must be https.`);
+      if (typeof entry.url !== "string" || !isValidMcpRemoteUrl(entry.url)) throw new Error(`Invalid MCP config for ${name}: remote url must be https with a valid hostname.`);
     }
-    if ("env" in entry && (!isRecord(entry.env) || !Object.values(entry.env).every((value) => typeof value === "string"))) {
-      throw new Error(`Invalid MCP config for ${name}: env values must be strings.`);
+    if ("env" in entry && (!isRecord(entry.env) || !Object.values(entry.env).every((value) => typeof value === "string" && isValidMcpEnvValue(value)))) {
+      throw new Error(`Invalid MCP config for ${name}: env values must be strings without shell expansion patterns.`);
     }
     if ("enabled" in entry && typeof entry.enabled !== "boolean") throw new Error(`Invalid MCP config for ${name}: enabled must be boolean.`);
   }
