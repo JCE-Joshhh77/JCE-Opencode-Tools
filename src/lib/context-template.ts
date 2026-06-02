@@ -5,6 +5,7 @@
 
 export const CONTEXT_FILENAME = ".opencode-context.md";
 export const ARCHIVE_FILENAME = ".opencode-context-archive.md";
+export const CONTEXT_INDEX_README = ".opencode-jce/context/session.md";
 export const MAX_LINES_TARGET = 40;
 export const MAX_LINES_HARD = 50;
 export const MAX_STALENESS_DAYS = 7;
@@ -18,6 +19,7 @@ export function getContextTemplate(): string {
   const today = new Date().toISOString().split("T")[0];
   return `# Project Context
 > Auto-maintained by AI. You can edit this file freely.
+> Detailed handoff index: ${CONTEXT_INDEX_README}
 > Last updated: ${today}
 
 ## Stack

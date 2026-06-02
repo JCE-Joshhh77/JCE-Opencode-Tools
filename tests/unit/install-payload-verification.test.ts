@@ -27,6 +27,7 @@ const flutterPayloadFiles = [
 ];
 const jceIntelligencePayloadFiles = [
   "src/lib/context-template.ts",
+  "src/lib/context-index.ts",
   "src/plugin/hooks/jce-worker-guard.ts",
   "src/plugin/hooks/open-work-enforcer.ts",
   "src/plugin/hooks/todo-enforcer.ts",

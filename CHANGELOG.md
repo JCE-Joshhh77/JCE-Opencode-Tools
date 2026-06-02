@@ -6,6 +6,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.4.0] - 2026-06-02
+
+### Added
+- Added native JCE advanced context index under `.opencode-jce/context/` with master index, bucket indexes, and detailed handoff notes.
+- Added `context_index_read` and `context_index_update` MCP tools for focused release, agent, config, Android, testing, security, frontend, and general memory buckets.
+- Integrated context indexing with `context_read`, `context_autocapture`, and `context_session_summary` so `.opencode-context.md` stays compact while detailed notes remain discoverable.
+
+### Fixed
+- Fixed context index note links so bucket entries resolve from `indexes/*.md` to `../notes/*.md` correctly.
+- Added `src/lib/context-index.ts` to install, reinstall, and update payload verification so releases cannot omit the new context runtime dependency.
+- Created the context index during first `context_read` bootstrap so the template's detailed handoff pointer is valid for new projects.
+
+### Changed
+- Bumped project, installer, config, MCP, README, and release workflow test versions to `3.4.0`.
+- Updated JCE-Worker instructions to use advanced context index when available with safe fallback to existing context tools.
+
+### Verified
+- `bun test tests/unit/context-index.test.ts tests/unit/context-keeper.test.ts tests/unit/context-autocapture.test.ts tests/unit/install-payload-verification.test.ts tests/unit/plugin-workflow-tool.test.ts tests/unit/ui.test.ts`
+- `bun run typecheck`
+- `bun test` (`962 pass`, `0 fail`) with `safe.directory` env for this workspace ownership.
+
+---
+
 ## [3.3.6] - 2026-06-02
 
 ### Changed

@@ -47,6 +47,13 @@ import {
   writeProjectFacts,
   type ContextCaptureInput,
 } from "../lib/context-autocapture.js";
+import {
+  ensureContextIndex,
+  listContextBuckets,
+  readContextIndex,
+  writeContextIndex,
+  type ContextIndexInput,
+} from "../lib/context-index.js";
 
 // ─── Re-export section utilities (extracted to prevent circular deps) ────
 export { countLines, getSection, replaceSection } from "../lib/context-sections.js";
@@ -223,7 +230,7 @@ async function appendArchive(content: string): Promise<void> {
 const server = new McpServer(
   {
     name: "context-keeper",
-    version: "3.3.6",
+    version: "3.4.0",
   },
   {
     instructions: [
@@ -328,6 +335,14 @@ server.tool(
         responseParts.push(relatedSummary);
       }
 
+      const buckets = await listContextBuckets(projectRoot);
+      if (buckets.length > 0) {
+        responseParts.push("");
+        responseParts.push("Context Index:");
+        responseParts.push(`  - Buckets: ${buckets.join(", ")}`);
+        responseParts.push("  - Use context_index_read(bucket?) for focused handoff memory.");
+      }
+
       // Staleness warning
       if (stalenessWarning) {
         responseParts.push(stalenessWarning);
@@ -358,6 +373,7 @@ server.tool(
 
     // Create new file from template
     await writeContext(getContextTemplate());
+    await ensureContextIndex(getProjectRoot());
     return {
       content: [
         {
@@ -548,6 +564,7 @@ server.tool(
     updated = refreshContentHash(updated);
     await writeContext(updated);
     const facts = await writeProjectFacts(getProjectRoot(), input);
+    const indexed = await writeContextIndex(getProjectRoot(), input);
 
     return {
       content: [{
@@ -557,6 +574,7 @@ server.tool(
           ...captured.entries.map((entry) => `  - ${entry.section}: ${entry.line} (${entry.confidence})`),
           `Structured facts updated: ${PROJECT_FACTS_FILENAME}`,
           `Project type: ${facts.projectType ?? "unknown"}`,
+          indexed ? `Context index updated: ${indexed.indexPath} -> ${indexed.notePath}` : "Context index unchanged: no durable details supplied",
         ].join("\n"),
       }],
     };
@@ -581,7 +599,39 @@ server.tool(
     updated = markUpdated(refreshContentHash(updated));
     await writeContext(updated);
     await writeProjectFacts(getProjectRoot(), input);
-    return { content: [{ type: "text" as const, text: `Session summary captured:\n${lines.map((line) => `  - ${line}`).join("\n")}` }] };
+    const indexed = await writeContextIndex(getProjectRoot(), input);
+    return { content: [{ type: "text" as const, text: [`Session summary captured:`, ...lines.map((line) => `  - ${line}`), indexed ? `Context index updated: ${indexed.indexPath} -> ${indexed.notePath}` : "Context index unchanged."].join("\n") }] };
+  },
+);
+
+// ─── Tool: context_index_read ─────────────────────────────────
+
+server.tool(
+  "context_index_read",
+  "Read the advanced JCE context index. Omit bucket for master index, or pass a bucket such as release, agents, config, android, testing.",
+  {
+    bucket: z.string().optional().describe("Optional context bucket to read"),
+  },
+  async ({ bucket }) => {
+    const text = await readContextIndex(getProjectRoot(), bucket);
+    return { content: [{ type: "text" as const, text }] };
+  },
+);
+
+// ─── Tool: context_index_update ───────────────────────────────
+
+server.tool(
+  "context_index_update",
+  "Write focused handoff memory into .opencode-jce/context/ indexes and notes without bloating .opencode-context.md.",
+  {
+    bucket: z.string().optional().describe("Bucket name, e.g. release, agents, config, android, testing"),
+    agent: z.string().optional().describe("Agent/tool name writing this memory"),
+    ...contextCaptureSchema,
+  },
+  async (input: ContextIndexInput) => {
+    const indexed = await writeContextIndex(getProjectRoot(), input);
+    if (!indexed) return { content: [{ type: "text" as const, text: "No context index entry written; provide summary, files, verification, blockers, nextSteps, or android facts." }] };
+    return { content: [{ type: "text" as const, text: [`Context index updated:`, `  - Bucket: ${indexed.bucket}`, `  - Index: ${indexed.indexPath}`, `  - Note: ${indexed.notePath}`, `  - Entry: ${indexed.entry}`].join("\n") }] };
   },
 );
 

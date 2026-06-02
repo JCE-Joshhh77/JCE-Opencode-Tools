@@ -24,6 +24,7 @@ describe("getContextTemplate()", () => {
 
   test("contains all required sections", () => {
     const template = getContextTemplate();
+    expect(template).toContain("Detailed handoff index: .opencode-jce/context/session.md");
     expect(template).toContain("## Stack");
     expect(template).toContain("## Architecture Decisions");
     expect(template).toContain("## Conventions");

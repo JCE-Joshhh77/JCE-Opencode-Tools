@@ -1,5 +1,5 @@
 # OpenCode JCE — Global AI Instructions
-# Version: 3.3.6 (Modular + Context Preservation)
+# Version: 3.4.0 (Modular + Context Preservation)
 # This file is always loaded. Skills in ./skills/ are loaded on-demand.
 # Customize freely — the installer will NOT overwrite your changes.
 
@@ -36,6 +36,13 @@ Fail fast, fail loud, typed errors, actionable messages, never swallow silently.
 **Never lose project context between sessions. This is AUTOMATIC — no user action required.**
 
 **Context file is PER-PROJECT** — each project root has its own `.opencode-context.md`. Not global.
+
+**Advanced Context Index (native JCE):**
+- Keep `.opencode-context.md` compact: durable summary only, target ≤ 40 lines.
+- Put detailed handoff notes in `.opencode-jce/context/` via `context_index_update` when available; otherwise use `context_autocapture` or `context_session_summary`.
+- Read `.opencode-jce/context/session.md` via `context_index_read` when available and prior detailed context may matter.
+- Use buckets like `release`, `agents`, `config`, `android`, `testing`, `security`, `frontend`, `general`.
+- Prefer context index for long verification logs, detailed decisions, touched-file lists, blockers, and multi-agent handoffs.
 
 **ENFORCEMENT VIA MCP (context-keeper server):**
 If the `context-keeper` MCP server is available, you MUST use its tools:
