@@ -67,6 +67,7 @@ jobs:
       - name: CLI validate
         shell: bash
         run: |
+          export PATH="$HOME/.bun/bin:$PATH"
           bun ./src/index.ts validate || if [ $? -eq 1 ]; then echo "Expected: config not deployed in CI"; else exit 1; fi
 
   lint-shell:
