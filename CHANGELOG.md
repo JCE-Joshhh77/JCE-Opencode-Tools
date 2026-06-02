@@ -6,6 +6,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.5.2] - 2026-06-03
+
+### Fixed
+- **Installer version sync**: `install.sh` and `install.ps1` version strings now match the release version.
+- **Android logcat input validation**: `packageName` argument is now validated against `[a-zA-Z0-9._]+` before passing to `adb shell pidof`, preventing potential command injection via shell metacharacters.
+
+### Changed
+- Bumped all version references to `3.5.2`.
+
+---
+
 ## [3.5.1] - 2026-06-03
 
 ### Security

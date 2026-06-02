@@ -45,6 +45,10 @@ function defaultAdbRunner(args: string[], options: { timeoutMs?: number } = {}):
   }
 }
 
+function isValidPackageName(name: string): boolean {
+  return /^[a-zA-Z0-9._]+$/.test(name);
+}
+
 function adbArgs(deviceId: string | undefined, args: string[]): string[] {
   return deviceId ? ["-s", deviceId, ...args] : args;
 }
@@ -107,9 +111,13 @@ export function analyzeAndroidLogcat(options: AndroidLogcatOptions = {}, runner:
 
   let pid: string | undefined;
   if (options.packageName) {
-    const pidResult = runner(adbArgs(selectedDevice, ["shell", "pidof", options.packageName]), { timeoutMs: 5000 });
-    if (pidResult.ok && pidResult.stdout.trim()) pid = pidResult.stdout.trim().split(/\s+/)[0];
-    else warnings.push(`Could not resolve pid for ${options.packageName}; falling back to package/error keyword filtering.`);
+    if (!isValidPackageName(options.packageName)) {
+      warnings.push(`Invalid package name: ${options.packageName}. Must be alphanumeric with dots/underscores only.`);
+    } else {
+      const pidResult = runner(adbArgs(selectedDevice, ["shell", "pidof", options.packageName]), { timeoutMs: 5000 });
+      if (pidResult.ok && pidResult.stdout.trim()) pid = pidResult.stdout.trim().split(/\s+/)[0];
+      else warnings.push(`Could not resolve pid for ${options.packageName}; falling back to package/error keyword filtering.`);
+    }
   }
 
   if (options.clearBefore) {
