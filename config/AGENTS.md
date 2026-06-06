@@ -1,5 +1,5 @@
 # OpenCode JCE — Global AI Instructions
-# Version: 3.5.0 (Modular + Context Preservation)
+# Version: 3.5.3 (Modular + Context Preservation)
 # This file is always loaded. Skills in ./skills/ are loaded on-demand.
 # Customize freely — the installer will NOT overwrite your changes.
 
@@ -127,6 +127,8 @@ If the `context-keeper` MCP server is available, you MUST use its tools:
 3. **Never announce** — don't say "I'm using debugger agent" or "loading react.md". Just do it silently.
 
 **Agent selection keywords (42 agents):**
+
+JCE-Worker is the primary user-facing agent and single front door. Users do not need to switch agents manually. Specialist agents below are internal routing/delegation targets; JCE-Worker may call them when useful.
 | Intent | Agent |
 |--------|-------|
 | fix/debug/error/bug/crash | `debugger` |
@@ -135,7 +137,7 @@ If the `context-keeper` MCP server is available, you MUST use its tools:
 | design/architecture/system | `architect` |
 | test/spec/coverage | `tester` |
 | deploy/docker/CI/CD | `devops` |
-| UI/component/responsive | `frontend` |
+| UI/component/responsive | `jce-worker` primary; may delegate to `frontend` internally |
 | API/endpoint/server | `backend` |
 | schema/query/migration | `database` |
 | slow/optimize/performance | `performance` |

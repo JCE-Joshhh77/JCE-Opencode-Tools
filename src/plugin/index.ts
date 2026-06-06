@@ -179,7 +179,9 @@ const jcePlugin: Plugin = async (input) => {
   }
 
   const persistCurrentMemory = () => {
-    currentMemory = saveExecutionMemory(projectRoot, mergeExecutionMemorySnapshot(currentMemory, manager.toExecutionMemory(), { preserveWorkflowRuntime: true })).memory;
+    withErrorBoundary(() => {
+      currentMemory = saveExecutionMemory(projectRoot, mergeExecutionMemorySnapshot(currentMemory, manager.toExecutionMemory(), { preserveWorkflowRuntime: true })).memory;
+    }, undefined, orchestrationLogger);
     withErrorBoundary(() => orchestrator.persist(), undefined, orchestrationLogger);
     return currentMemory;
   };
@@ -219,7 +221,9 @@ const jcePlugin: Plugin = async (input) => {
         },
       },
     ];
-    currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: false }).memory;
+    withErrorBoundary(() => {
+      currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: false }).memory;
+    }, undefined, orchestrationLogger);
   };
 
   const routeJceWorkerIntent = (text: string) => {
@@ -250,7 +254,9 @@ const jcePlugin: Plugin = async (input) => {
       { ...route, source },
     );
     workflowRuntimeActive = true;
-    currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+    withErrorBoundary(() => {
+      currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+    }, undefined, orchestrationLogger);
   };
 
   const shouldApplyRoute = (source: WorkflowIntentRouteSource, nextRoute: ReturnType<typeof routeJceWorkerIntent>): boolean => {
@@ -269,7 +275,9 @@ const jcePlugin: Plugin = async (input) => {
     if (!shouldApplyRoute(source, route)) return;
     currentMemory.activeWorkflow = applyWorkflowIntentRoute(currentMemory.activeWorkflow, { ...route, source });
     workflowRuntimeActive = true;
-    currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+    withErrorBoundary(() => {
+      currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+    }, undefined, orchestrationLogger);
   };
 
   const hooks: Hooks = {
@@ -316,7 +324,9 @@ const jcePlugin: Plugin = async (input) => {
         if (shouldApplyRoute("task", route)) {
           currentMemory.activeWorkflow = applyWorkflowIntentRoute(currentMemory.activeWorkflow, routeWithSource);
           workflowRuntimeActive = true;
-          currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+          withErrorBoundary(() => {
+            currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+          }, undefined, orchestrationLogger);
         }
         if (policy.status === "warn") return { status: "warn", message: formatExecutionPolicyDecision(policy) };
       }),
@@ -338,8 +348,10 @@ const jcePlugin: Plugin = async (input) => {
             const context = { sessionID: "", messageID: "" };
               // Feed result through orchestration bridge; failures persist as blockers for closed-loop gating.
               bridge.collectAndContinue(lastCompleted.id, lastCompleted.result, lastCompleted.parentSessionId ?? "", lastCompleted.parentMessageId ?? "").catch((err) => {
-                currentMemory.blockers = [...currentMemory.blockers, { id: `orchestration-${Date.now()}`, failureReason: err instanceof Error ? err.message : String(err) }];
-                currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+                withErrorBoundary(() => {
+                  currentMemory.blockers = [...currentMemory.blockers, { id: `orchestration-${Date.now()}`, failureReason: err instanceof Error ? err.message : String(err) }];
+                  currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+                }, undefined, orchestrationLogger);
               });
           }
         }

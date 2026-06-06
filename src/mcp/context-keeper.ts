@@ -92,8 +92,15 @@ async function fileExists(path: string): Promise<boolean> {
 async function readContext(): Promise<string | null> {
   try {
     return await readFile(contextPath(), "utf-8");
-  } catch {
-    return null;
+  } catch (error) {
+    // Only treat a genuinely-missing file as "no context". Any other error
+    // (EACCES/EBUSY/EPERM — common on Windows under AV or concurrent access)
+    // must propagate so the caller never overwrites existing context with a
+    // blank template on a transient read failure.
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return null;
+    }
+    throw error;
   }
 }
 
@@ -233,7 +240,7 @@ async function appendArchive(content: string): Promise<void> {
 const server = new McpServer(
   {
     name: "context-keeper",
-    version: "3.5.2",
+    version: "3.5.3",
   },
   {
     instructions: [

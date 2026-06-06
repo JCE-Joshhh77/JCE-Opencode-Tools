@@ -6,6 +6,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.5.3] - 2026-06-06
+
+### Added
+- **Human UI design guardrails**: Added `human-ui-design` skill to keep generated frontend work domain-specific, backend-aware, accessible, and visually non-generic.
+- **UI pattern catalog**: Added `ui-pattern-library` with product patterns for enterprise SaaS/admin, developer tools, fintech/billing, ecommerce/marketplace, healthcare/wellness, AI products, landing pages, data dashboards, forms/onboarding, and settings/preferences.
+- **Visual QA rubric**: Added `visual-qa-rubric` for screenshot/browser review, responsive checks, anti-AI-smell scoring, accessibility review, and visual readiness verdicts.
+- **Frontend flow scanner**: Added `opencode-jce flow frontend` alias with pattern recommendations, visual QA evidence requirements, and frontend handoff guidance.
+- **JCE-Worker frontend ownership**: Added Frontend Product Design Brain so JCE-Worker is the single front door for frontend/product UI work while keeping the frontend agent as an internal specialist.
+
+### Changed
+- Upgraded bundled `frontend` agent with safe public inspiration rules, backend contract mapping, Human UI Review, visual QA output, and screenshot/browser review workflow.
+- Extended skill routing so UI, dashboard, landing page, visual QA, screenshot, and product design prompts auto-load advanced frontend skills without requiring manual agent switching.
+- Updated web scanner to reduce false positives, ignore test/runtime folders, detect UI patterns from route/form signals, and require browser screenshot evidence for UI completion claims.
+- Hardened config/update paths with deeper JSON serialization, safer malformed config backup behavior, unique atomic temp writes, context read error handling, larger command buffers, and safer Android logcat device validation.
+
+### Fixed
+- CI validation script handling for GitHub Actions `shell: bash` with implicit `set -eo pipefail`.
+
+### Verified
+- `bun test tests/unit/plugin-agents.test.ts tests/unit/plugin-skill-loader.test.ts tests/unit/config.test.ts`
+- `bun test tests/unit/config.test.ts tests/unit/plugin-skill-loader.test.ts tests/unit/advanced-flow-scanners.test.ts tests/unit/install-payload-verification.test.ts tests/unit/plugin-skill-sync.test.ts tests/unit/jce-intelligence-priorities.test.ts`
+- `bun run typecheck`
+- `bun ./src/index.ts validate`
+
+---
+
 ## [3.5.2] - 2026-06-03
 
 ### Fixed

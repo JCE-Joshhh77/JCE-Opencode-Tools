@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.5.2"
+VERSION="3.5.3"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -246,7 +246,7 @@ terminate_stale_opencode_processes() {
         [ -n "$pid" ] || continue
         [ "$pid" = "$current_pid" ] && continue
         printf '%s' "$command" | grep -Eq 'opencode-jce(.cmd|.ps1|.exe)? .*update|src/index\.ts .*update' && continue
-        if printf '%s' "$command" | grep -Eq '(^|[ /])opencode( |$)|\.config/opencode/cli/src/(plugin/index|mcp/context-keeper)\.ts|src/(plugin/index|mcp/context-keeper)\.ts'; then
+        if printf '%s' "$command" | grep -Eq '(^|[ /])opencode( |$)|\.config/opencode/cli/src/(plugin/index|mcp/context-keeper)\.ts'; then
             pids+=("$pid")
         fi
     done < <(ps -axo pid=,ppid=,command= 2>/dev/null || true)
@@ -1307,7 +1307,15 @@ const installed = process.env.INSTALLED_LSPS.split(' ').filter(Boolean);
 // Load or create opencode.json
 let config = {};
 if (fs.existsSync(path)) {
-    try { config = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
+    try {
+        config = JSON.parse(fs.readFileSync(path, 'utf8'));
+    } catch {
+        // Malformed existing config: back it up before rebuilding so we never
+        // silently destroy plugin/mcp/agent settings (mirrors register_context_keeper).
+        const backup = path + '.invalid-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        fs.renameSync(path, backup);
+        console.error('Existing opencode.json was malformed; backed up to ' + backup);
+    }
 }
 
 // Load lsp.json

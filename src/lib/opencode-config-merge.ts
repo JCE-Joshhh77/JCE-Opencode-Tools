@@ -27,9 +27,20 @@ function timestamp(): string {
 }
 
 function writeJsonAtomic(filePath: string, data: unknown): void {
-  const tmp = `${filePath}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", "utf8");
-  renameSync(tmp, filePath);
+  // Unique temp name (pid + timestamp + random) so concurrent writers never
+  // collide on a shared `.tmp` file and clobber each other's rename.
+  const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    writeFileSync(tmp, JSON.stringify(data, null, 2) + "\n", "utf8");
+    renameSync(tmp, filePath);
+  } catch (error) {
+    try {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    } catch {
+      // Best-effort cleanup
+    }
+    throw error;
+  }
 }
 
 /**

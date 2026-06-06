@@ -10,3 +10,6 @@ AUDIT*.txt
 docs/
 .opencode-jce/
 .playwright-mcp/
+
+# JCE context index runtime state
+.opencode-jce/context/

@@ -18,16 +18,26 @@ import {
   cpSync,
   statSync,
   renameSync,
+  unlinkSync,
 } from "fs";
 import { join } from "path";
 import { execFileSync } from "child_process";
 import { ensureOpenCodeJsonEntries, ensureTuiJsonEntries } from "../src/lib/opencode-config-merge.js";
 
-/** Write JSON atomically: write to .tmp then rename */
+/** Write JSON atomically: write to unique .tmp then rename */
 function writeJsonAtomic(filePath: string, data: unknown): void {
-  const tmpFile = filePath + ".tmp";
-  writeFileSync(tmpFile, JSON.stringify(data, null, 2) + "\n");
-  renameSync(tmpFile, filePath);
+  const tmpFile = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    writeFileSync(tmpFile, JSON.stringify(data, null, 2) + "\n");
+    renameSync(tmpFile, filePath);
+  } catch (error) {
+    try {
+      if (existsSync(tmpFile)) unlinkSync(tmpFile);
+    } catch {
+      // Best-effort cleanup
+    }
+    throw error;
+  }
 }
 
 const sourceDir = process.argv[2]; // e.g., /tmp/opencode-jce/config

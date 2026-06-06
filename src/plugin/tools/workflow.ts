@@ -20,7 +20,7 @@ const z = tool.schema;
 
 function readGitStatus(cwd: string): string {
   try {
-    return execFileSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8" });
+    return execFileSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
   } catch {
     return "";
   }

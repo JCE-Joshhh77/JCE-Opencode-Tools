@@ -44,6 +44,7 @@ const SECTIONS = [
   "Conventions",
   "Current Status",
   "Important Notes",
+  "Related Projects",
 ] as const;
 
 /**

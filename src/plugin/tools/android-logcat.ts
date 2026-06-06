@@ -35,7 +35,7 @@ export interface AndroidLogcatAnalysis {
 
 function defaultAdbRunner(args: string[], options: { timeoutMs?: number } = {}): AdbRunResult {
   try {
-    const stdout = execFileSync("adb", args, { encoding: "utf8", timeout: options.timeoutMs ?? 15000, windowsHide: true });
+    const stdout = execFileSync("adb", args, { encoding: "utf8", timeout: options.timeoutMs ?? 15000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
     return { ok: true, stdout };
   } catch (error) {
     const err = error as { stdout?: Buffer | string; stderr?: Buffer | string; message?: string };
@@ -94,6 +94,17 @@ export function analyzeAndroidLogcat(options: AndroidLogcatOptions = {}, runner:
   }
 
   const devices = parseDevices(devicesResult.stdout);
+  if (options.deviceId && !devices.includes(options.deviceId)) {
+    return {
+      status: "blocked",
+      devices,
+      packageName: options.packageName,
+      logExcerpt: "",
+      classification: classifyAndroidFailure(""),
+      warnings: [`Requested device ${options.deviceId} is not an authorized device (adb devices: ${devices.join(", ") || "none"}).`],
+      nextCommands: ["Run adb devices and confirm the serial is online and authorized.", "Pass a deviceId that appears in the authorized list, or omit it to auto-select."],
+    };
+  }
   const selectedDevice = options.deviceId ?? devices[0];
   if (!selectedDevice) {
     return {
@@ -106,7 +117,6 @@ export function analyzeAndroidLogcat(options: AndroidLogcatOptions = {}, runner:
       nextCommands: ["Start an emulator or connect a device.", "Run adb devices and accept the authorization prompt."],
     };
   }
-  if (options.deviceId && !devices.includes(options.deviceId)) warnings.push(`Requested device ${options.deviceId} was not listed by adb devices.`);
   if (devices.length > 1 && !options.deviceId) warnings.push(`Multiple devices detected; selected ${selectedDevice}. Pass deviceId to choose explicitly.`);
 
   let pid: string | undefined;

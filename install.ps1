@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.5.2"
+$Version = "3.5.3"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -163,7 +163,7 @@ function Stop-StaleOpenCodeProcesses {
         $targets = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
             $_.ProcessId -ne $currentPid -and $_.CommandLine -and
             $_.CommandLine -notmatch 'opencode-jce(\.cmd|\.ps1|\.exe)?\s+.*\bupdate\b' -and
-            ($_.Name -match '^opencode(\.exe)?$' -or $_.CommandLine -match '\.config[\\/]opencode[\\/]cli[\\/]src[\\/](plugin[\\/]index|mcp[\\/]context-keeper)\.ts|src[\\/](plugin[\\/]index|mcp[\\/]context-keeper)\.ts')
+            ($_.Name -match '^opencode(\.exe)?$' -or $_.CommandLine -match '\.config[\\/]opencode[\\/]cli[\\/]src[\\/](plugin[\\/]index|mcp[\\/]context-keeper)\.ts')
         }
         foreach ($target in $targets) {
             try { Stop-Process -Id $target.ProcessId -Force:$false -ErrorAction SilentlyContinue } catch {}
@@ -647,7 +647,7 @@ function Deploy-ConfigSafe($sourceDir, $targetDir) {
                 }
             }
             if ($added -gt 0) {
-                $jsonOut = $dstJson | ConvertTo-Json -Depth 10
+                $jsonOut = $dstJson | ConvertTo-Json -Depth 100
                 [System.IO.File]::WriteAllText($mcpDst, $jsonOut, [System.Text.UTF8Encoding]::new($false))
                 Write-Ok "  mcp.json: $added new server(s) merged"
             } else {
@@ -783,7 +783,7 @@ function Register-ContextKeeper {
         }
 
         # Write back
-        $jsonOut = $config | ConvertTo-Json -Depth 10
+        $jsonOut = $config | ConvertTo-Json -Depth 100
         [System.IO.File]::WriteAllText($opencodeJson, $jsonOut, [System.Text.UTF8Encoding]::new($false))
         if ($added -gt 0) {
             Write-Ok "opencode.json MCP defaults registered ($added added)"
@@ -840,7 +840,7 @@ function Register-TuiPlugin {
             $config.plugin_enabled | Add-Member -NotePropertyName "opencode-jce-token-savings" -NotePropertyValue $true
         }
 
-        $jsonOut = $config | ConvertTo-Json -Depth 10
+        $jsonOut = $config | ConvertTo-Json -Depth 100
         [System.IO.File]::WriteAllText($tuiJson, $jsonOut, [System.Text.UTF8Encoding]::new($false))
         Write-Ok "tui.json Token Savings plugin registered"
     } catch {

@@ -117,6 +117,20 @@ describe("plugin agents", () => {
     expect(prompt).toContain("Delegation Quality");
   });
 
+  test("jce-worker prompt owns advanced frontend work as single front door", () => {
+    const agents = buildAgentConfigs();
+    const prompt = agents["jce-worker"].systemPrompt;
+
+    expect(prompt).toContain("Frontend Product Design Brain v1");
+    expect(prompt).toContain("single front door for frontend work");
+    expect(prompt).toContain("human-ui-design");
+    expect(prompt).toContain("ui-pattern-library");
+    expect(prompt).toContain("visual-qa-rubric");
+    expect(prompt).toContain("Pattern Choice");
+    expect(prompt).toContain("Human UI Review");
+    expect(prompt).toContain("Visual QA");
+  });
+
   test("jce-researcher prompt defines deep research modes", () => {
     const agents = buildAgentConfigs();
     const prompt = agents["jce-researcher"].systemPrompt;

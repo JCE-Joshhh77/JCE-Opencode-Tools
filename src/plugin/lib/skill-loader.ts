@@ -14,6 +14,9 @@ const SKILL_NAME_TO_FILE: Record<string, string> = {
   "security": "security.md",
   "architecture": "architecture.md",
   "frontend": "frontend.md",
+  "human-ui-design": "human-ui-design.md",
+  "ui-pattern-library": "ui-pattern-library.md",
+  "visual-qa-rubric": "visual-qa-rubric.md",
   "devops": "devops.md",
   "developer-tooling": "developer-tooling.md",
   "ai-optimization": "ai-optimization.md",
@@ -166,6 +169,9 @@ function detectContextSkills(text: string): string[] {
   if (/\b(sql|query|migration|schema|database|postgres|mysql|sqlite|prisma|drizzle|knex)\b/i.test(lower)) skills.push("sql-database");
   if (/\b(security|vulnerability|cors|csrf|xss|injection|sanitiz|escape)\b/i.test(lower) && !/\b(oauth|jwt|rbac)\b/i.test(lower)) skills.push("security");
   if (/\b(tailwind|@apply|utility.?first|tw-)\b/i.test(lower)) skills.push("tailwind");
+  if (/\b(ui|ux|frontend|component|dashboard|landing\s*page|design|figma|wireframe|mockup|layout|visual|interface|generated\s*by\s*ai|generated\s*ai|ai-looking|human.?crafted|anti.?ai|tailwind|css|responsive)\b/i.test(lower)) skills.push("human-ui-design");
+  if (/\b(pattern|catalog|katalog|dashboard|landing\s*page|admin|saas|fintech|billing|ecommerce|marketplace|developer\s*tool|healthcare|settings|onboarding|data\s*dashboard|form|table)\b/i.test(lower)) skills.push("ui-pattern-library");
+  if (/\b(visual\s*qa|screenshot|browser\s*review|playwright|visual\s*regression|responsive\s*qa|ui\s*polish|design\s*review|aksesibilitas|accessibility\s*qa)\b/i.test(lower)) skills.push("visual-qa-rubric");
   if (/\b(rest\s*api|graphql|grpc|openapi|swagger|endpoint|route\s*handler)\b/i.test(lower)) skills.push("api-design-patterns");
   if (/\b(websocket|realtime|real.?time|sse|server.?sent|crdt|socket\.io|pusher)\b/i.test(lower)) skills.push("realtime-systems");
   if (/\b(microservice|event.?driven|saga|cqrs|kafka|rabbitmq|nats|outbox)\b/i.test(lower)) skills.push("distributed-systems");
@@ -196,20 +202,23 @@ function detectContextSkills(text: string): string[] {
 function prioritizeSkills(skills: string[]): string[] {
   const priorities = new Map<string, number>([
     ["software-engineering", 0],
-    ["android-kotlin", 1],
-    ["android-release", 2],
-    ["android-gradle", 3],
-    ["android-compose", 4],
-    ["android-testing", 5],
-    ["android-security", 6],
-    ["java-kotlin", 7],
-    ["git-guardrails", 8],
-    ["grill-with-docs", 9],
-    ["to-prd", 10],
-    ["to-issues", 11],
-    ["triage", 12],
-    ["prototype", 13],
-    ["write-a-skill", 14],
+    ["human-ui-design", 1],
+    ["ui-pattern-library", 2],
+    ["visual-qa-rubric", 3],
+    ["android-kotlin", 4],
+    ["android-release", 5],
+    ["android-gradle", 6],
+    ["android-compose", 7],
+    ["android-testing", 8],
+    ["android-security", 9],
+    ["java-kotlin", 10],
+    ["git-guardrails", 11],
+    ["grill-with-docs", 12],
+    ["to-prd", 13],
+    ["to-issues", 14],
+    ["triage", 15],
+    ["prototype", 16],
+    ["write-a-skill", 17],
   ]);
 
   const hasAndroid = skills.includes("android-kotlin");

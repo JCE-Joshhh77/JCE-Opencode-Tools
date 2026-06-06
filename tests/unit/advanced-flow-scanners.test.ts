@@ -21,6 +21,17 @@ describe("advanced flow filesystem scanners", () => {
     expect(scan.stateHooks).toContain("useEffect");
     expect(scan.envKeys).toContain("NEXT_PUBLIC_API");
     expect(scan.accessibilityRisks.length).toBeGreaterThan(0);
+    expect(scan.visualQa.required).toBe(true);
+    expect(scan.frontendFlow).toContain("Run visual-qa-rubric with browser screenshots when a runnable app is available.");
+  });
+
+  test("recommends frontend UI patterns from route and form signals", () => {
+    const root = fixture();
+    mkdirSync(join(root, "app", "dashboard"), { recursive: true });
+    writeFileSync(join(root, "app", "dashboard", "page.tsx"), "export default()=> <form><input name='q' /></form>", "utf8");
+    const scan = scanWebProject(root);
+
+    expect(scan.patternRecommendations.map((item) => item.recommendedPattern)).toEqual(expect.arrayContaining(["Data Dashboard", "Forms / Onboarding"]));
   });
 
   test("scans API endpoints with auth validation and database signals", () => {
