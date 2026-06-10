@@ -1,4 +1,4 @@
-import type { ExecutionMemory, TaskLearning } from "./execution-memory.js";
+import type { RuntimeState, TaskLearning } from "./runtime-state.js";
 import { getActiveBlockers, getAttemptedCommands, getLatestFailure, getLatestVerificationEvidence, getRetryHistoryFor, getStaleActiveTasks } from "./memory-query.js";
 import type { JceWorkerAgentHint, JceWorkerIntent } from "./skill-router.js";
 
@@ -54,14 +54,14 @@ function summarizeEvidence(evidence: unknown): string | undefined {
   return typeof summary === "string" && summary.trim() ? summary : undefined;
 }
 
-function findRelevantLearnings(memory: ExecutionMemory, intent: JceWorkerIntent | "none"): TaskLearning[] {
+function findRelevantLearnings(memory: RuntimeState, intent: JceWorkerIntent | "none"): TaskLearning[] {
   const learnings = Array.isArray(memory.taskLearnings) ? memory.taskLearnings : [];
   if (intent === "none" || intent === "general" || intent === "parallel_work" || intent === "completion_claim" || intent === "branch_completion") return learnings.slice(-3);
   const mappedType = intent === "bugfix" ? "bugfix" : intent === "feature" ? "feature" : intent === "review" ? "review" : "unknown";
   return learnings.filter((learning) => learning.taskType === mappedType || learning.taskType === "unknown").slice(-3);
 }
 
-export function recommendNextDecision(memory: ExecutionMemory): DecisionIntelligenceRecommendation {
+export function recommendNextDecision(memory: RuntimeState): DecisionIntelligenceRecommendation {
   const route = memory.activeWorkflow?.route;
   const intent = route?.intent ?? "none";
   const baseline = routeBaseline(intent);

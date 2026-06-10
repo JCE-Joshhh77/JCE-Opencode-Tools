@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ExecutionMemory } from "../../src/plugin/lib/execution-memory.ts";
+import type { RuntimeState } from "../../src/plugin/lib/runtime-state.ts";
 import {
   getActiveBlockers,
   getAttemptedCommands,
@@ -9,7 +9,7 @@ import {
   getStaleActiveTasks,
 } from "../../src/plugin/lib/memory-query.ts";
 
-function fixtureMemory(): ExecutionMemory {
+function fixtureMemory(): RuntimeState {
   return {
     version: 1,
     updatedAt: "2026-05-06T00:00:00.000Z",
@@ -33,17 +33,19 @@ function fixtureMemory(): ExecutionMemory {
       { type: "verification.recorded", message: "ran bun run typecheck", at: "2026-05-06T00:03:00.000Z", metadata: { command: "bun run typecheck" } },
     ],
     workflowRuns: [],
+    wisdom: [],
+    taskLearnings: [],
   };
 }
 
-describe("execution memory queries", () => {
+describe("runtime state queries", () => {
   test("returns latest verification evidence", () => {
     expect(getLatestVerificationEvidence(fixtureMemory())).toEqual({ id: "wf-1", verificationSummary: "bun run typecheck: pass" });
   });
 
   test("returns undefined when verification evidence collection is null", () => {
     const memory = fixtureMemory();
-    memory.verificationEvidence = null as unknown as ExecutionMemory["verificationEvidence"];
+    memory.verificationEvidence = null as unknown as RuntimeState["verificationEvidence"];
 
     expect(getLatestVerificationEvidence(memory)).toBeUndefined();
   });
@@ -54,7 +56,7 @@ describe("execution memory queries", () => {
 
   test("returns no attempted commands when trace events collection is null", () => {
     const memory = fixtureMemory();
-    memory.traceEvents = null as unknown as ExecutionMemory["traceEvents"];
+    memory.traceEvents = null as unknown as RuntimeState["traceEvents"];
 
     expect(getAttemptedCommands(memory)).toEqual([]);
   });
@@ -79,7 +81,7 @@ describe("execution memory queries", () => {
 
   test("returns undefined latest failure when trace events collection is not an array", () => {
     const memory = fixtureMemory();
-    memory.traceEvents = "bad" as unknown as ExecutionMemory["traceEvents"];
+    memory.traceEvents = "bad" as unknown as RuntimeState["traceEvents"];
 
     expect(getLatestFailure(memory)).toBeUndefined();
   });
@@ -90,7 +92,7 @@ describe("execution memory queries", () => {
 
   test("returns no active blockers when blockers collection is null", () => {
     const memory = fixtureMemory();
-    memory.blockers = null as unknown as ExecutionMemory["blockers"];
+    memory.blockers = null as unknown as RuntimeState["blockers"];
 
     expect(getActiveBlockers(memory)).toEqual([]);
   });
@@ -110,14 +112,14 @@ describe("execution memory queries", () => {
 
   test("returns no stale active tasks when active tasks collection is null", () => {
     const memory = fixtureMemory();
-    memory.activeTasks = null as unknown as ExecutionMemory["activeTasks"];
+    memory.activeTasks = null as unknown as RuntimeState["activeTasks"];
 
     expect(getStaleActiveTasks(memory)).toEqual([]);
   });
 
   test("ignores malformed active tasks when returning stale tasks", () => {
     const memory = fixtureMemory();
-    memory.activeTasks = [null, "bad", { stale: true, id: "ok" }] as unknown as ExecutionMemory["activeTasks"];
+    memory.activeTasks = [null, "bad", { stale: true, id: "ok" }] as unknown as RuntimeState["activeTasks"];
 
     expect(getStaleActiveTasks(memory)).toEqual([{ stale: true, id: "ok" }]);
   });
@@ -138,14 +140,14 @@ describe("execution memory queries", () => {
 
   test("returns no retry history when retry history collection is null", () => {
     const memory = fixtureMemory();
-    memory.retryHistory = null as unknown as ExecutionMemory["retryHistory"];
+    memory.retryHistory = null as unknown as RuntimeState["retryHistory"];
 
     expect(getRetryHistoryFor(memory, "wf-1")).toEqual([]);
   });
 
   test("ignores malformed retry history when returning matches", () => {
     const memory = fixtureMemory();
-    memory.retryHistory = [null, "bad", { id: "wf-1", retryCount: 1 }] as unknown as ExecutionMemory["retryHistory"];
+    memory.retryHistory = [null, "bad", { id: "wf-1", retryCount: 1 }] as unknown as RuntimeState["retryHistory"];
 
     expect(getRetryHistoryFor(memory, "wf-1")).toEqual([{ id: "wf-1", retryCount: 1 }]);
   });

@@ -1,4 +1,4 @@
-import type { ExecutionMemory } from "../lib/execution-memory.js";
+import type { RuntimeState } from "../lib/runtime-state.js";
 import { evaluateFinalReviewGate } from "../lib/final-review-gate.js";
 import type { PolicyProfile } from "../lib/verification-gate.js";
 import { isRecord } from "../lib/shared-predicates.js";
@@ -25,7 +25,7 @@ export function extractTodoState(text: string): TodoState {
   return { hasOpenTodos: openItems.length > 0 || TODO_JSON_STATUS.test(text), openItems: [...new Set(openItems)].slice(0, 8) };
 }
 
-function hasOpenDelegatedReview(memory: ExecutionMemory): boolean {
+function hasOpenDelegatedReview(memory: RuntimeState): boolean {
   return [...memory.completedSummaries, ...memory.verificationEvidence].some((entry) => {
     if (!isRecord(entry)) return false;
     const status = entry.reviewStatus;
@@ -33,7 +33,7 @@ function hasOpenDelegatedReview(memory: ExecutionMemory): boolean {
   });
 }
 
-export function evaluateOpenWork(memory: ExecutionMemory, profile: PolicyProfile, todoState?: TodoState, options: { includeWorkflowGate?: boolean } = {}): OpenWorkResult {
+export function evaluateOpenWork(memory: RuntimeState, profile: PolicyProfile, todoState?: TodoState, options: { includeWorkflowGate?: boolean } = {}): OpenWorkResult {
   const reasons: string[] = [];
   if (todoState?.hasOpenTodos) reasons.push(`TodoWrite still has open item(s): ${(todoState.openItems.length ? todoState.openItems : ["pending/in_progress item"]).join("; ")}`);
   if (memory.activeTasks.length > 0) reasons.push(`Background task(s) still active: ${memory.activeTasks.length}`);

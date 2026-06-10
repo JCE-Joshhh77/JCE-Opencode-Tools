@@ -1,10 +1,16 @@
 import { describe, test, expect } from "bun:test";
+import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync } from "fs";
+import { tmpdir } from "os";
+import { dirname, join } from "path";
 import {
   shouldRestoreGraph,
   restoreOrchestrationFromMemory,
   mergeOrchestrationIntoMemory,
   createEmptyMemoryV2,
+  loadMemoryV2,
 } from "../../src/plugin/lib/orchestration/execution-memory-v2.js";
+import { getRuntimeStatePath } from "../../src/plugin/lib/runtime-state.ts";
 import { createOrchestrationMemory, addConstraint } from "../../src/plugin/lib/orchestration/shared-memory.js";
 import { createTaskGraph, addNode, transitionNode, completeNode, snapshotGraph } from "../../src/plugin/lib/orchestration/task-graph.js";
 import { evaluateCompletionGate, extractToolEvidence } from "../../src/plugin/lib/orchestration/intelligence.js";
@@ -62,6 +68,37 @@ describe("C1 — stale graph restoration guard", () => {
     };
     const { graph } = restoreOrchestrationFromMemory(mem, NOW);
     expect(graph).toBeUndefined();
+  });
+});
+
+describe("v1/v2 persistence bridge", () => {
+  test("loadMemoryV2 migrates legacy v1 file from jce-worker-execution path", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-jce-v1v2-"));
+    try {
+      const legacyPath = getRuntimeStatePath(root);
+      mkdirSync(dirname(legacyPath), { recursive: true });
+      writeFileSync(legacyPath, JSON.stringify({
+        version: 1,
+        updatedAt: NOW,
+        activeTasks: [],
+        completedSummaries: [],
+        blockers: [],
+        verificationEvidence: [],
+        retryHistory: [],
+        traceEvents: [],
+        workflowRuns: [],
+        wisdom: [{ id: "w1", learning: "keep evidence", source: "review", createdAt: NOW }],
+        taskLearnings: [{ id: "t1", taskType: "bugfix", trigger: "failing test", successfulRecipe: ["repro"], verificationCommands: ["bun test"], touchedAreas: ["src/plugin"], createdAt: NOW }],
+      }, null, 2));
+
+      const loaded = loadMemoryV2(root, NOW);
+      expect(loaded.migrated).toBe(true);
+      expect(loaded.memory.version).toBe(2);
+      expect(loaded.memory.wisdom.some((entry) => entry.id === "w1")).toBe(true);
+      expect(loaded.memory.taskLearnings.some((entry) => entry.id === "t1")).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

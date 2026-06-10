@@ -1,12 +1,12 @@
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
-import type { ExecutionMemory } from "./execution-memory.js";
+import type { RuntimeState } from "./runtime-state.js";
 
 function readJson<T>(path: string): T | null {
   try { return JSON.parse(readFileSync(path, "utf-8")) as T; } catch { return null; }
 }
 
-export function buildProjectBrain(projectRoot: string, memory: ExecutionMemory): string {
+export function buildProjectBrain(projectRoot: string, memory: RuntimeState): string {
   const pkg = readJson<{ scripts?: Record<string, string>; version?: string; dependencies?: Record<string, string> }>(join(projectRoot, "package.json"));
   const versionFiles = ["package.json", "install.ps1", "install.sh", "src/lib/constants.ts"].filter((file) => existsSync(join(projectRoot, file)));
   const skillDir = join(projectRoot, "config", "skills");

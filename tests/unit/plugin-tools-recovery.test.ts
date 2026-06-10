@@ -197,7 +197,7 @@ describe("dispatch collect recovery loop", () => {
     expect(result).not.toContain("Task " + task.id + " completed:");
     expect(manager.getTask(task.id)?.status).toBe("error");
     expect(manager.getTask(task.id)?.reviewStatus).toBe("blocked");
-    expect(manager.toExecutionMemory().blockers).toContainEqual(expect.objectContaining({ id: task.id }));
+    expect(manager.toRuntimeState().blockers).toContainEqual(expect.objectContaining({ id: task.id }));
   });
 
   test("reports pending retry when concurrency prevents immediate retry launch", async () => {

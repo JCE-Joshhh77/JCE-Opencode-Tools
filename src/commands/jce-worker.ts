@@ -1,7 +1,16 @@
 import { existsSync, renameSync } from "fs";
 import { Command } from "commander";
-import { addWisdom, createEmptyExecutionMemory, createWisdomEntry, getExecutionMemoryPath, loadExecutionMemory, saveExecutionMemory } from "../plugin/lib/execution-memory.js";
-import { addTaskLearning, createTaskLearning } from "../plugin/lib/execution-memory.js";
+import {
+  addRuntimeTaskLearning,
+  addRuntimeWisdom,
+  createEmptyRuntimeState,
+  createRuntimeTaskLearning,
+  createRuntimeWisdomEntry,
+  getRuntimeStatePath,
+  loadSessionState,
+  saveSessionState,
+  type RuntimeState,
+} from "../plugin/lib/session-store.js";
 import { clearSessionPolicyProfile, isPolicyProfile, resolvePolicyProfile, saveProjectPolicyProfile, saveSessionPolicyProfile } from "../plugin/lib/policy-profile.js";
 import type { PolicyProfile } from "../plugin/lib/verification-gate.js";
 import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace } from "../plugin/lib/jce-worker-report.js";
@@ -35,7 +44,7 @@ export function normalizeTraceLimit(value: string | undefined): number {
 }
 
 export function clearJceWorkerRuntime(projectRoot: string, now = new Date().toISOString()): { path: string; backupPath?: string } {
-  const path = getExecutionMemoryPath(projectRoot);
+  const path = getRuntimeStatePath(projectRoot);
   let backupPath: string | undefined;
 
   if (existsSync(path)) {
@@ -43,7 +52,10 @@ export function clearJceWorkerRuntime(projectRoot: string, now = new Date().toIS
     renameSync(path, backupPath);
   }
 
-  saveExecutionMemory(projectRoot, createEmptyExecutionMemory(now), now);
+  saveSessionState(projectRoot, {
+    runtime: createEmptyRuntimeState(now),
+    orchestration: loadSessionState(projectRoot, now).state.orchestration,
+  }, now, { saveOrchestration: false });
   return backupPath ? { path, backupPath } : { path };
 }
 
@@ -51,7 +63,7 @@ function parsePolicyProfile(value: unknown): PolicyProfile | undefined {
   return isPolicyProfile(value) ? value : undefined;
 }
 
-function formatDoctor(memory: ReturnType<typeof loadExecutionMemory>["memory"]): string {
+function formatDoctor(memory: RuntimeState): string {
   const lines = ["JCE-Worker Doctor", "================="];
   lines.push(`Active tasks: ${memory.activeTasks.length}`);
   lines.push(`Blockers: ${memory.blockers.length}`);
@@ -62,7 +74,7 @@ function formatDoctor(memory: ReturnType<typeof loadExecutionMemory>["memory"]):
   return lines.join("\n");
 }
 
-function formatEval(memory: ReturnType<typeof loadExecutionMemory>["memory"]): string {
+function formatEval(memory: RuntimeState): string {
   const checks = [
     { name: "runtime memory loads", passed: memory.version === 1 },
     { name: "wisdom store available", passed: Array.isArray(memory.wisdom) },
@@ -84,9 +96,9 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .description("Show current JCE-Worker workflow status")
     .option("--profile <profile>", "Policy profile override for this command: strict, balanced, or fast")
     .action((opts: { profile?: string }) => {
-      const loaded = loadExecutionMemory(cwd());
+      const loaded = loadSessionState(cwd());
       const policy = resolvePolicyProfile(cwd(), parsePolicyProfile(opts.profile));
-      write(formatJceWorkerStatus(loaded.memory, policy));
+      write(formatJceWorkerStatus(loaded.state.runtime, policy));
       exitIfEnabled(options, EXIT_SUCCESS);
     });
 
@@ -97,9 +109,9 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .option("--limit <count>", "Maximum events to print", "20")
     .option("--profile <profile>", "Policy profile override for this command: strict, balanced, or fast")
     .action((opts: { task?: string; workflow?: string; limit?: string; profile?: string }) => {
-      const loaded = loadExecutionMemory(cwd());
+      const loaded = loadSessionState(cwd());
       const policy = resolvePolicyProfile(cwd(), parsePolicyProfile(opts.profile));
-      write(formatJceWorkerTrace(loaded.memory, { taskId: opts.task, workflowId: opts.workflow, limit: normalizeTraceLimit(opts.limit) }, policy));
+      write(formatJceWorkerTrace(loaded.state.runtime, { taskId: opts.task, workflowId: opts.workflow, limit: normalizeTraceLimit(opts.limit) }, policy));
       exitIfEnabled(options, EXIT_SUCCESS);
     });
 
@@ -107,9 +119,9 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .description("Show detailed JCE-Worker operator report")
     .option("--profile <profile>", "Policy profile override for this command: strict, balanced, or fast")
     .action((opts: { profile?: string }) => {
-      const loaded = loadExecutionMemory(cwd());
+      const loaded = loadSessionState(cwd());
       const policy = resolvePolicyProfile(cwd(), parsePolicyProfile(opts.profile));
-      write(formatJceWorkerReport(loaded.memory, policy));
+      write(formatJceWorkerReport(loaded.state.runtime, policy));
       exitIfEnabled(options, EXIT_SUCCESS);
     });
 
@@ -176,12 +188,12 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .option("--path <path...>", "Check paths for commit/tool-discipline issues")
     .option("--skills", "Check repo skills against user config skills")
     .action((opts: { path?: string[]; skills?: boolean }) => {
-      const loaded = loadExecutionMemory(cwd());
+      const loaded = loadSessionState(cwd());
       const issues = summarizeToolDiscipline(opts.path ?? []);
       const skillOutput = opts.skills ? `\n\n${formatSkillSync(checkSkillSync(cwd()))}` : "";
       const jceDoctor = assessJceDoctor(cwd());
       const intelligenceOutput = ["", "JCE Intelligence Checks", ...jceDoctor.checks.map((check) => `- ${check.status.toUpperCase()}: ${check.name}: ${check.message}`)].join("\n");
-      write([formatDoctor(loaded.memory), intelligenceOutput, issues.length ? "\nTool discipline issues:" : "\nTool discipline issues: none", ...issues.map((issue) => `- ${issue.severity.toUpperCase()}: ${issue.path}: ${issue.reason}`)].join("\n") + skillOutput);
+      write([formatDoctor(loaded.state.runtime), intelligenceOutput, issues.length ? "\nTool discipline issues:" : "\nTool discipline issues: none", ...issues.map((issue) => `- ${issue.severity.toUpperCase()}: ${issue.path}: ${issue.reason}`)].join("\n") + skillOutput);
       exitIfEnabled(options, issues.some((issue) => issue.severity === "block") || jceDoctor.summary.fail > 0 ? EXIT_ERROR : EXIT_SUCCESS);
     });
 
@@ -192,11 +204,11 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .option("--confidence <confidence>", "Confidence: low, medium, high", "medium")
     .option("--tag <tag...>", "Learning tag")
     .action((learning: string, opts: { source?: string; confidence?: string; tag?: string[] }) => {
-      const source = ["task", "delegation", "debug", "review", "release", "tooling"].includes(opts.source ?? "") ? opts.source as Parameters<typeof createWisdomEntry>[0]["source"] : "task";
-      const confidence = ["low", "medium", "high"].includes(opts.confidence ?? "") ? opts.confidence as Parameters<typeof createWisdomEntry>[0]["confidence"] : "medium";
-      const loaded = loadExecutionMemory(cwd());
-      const next = addWisdom(loaded.memory, createWisdomEntry({ learning, source, confidence, tags: opts.tag ?? [] }));
-      saveExecutionMemory(cwd(), next);
+      const source = ["task", "delegation", "debug", "review", "release", "tooling"].includes(opts.source ?? "") ? opts.source as Parameters<typeof createRuntimeWisdomEntry>[0]["source"] : "task";
+      const confidence = ["low", "medium", "high"].includes(opts.confidence ?? "") ? opts.confidence as Parameters<typeof createRuntimeWisdomEntry>[0]["confidence"] : "medium";
+      const loaded = loadSessionState(cwd());
+      const nextRuntime = addRuntimeWisdom(loaded.state.runtime, createRuntimeWisdomEntry({ learning, source, confidence, tags: opts.tag ?? [] }));
+      saveSessionState(cwd(), { runtime: nextRuntime, orchestration: loaded.state.orchestration }, undefined, { saveOrchestration: false });
       successOutput("JCE-Worker learning saved.");
       exitIfEnabled(options, EXIT_SUCCESS);
     });
@@ -210,8 +222,8 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
         exitIfEnabled(options, EXIT_SUCCESS);
         return;
       }
-      const loaded = loadExecutionMemory(cwd());
-      const output = formatEval(loaded.memory);
+      const loaded = loadSessionState(cwd());
+      const output = formatEval(loaded.state.runtime);
       write(output);
       exitIfEnabled(options, output.includes("FAIL") ? EXIT_ERROR : EXIT_SUCCESS);
     });
@@ -219,7 +231,7 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
   const brainCommand = new Command("brain")
     .description("Show project intelligence summary for JCE-Worker")
     .action(() => {
-      write(buildProjectBrain(cwd(), loadExecutionMemory(cwd()).memory));
+      write(buildProjectBrain(cwd(), loadSessionState(cwd()).state.runtime));
       exitIfEnabled(options, EXIT_SUCCESS);
     });
 
@@ -247,10 +259,10 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .option("--verify <command...>", "Verification command")
     .option("--area <area...>", "Touched area")
     .action((trigger: string, opts: { type?: string; recipe?: string[]; verify?: string[]; area?: string[] }) => {
-      const taskType = ["audit", "bugfix", "feature", "release", "review", "unknown"].includes(opts.type ?? "") ? opts.type as Parameters<typeof createTaskLearning>[0]["taskType"] : "unknown";
-      const loaded = loadExecutionMemory(cwd());
-      const next = addTaskLearning(loaded.memory, createTaskLearning({ taskType, trigger, successfulRecipe: opts.recipe ?? [], verificationCommands: opts.verify ?? [], touchedAreas: opts.area ?? [] }));
-      saveExecutionMemory(cwd(), next);
+      const taskType = ["audit", "bugfix", "feature", "release", "review", "unknown"].includes(opts.type ?? "") ? opts.type as Parameters<typeof createRuntimeTaskLearning>[0]["taskType"] : "unknown";
+      const loaded = loadSessionState(cwd());
+      const nextRuntime = addRuntimeTaskLearning(loaded.state.runtime, createRuntimeTaskLearning({ taskType, trigger, successfulRecipe: opts.recipe ?? [], verificationCommands: opts.verify ?? [], touchedAreas: opts.area ?? [] }));
+      saveSessionState(cwd(), { runtime: nextRuntime, orchestration: loaded.state.orchestration }, undefined, { saveOrchestration: false });
       successOutput("JCE-Worker task learning saved.");
       exitIfEnabled(options, EXIT_SUCCESS);
     });

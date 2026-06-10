@@ -73,7 +73,7 @@ describe("background manager reliability metadata", () => {
     });
     manager.completeTask(task.id, "## Summary\nDone\n\n## Files\n- none\n\n## Verification\n- not run\n\n## Risks\n- none");
 
-    const memory = manager.toExecutionMemory("2026-05-06T00:01:00.000Z");
+    const memory = manager.toRuntimeState("2026-05-06T00:01:00.000Z");
 
     expect(memory.completedSummaries.length).toBe(1);
     expect(memory.traceEvents.length).toBeGreaterThan(0);
@@ -176,9 +176,9 @@ describe("background manager reliability metadata", () => {
     expect(task.contextBudget?.estimatedSavingsPercent).toBeGreaterThan(0);
     expect(task.contextBudget?.estimatedTokensSaved).toBeGreaterThan(0);
     expect(task.contextBudget?.originalChars).toBeGreaterThan(task.contextBudget?.compressedChars ?? 0);
-    expect(manager.toExecutionMemory().contextBudgetSummary?.tasks).toBe(1);
-    expect(manager.toExecutionMemory().contextBudgetSummary?.estimatedTokensSaved).toBe(task.contextBudget?.estimatedTokensSaved);
-    expect(manager.toExecutionMemory().contextBudgetSummary?.byTool?.dispatch?.tasks).toBe(1);
+    expect(manager.toRuntimeState().contextBudgetSummary?.tasks).toBe(1);
+    expect(manager.toRuntimeState().contextBudgetSummary?.estimatedTokensSaved).toBe(task.contextBudget?.estimatedTokensSaved);
+    expect(manager.toRuntimeState().contextBudgetSummary?.byTool?.dispatch?.tasks).toBe(1);
     expect(requests[0].body.parts[0].text.match(/same low value context line repeated/g)).toHaveLength(1);
   });
 

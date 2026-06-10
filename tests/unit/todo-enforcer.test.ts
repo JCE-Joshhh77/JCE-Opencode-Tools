@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { shouldEnforceContinuation, CONTINUATION_PROMPT } from "../../src/plugin/hooks/todo-enforcer.ts";
 import { evaluateOpenWork, extractTodoState } from "../../src/plugin/hooks/open-work-enforcer.ts";
-import { createEmptyExecutionMemory } from "../../src/plugin/lib/execution-memory.ts";
+import { createEmptyRuntimeState } from "../../src/plugin/lib/runtime-state.ts";
 
 describe("todo enforcer", () => {
   test("returns true when incomplete todos exist", () => {
@@ -45,7 +45,7 @@ describe("todo enforcer", () => {
   });
 
   test("open work blocks confirmation stop when todos remain", () => {
-    const memory = createEmptyExecutionMemory();
+    const memory = createEmptyRuntimeState();
     const result = evaluateOpenWork(memory, "balanced", { hasOpenTodos: true, openItems: ["Run tests"] });
     expect(result.blocked).toBe(true);
     expect(result.prompt).toContain("BOULDER CONTINUATION");

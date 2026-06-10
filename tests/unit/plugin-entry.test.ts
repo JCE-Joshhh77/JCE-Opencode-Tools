@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createRoot } from "solid-js";
-import { createEmptyExecutionMemory, saveExecutionMemory } from "../../src/plugin/lib/execution-memory.ts";
+import { createEmptyRuntimeState, saveRuntimeState } from "../../src/plugin/lib/runtime-state.ts";
+
 import { createContextBudgetLineSignal, renderContextBudgetLine } from "../../src/plugin/lib/token-savings-sidebar.ts";
 
 function fakeTuiApi(root: string) {
@@ -46,7 +47,8 @@ describe("plugin entry point", () => {
     }
   });
 
-  test("Token Savings signal refreshes from persisted execution memory", async () => {
+  test("Token Savings signal refreshes from persisted runtime state", async () => {
+
     const root = mkdtempSync(join(tmpdir(), "opencode-jce-tui-"));
     try {
       const api = fakeTuiApi(root);
@@ -57,7 +59,7 @@ describe("plugin entry point", () => {
           const line = createContextBudgetLineSignal(api, 10);
           observed = line();
 
-          const memory = createEmptyExecutionMemory("2026-05-14T00:00:00.000Z");
+          const memory = createEmptyRuntimeState("2026-05-14T00:00:00.000Z");
           memory.contextBudgetSummary = {
             originalChars: 100,
             compressedChars: 40,
@@ -66,7 +68,7 @@ describe("plugin entry point", () => {
             tasks: 1,
             byTool: { Read: { originalChars: 100, compressedChars: 40, estimatedTokensSaved: 15, tasks: 1 } },
           };
-          saveExecutionMemory(root, memory, "2026-05-14T00:00:01.000Z", { preserveWorkflowRuntime: false });
+          saveRuntimeState(root, memory, "2026-05-14T00:00:01.000Z", { preserveWorkflowRuntime: false });
 
           setTimeout(() => {
             observed = line();

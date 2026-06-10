@@ -1,4 +1,4 @@
-import { createTaskLearning, createWisdomEntry, type ExecutionMemory, type TaskLearning, type WisdomEntry } from "../lib/execution-memory.js";
+import { createRuntimeTaskLearning, createRuntimeWisdomEntry, type RuntimeState, type TaskLearning, type WisdomEntry } from "../lib/runtime-state.js";
 import type { JceWorkerErrorCategory } from "../lib/error-taxonomy.js";
 import type { HandoffReportInput } from "../lib/handoff.js";
 import { appendTraceEvent, createTraceEvent } from "../lib/trace.js";
@@ -100,14 +100,15 @@ export class BackgroundManager {
   }
 
   recordAcceptedDelegationLearning(task: BackgroundTask, evidenceStrength: string): void {
-    this.wisdom.push(createWisdomEntry({
+      this.wisdom.push(createRuntimeWisdomEntry({
+
       learning: `Accepted ${task.agent} delegation for ${task.description} with ${evidenceStrength} evidence.`,
       source: "delegation",
       confidence: evidenceStrength === "strong" ? "high" : "medium",
       tags: ["delegation", task.agent],
       now: this.now(),
     }));
-    this.taskLearnings.push(createTaskLearning({
+    this.taskLearnings.push(createRuntimeTaskLearning({
       taskType: task.agent === "jce-researcher" ? "research" : "unknown",
       trigger: task.description,
       successfulRecipe: ["delegate atomic work", "collect result", "review evidence contract"],
@@ -309,7 +310,7 @@ export class BackgroundManager {
     return this.getRunningCount() < this.maxConcurrency;
   }
 
-  toExecutionMemory(updatedAt = this.now()): ExecutionMemory {
+  toRuntimeState(updatedAt = this.now()): RuntimeState {
     const tasks = this.listTasks();
     const budgets = tasks.map((task) => task.contextBudget).filter((budget): budget is NonNullable<BackgroundTask["contextBudget"]> => Boolean(budget));
     const originalChars = budgets.reduce((sum, budget) => sum + budget.originalChars, 0);

@@ -1,6 +1,6 @@
 import type { JceWorkerAgentHint } from "./skill-router.js";
 import { evaluateWorkflowCompletionGate, type PolicyProfile } from "./verification-gate.js";
-import type { WorkflowEvidence, WorkflowIntentRoute, WorkflowRun } from "./workflow.js";
+import type { WorkflowIntentRoute, WorkflowRun } from "./workflow.js";
 import { hasAcceptedReview, hasUnresolvedExhaustedRetry } from "./shared-predicates.js";
 
 export type ExecutionPolicyAction = "route_update" | "dispatch" | "completion_claim" | "final_review";

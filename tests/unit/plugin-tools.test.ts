@@ -361,7 +361,7 @@ describe("plugin tools", () => {
     expect(collected.contextBudget!.originalChars).toBeGreaterThan(collected.contextBudget!.compressedChars);
 
     // Execution memory should reflect the savings
-    const memory = manager.toExecutionMemory();
+    const memory = manager.toRuntimeState();
     expect(memory.contextBudgetSummary).toBeDefined();
     expect(memory.contextBudgetSummary!.estimatedTokensSaved).toBeGreaterThan(0);
     expect(memory.contextBudgetSummary!.tasks).toBe(1);
@@ -375,7 +375,7 @@ describe("plugin tools", () => {
 
     const tool = buildCollectTool(manager);
     const result = await tool.execute({ taskId: task.id } as any, {} as any);
-    const memory = manager.toExecutionMemory();
+    const memory = manager.toRuntimeState();
 
     expect(String(result)).toContain("Evidence score: strong");
     expect(memory.wisdom[0].learning).toContain("Accepted explorer delegation");

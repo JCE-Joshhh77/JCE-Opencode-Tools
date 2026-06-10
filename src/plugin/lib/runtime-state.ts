@@ -10,7 +10,7 @@ export interface SkillCorrectionSession {
   updatedAt: string;
 }
 
-export interface ExecutionMemory {
+export interface RuntimeState {
   version: 1;
   updatedAt: string;
   activeTasks: unknown[];
@@ -60,25 +60,25 @@ export interface ContextBudgetSummary {
   }>;
 }
 
-export interface LoadExecutionMemoryResult {
+export interface LoadRuntimeStateResult {
   path: string;
-  memory: ExecutionMemory;
+  runtime: RuntimeState;
   recoveredFromInvalid: boolean;
   invalidBackupPath?: string;
 }
 
-export interface MergeExecutionMemoryOptions {
+export interface MergeRuntimeStateOptions {
   preserveWorkflowRuntime?: boolean;
   clearWorkflowRuntime?: boolean;
 }
 
-const MEMORY_COLLECTIONS = ["completedSummaries", "blockers", "verificationEvidence", "retryHistory"] as const;
+const RUNTIME_COLLECTIONS = ["completedSummaries", "blockers", "verificationEvidence", "retryHistory"] as const;
 
-export function getExecutionMemoryPath(projectRoot: string): string {
+export function getRuntimeStatePath(projectRoot: string): string {
   return join(projectRoot, ".opencode-jce", "jce-worker-execution.json");
 }
 
-export function createEmptyExecutionMemory(now = new Date().toISOString()): ExecutionMemory {
+export function createEmptyRuntimeState(now = new Date().toISOString()): RuntimeState {
   return {
     version: 1,
     updatedAt: now,
@@ -94,7 +94,7 @@ export function createEmptyExecutionMemory(now = new Date().toISOString()): Exec
   };
 }
 
-export function createWisdomEntry(input: {
+export function createRuntimeWisdomEntry(input: {
   learning: string;
   source: WisdomEntry["source"];
   confidence?: WisdomEntry["confidence"];
@@ -113,13 +113,13 @@ export function createWisdomEntry(input: {
   };
 }
 
-export function addWisdom(memory: ExecutionMemory, entry: WisdomEntry): ExecutionMemory {
+export function addRuntimeWisdom(runtime: RuntimeState, entry: WisdomEntry): RuntimeState {
   const normalized = entry.learning.toLowerCase();
-  const wisdom = (memory.wisdom ?? []).filter((item) => item.learning.trim().toLowerCase() !== normalized);
-  return pruneExecutionMemory({ ...memory, wisdom: [...wisdom, entry] });
+  const wisdom = (runtime.wisdom ?? []).filter((item) => item.learning.trim().toLowerCase() !== normalized);
+  return pruneRuntimeState({ ...runtime, wisdom: [...wisdom, entry] });
 }
 
-export function createTaskLearning(input: Omit<TaskLearning, "id" | "createdAt"> & { now?: string }): TaskLearning {
+export function createRuntimeTaskLearning(input: Omit<TaskLearning, "id" | "createdAt"> & { now?: string }): TaskLearning {
   const createdAt = input.now ?? new Date().toISOString();
   return {
     id: `task-learning-${Date.parse(createdAt) || Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -132,9 +132,9 @@ export function createTaskLearning(input: Omit<TaskLearning, "id" | "createdAt">
   };
 }
 
-export function addTaskLearning(memory: ExecutionMemory, entry: TaskLearning): ExecutionMemory {
-  const deduped = (memory.taskLearnings ?? []).filter((item) => item.taskType !== entry.taskType || item.trigger.toLowerCase() !== entry.trigger.toLowerCase());
-  return pruneExecutionMemory({ ...memory, taskLearnings: [...deduped, entry] });
+export function addRuntimeTaskLearning(runtime: RuntimeState, entry: TaskLearning): RuntimeState {
+  const deduped = (runtime.taskLearnings ?? []).filter((item) => item.taskType !== entry.taskType || item.trigger.toLowerCase() !== entry.trigger.toLowerCase());
+  return pruneRuntimeState({ ...runtime, taskLearnings: [...deduped, entry] });
 }
 
 function newest<T>(items: T[], max: number): T[] {
@@ -180,29 +180,29 @@ function mergeContextBudgetSummary(previous?: ContextBudgetSummary, next?: Conte
   };
 }
 
-export function pruneExecutionMemory(memory: ExecutionMemory): ExecutionMemory {
+export function pruneRuntimeState(runtime: RuntimeState): RuntimeState {
   return {
-    ...memory,
-    activeTasks: newest(memory.activeTasks, 25),
-    completedSummaries: newest(memory.completedSummaries, 50),
-    blockers: newest(memory.blockers, 50),
-    verificationEvidence: newest(memory.verificationEvidence, 100),
-    retryHistory: newest(memory.retryHistory, 100),
-    traceEvents: newest(memory.traceEvents, 200),
-    activeWorkflow: memory.activeWorkflow,
-    workflowRuns: newest(memory.workflowRuns ?? [], 10),
-    contextBudgetSummary: memory.contextBudgetSummary,
-    wisdom: newest(memory.wisdom ?? [], 50),
-    taskLearnings: newest(memory.taskLearnings ?? [], 25),
+    ...runtime,
+    activeTasks: newest(runtime.activeTasks, 25),
+    completedSummaries: newest(runtime.completedSummaries, 50),
+    blockers: newest(runtime.blockers, 50),
+    verificationEvidence: newest(runtime.verificationEvidence, 100),
+    retryHistory: newest(runtime.retryHistory, 100),
+    traceEvents: newest(runtime.traceEvents, 200),
+    activeWorkflow: runtime.activeWorkflow,
+    workflowRuns: newest(runtime.workflowRuns ?? [], 10),
+    contextBudgetSummary: runtime.contextBudgetSummary,
+    wisdom: newest(runtime.wisdom ?? [], 50),
+    taskLearnings: newest(runtime.taskLearnings ?? [], 25),
   };
 }
 
-export function mergeExecutionMemorySnapshot(previous: ExecutionMemory, next: ExecutionMemory, options: MergeExecutionMemoryOptions = {}): ExecutionMemory {
-  if (!options.preserveWorkflowRuntime) return pruneExecutionMemory(next);
+export function mergeRuntimeStateSnapshot(previous: RuntimeState, next: RuntimeState, options: MergeRuntimeStateOptions = {}): RuntimeState {
+  if (!options.preserveWorkflowRuntime) return pruneRuntimeState(next);
 
-  return pruneExecutionMemory({
+  return pruneRuntimeState({
     ...next,
-    ...Object.fromEntries(MEMORY_COLLECTIONS.map((key) => [key, mergeById(previous[key], next[key])])),
+    ...Object.fromEntries(RUNTIME_COLLECTIONS.map((key) => [key, mergeById(previous[key], next[key])])),
     traceEvents: next.traceEvents.length > 0 ? next.traceEvents : previous.traceEvents,
     activeWorkflow: options.clearWorkflowRuntime ? next.activeWorkflow : next.activeWorkflow ?? previous.activeWorkflow,
     workflowRuns: options.clearWorkflowRuntime ? next.workflowRuns : next.workflowRuns.length > 0 ? next.workflowRuns : previous.workflowRuns,
@@ -226,32 +226,32 @@ function writeJsonAtomic(path: string, value: unknown): void {
   }
 }
 
-export function loadExecutionMemory(projectRoot: string, now = new Date().toISOString()): LoadExecutionMemoryResult {
-  const path = getExecutionMemoryPath(projectRoot);
+export function loadRuntimeState(projectRoot: string, now = new Date().toISOString()): LoadRuntimeStateResult {
+  const path = getRuntimeStatePath(projectRoot);
   if (!existsSync(path)) {
-    return { path, memory: createEmptyExecutionMemory(now), recoveredFromInvalid: false };
+    return { path, runtime: createEmptyRuntimeState(now), recoveredFromInvalid: false };
   }
 
   try {
-    const parsed = JSON.parse(readFileSync(path, "utf-8")) as ExecutionMemory;
-    return { path, memory: pruneExecutionMemory({ ...createEmptyExecutionMemory(now), ...parsed, workflowRuns: parsed.workflowRuns ?? [], wisdom: parsed.wisdom ?? [], taskLearnings: parsed.taskLearnings ?? [] }), recoveredFromInvalid: false };
+    const parsed = JSON.parse(readFileSync(path, "utf-8")) as RuntimeState;
+    return { path, runtime: pruneRuntimeState({ ...createEmptyRuntimeState(now), ...parsed, workflowRuns: parsed.workflowRuns ?? [], wisdom: parsed.wisdom ?? [], taskLearnings: parsed.taskLearnings ?? [] }), recoveredFromInvalid: false };
   } catch {
     const backupPath = `${path}.invalid-${Date.now()}`;
     renameSync(path, backupPath);
-    return { path, memory: createEmptyExecutionMemory(now), recoveredFromInvalid: true, invalidBackupPath: backupPath };
+    return { path, runtime: createEmptyRuntimeState(now), recoveredFromInvalid: true, invalidBackupPath: backupPath };
   }
 }
 
-export function saveExecutionMemory(
+export function saveRuntimeState(
   projectRoot: string,
-  memory: ExecutionMemory,
+  runtime: RuntimeState,
   now = new Date().toISOString(),
-  options: MergeExecutionMemoryOptions = { preserveWorkflowRuntime: true },
-): { path: string; memory: ExecutionMemory } {
-  const path = getExecutionMemoryPath(projectRoot);
+  options: MergeRuntimeStateOptions = { preserveWorkflowRuntime: true },
+): { path: string; runtime: RuntimeState } {
+  const path = getRuntimeStatePath(projectRoot);
   mkdirSync(dirname(path), { recursive: true });
-  const disk = loadExecutionMemory(projectRoot, now).memory;
-  const pruned = mergeExecutionMemorySnapshot(disk, { ...memory, updatedAt: now }, options);
+  const disk = loadRuntimeState(projectRoot, now).runtime;
+  const pruned = mergeRuntimeStateSnapshot(disk, { ...runtime, updatedAt: now }, options);
   writeJsonAtomic(path, pruned);
-  return { path, memory: pruned };
+  return { path, runtime: pruned };
 }

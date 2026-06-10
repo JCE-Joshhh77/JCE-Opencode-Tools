@@ -3,15 +3,14 @@ import { existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { BackgroundManager } from "./background/manager.js";
 import { extractPromptText } from "./background/spawner.js";
-import type { OpenCodeClient } from "./background/types.js";
 import { buildDispatchTool, buildStatusTool, buildCollectTool } from "./tools/dispatch.js";
 import { buildAgentConfigs } from "./config.js";
 import { analyzeCommentDensity, COMMENT_WARNING } from "./hooks/comment-checker.js";
 import { looksLikeCompletionClaim, looksLikeStopEarlyOrConfirmation, shouldWarnForMissingVerification, VERIFICATION_WARNING } from "./hooks/jce-worker-guard.js";
 import { shouldEnforceContinuation, detectPrematureStop, CONTINUATION_PROMPT } from "./hooks/todo-enforcer.js";
 import { evaluateOpenWork, extractTodoState, type TodoState } from "./hooks/open-work-enforcer.js";
-import { loadExecutionMemory, mergeExecutionMemorySnapshot, saveExecutionMemory } from "./lib/execution-memory.js";
-import type { ExecutionMemory } from "./lib/execution-memory.js";
+import { loadSessionState, mergeRuntimeStateSnapshot, saveSessionState } from "./lib/session-store.js";
+import type { RuntimeState } from "./lib/session-store.js";
 import { buildChineseTranslationPrompt, filterChineseOutput, type ChineseTranslator } from "./lib/chinese-output-filter.js";
 import { CONTEXT_FILENAME, getContextTemplate } from "../lib/context-template.js";
 import { evaluateExecutionPolicy, formatExecutionPolicyDecision } from "./lib/execution-policy.js";
@@ -28,8 +27,6 @@ import { determineSkillsForMessage, explainSkillRouting, parseSkillCorrection, a
 import { applyContextBudget } from "./lib/context-budget.js";
 import { POST_COMPACTION_NO_TASK_GUARD, shouldSuppressCompactionAutocontinue } from "./lib/compaction-loop-guard.js";
 import { scoreIntent, toLegacyRoute } from "./lib/orchestration/intent-router.js";
-import type { ScoredIntent } from "./lib/orchestration/types.js";
-import type { AgentRole } from "./lib/orchestration/types.js";
 import { OrchestrationController } from "./lib/orchestration/controller.js";
 import { OrchestrationBridge } from "./lib/orchestration/bridge.js";
 import { shouldDropPersistedWorkflow } from "./lib/orchestration/staleness.js";
@@ -45,14 +42,12 @@ import {
   detectFileConflicts,
   formatConflictWarnings,
   createTokenBudgetTracker,
-  estimateNodeTokenCost,
   createOrchestrationLogger,
   runHealthCheck,
   formatHealthCheck,
-  type OrchestrationLogger,
 } from "./lib/orchestration/reliability.js";
 
-function delegatedReviewStrings(memory: ExecutionMemory): string[] {
+function delegatedReviewStrings(memory: RuntimeState): string[] {
   return [...memory.completedSummaries, ...memory.verificationEvidence]
     .filter(isRecord)
     .map((entry) => {
@@ -63,7 +58,7 @@ function delegatedReviewStrings(memory: ExecutionMemory): string[] {
     });
 }
 
-function hasDelegatedWork(memory: ExecutionMemory): boolean {
+function hasDelegatedWork(memory: RuntimeState): boolean {
   return [...memory.completedSummaries, ...memory.verificationEvidence].some((entry) => isRecord(entry) && typeof entry.reviewStatus === "string" && entry.reviewStatus !== "not_applicable");
 }
 
@@ -103,8 +98,16 @@ function shouldTranslateToolOutput(tool: string): boolean {
   return tool === "task" || tool === "bg_collect" || tool === "jce_workflow";
 }
 
+const COMPLETION_INSPECTION_TOOLS = new Set(["task", "jce_workflow"]);
+
 function shouldInspectCompletionOutput(tool: string): boolean {
-  return !["read", "grep", "glob", "ls", "bash", "todowrite", "dispatch", "bg_status", "bg_collect"].includes(tool);
+  return COMPLETION_INSPECTION_TOOLS.has(tool);
+}
+
+function shouldAutoActivateFromUserMessage(message: string): boolean {
+  const trimmed = message.trim();
+  if (!trimmed || trimmed.includes("?")) return false;
+  return /\b(fix|debug|investigate|implement|update|refactor|audit|review|analyze|check|verify|repair|add|remove|clean|lanjutkan|perbaiki|cek|audit|analisis|review|ubah|hapus|rapikan|lanjutkan)\b/i.test(trimmed);
 }
 
 function shouldApplyDirectContextBudget(tool: string): boolean {
@@ -161,8 +164,8 @@ const jcePlugin: Plugin = async (input) => {
   const agents = buildAgentConfigs();
   const projectRoot = input.directory || input.worktree || process.cwd();
   let projectContextEnsured = false;
-  const loadedMemory = loadExecutionMemory(projectRoot);
-  let currentMemory = loadedMemory.memory;
+  const loadedMemory = loadSessionState(projectRoot);
+  let currentMemory = loadedMemory.state.runtime;
   // Drop a stale/terminal persisted activeWorkflow at load using the SAME
   // staleness authority the v2 graph uses (C1/C2 root cause: month-old workflow
   // with no active tasks resurrecting and forcing bogus gates). The active-task
@@ -203,10 +206,13 @@ const jcePlugin: Plugin = async (input) => {
   });
 
   if (currentMemory.activeTasks.length === 0 && currentMemory.blockers.length > 0) {
-    currentMemory = saveExecutionMemory(projectRoot, {
-      ...currentMemory,
-      blockers: [],
-    }, undefined, { preserveWorkflowRuntime: false }).memory;
+    currentMemory = saveSessionState(projectRoot, {
+      runtime: {
+        ...currentMemory,
+        blockers: [],
+      },
+      orchestration: loadedMemory.state.orchestration,
+    }, undefined, { runtime: { preserveWorkflowRuntime: false }, saveOrchestration: false }).runtime;
   }
 
   const refreshSkillRoutingBias = () => {
@@ -227,9 +233,20 @@ const jcePlugin: Plugin = async (input) => {
   };
   refreshSkillRoutingBias();
 
+  const saveRuntimeOnly = (runtime: RuntimeState, preserveWorkflowRuntime = true) => {
+    currentMemory = saveSessionState(projectRoot, {
+      runtime,
+      orchestration: loadedMemory.state.orchestration,
+    }, undefined, {
+      runtime: { preserveWorkflowRuntime },
+      saveOrchestration: false,
+    }).runtime;
+    return currentMemory;
+  };
+
   const persistCurrentMemory = () => {
     withErrorBoundary(() => {
-      currentMemory = saveExecutionMemory(projectRoot, mergeExecutionMemorySnapshot(currentMemory, manager.toExecutionMemory(), { preserveWorkflowRuntime: true })).memory;
+      saveRuntimeOnly(mergeRuntimeStateSnapshot(currentMemory, manager.toRuntimeState(), { preserveWorkflowRuntime: true }));
     }, undefined, orchestrationLogger);
     withErrorBoundary(() => orchestrator.persist(), undefined, orchestrationLogger);
     return currentMemory;
@@ -271,7 +288,7 @@ const jcePlugin: Plugin = async (input) => {
       },
     ];
     withErrorBoundary(() => {
-      currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: false }).memory;
+      saveRuntimeOnly(currentMemory, false);
     }, undefined, orchestrationLogger);
   };
 
@@ -308,7 +325,7 @@ const jcePlugin: Plugin = async (input) => {
     );
     workflowRuntimeActive = true;
     withErrorBoundary(() => {
-      currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+      saveRuntimeOnly(currentMemory);
     }, undefined, orchestrationLogger);
   };
 
@@ -329,7 +346,7 @@ const jcePlugin: Plugin = async (input) => {
     currentMemory.activeWorkflow = applyWorkflowIntentRoute(currentMemory.activeWorkflow, { ...route, source });
     workflowRuntimeActive = true;
     withErrorBoundary(() => {
-      currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+      saveRuntimeOnly(currentMemory);
     }, undefined, orchestrationLogger);
   };
 
@@ -378,11 +395,11 @@ const jcePlugin: Plugin = async (input) => {
           currentMemory.activeWorkflow = applyWorkflowIntentRoute(currentMemory.activeWorkflow, routeWithSource);
           workflowRuntimeActive = true;
           withErrorBoundary(() => {
-            currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+            saveRuntimeOnly(currentMemory);
           }, undefined, orchestrationLogger);
         }
         if (policy.status === "warn") return { status: "warn", message: formatExecutionPolicyDecision(policy) };
-      }, (agent, text) => {
+      }, (agent, _text) => {
         const correction = sessionSkillCorrection ?? undefined;
         if (!correction?.agent) return undefined;
         if (!isJceWorkerAgentHint(correction.agent)) return undefined;
@@ -404,12 +421,11 @@ const jcePlugin: Plugin = async (input) => {
           const tasks = manager.listTasks();
           const lastCompleted = tasks.filter((t) => t.status === "completed").pop();
           if (lastCompleted?.result) {
-            const context = { sessionID: "", messageID: "" };
               // Feed result through orchestration bridge; failures persist as blockers for closed-loop gating.
               bridge.collectAndContinue(lastCompleted.id, lastCompleted.result, lastCompleted.parentSessionId ?? "", lastCompleted.parentMessageId ?? "").catch((err) => {
                 withErrorBoundary(() => {
                   currentMemory.blockers = [...currentMemory.blockers, { id: `orchestration-${Date.now()}`, failureReason: err instanceof Error ? err.message : String(err) }];
-                  currentMemory = saveExecutionMemory(projectRoot, currentMemory).memory;
+                  saveRuntimeOnly(currentMemory);
                 }, undefined, orchestrationLogger);
               });
           }
@@ -440,7 +456,10 @@ const jcePlugin: Plugin = async (input) => {
             updatedAt: new Date().toISOString(),
           };
           withErrorBoundary(() => {
-            currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: true }).memory;
+            currentMemory = saveSessionState(projectRoot, {
+              runtime: currentMemory,
+              orchestration: loadedMemory.state.orchestration,
+            }, undefined, { runtime: { preserveWorkflowRuntime: true }, saveOrchestration: false }).runtime;
           }, undefined, orchestrationLogger);
           refreshSkillRoutingBias();
           withErrorBoundary(() => {
@@ -488,7 +507,11 @@ const jcePlugin: Plugin = async (input) => {
         // Auto-activation with rate limiting, approval gate, and error boundary.
         // Greetings/no-op turns must not create plans; they can otherwise become
         // self-perpetuating Build/Compaction loops when OpenCode compacts a full context.
-        if (!isNoTaskTurn && withErrorBoundary(() => orchestrator.shouldAutoActivate(text), false, orchestrationLogger) && rateLimiter.canActivate()) {
+        if (!isNoTaskTurn
+          && shouldAutoActivateFromUserMessage(text)
+          && withErrorBoundary(() => orchestrator.shouldAutoActivate(text), false, orchestrationLogger)
+          && rateLimiter.canActivate()) {
+
           const goal = text.trim().slice(0, 300);
           const graph = withErrorBoundary(() => orchestrator.createPlan(goal), null, orchestrationLogger);
 
@@ -583,7 +606,11 @@ const jcePlugin: Plugin = async (input) => {
             appendTelemetry(projectRoot, { kind: "verification_result", name: evidence.command ?? command, metadata: { skill: primarySkill, passed: evidence.status === "pass", command: evidence.command ?? command } });
             currentMemory.verificationEvidence = [...currentMemory.verificationEvidence, { ...evidence, captured: "auto", workflowId: currentMemory.activeWorkflow?.id }].slice(-100);
             currentMemory.traceEvents = [...(currentMemory.traceEvents ?? []), { type: "verification.recorded", message: evidence.summary, at: new Date().toISOString(), metadata: { command } }];
-            currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: true }).memory;
+            currentMemory = saveSessionState(projectRoot, {
+              runtime: currentMemory,
+              orchestration: loadedMemory.state.orchestration,
+            }, undefined, { runtime: { preserveWorkflowRuntime: true }, saveOrchestration: false }).runtime;
+
           }, undefined, orchestrationLogger);
         }
       }

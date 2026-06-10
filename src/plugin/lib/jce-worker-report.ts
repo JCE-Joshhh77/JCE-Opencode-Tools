@@ -1,4 +1,4 @@
-import type { ExecutionMemory } from "./execution-memory.js";
+import type { RuntimeState } from "./runtime-state.js";
 import { formatDecisionRecommendation, recommendNextDecision } from "./decision-intelligence.js";
 import { getActiveBlockers, getAttemptedCommands, getLatestVerificationEvidence, getRetryHistoryFor, getStaleActiveTasks } from "./memory-query.js";
 import type { PolicyProfileSource } from "./policy-profile.js";
@@ -45,13 +45,13 @@ function timestampValue(value: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function activeStepTitle(memory: ExecutionMemory): string {
+function activeStepTitle(memory: RuntimeState): string {
   const workflow = memory.activeWorkflow;
   if (!workflow?.activeStepId) return "none";
   return asArray<WorkflowStep>(workflow.steps).find((step) => step.id === workflow.activeStepId)?.title ?? workflow.activeStepId;
 }
 
-export function getJceWorkerNextAction(memory: ExecutionMemory): string {
+export function getJceWorkerNextAction(memory: RuntimeState): string {
   const recommendation = recommendNextDecision(memory);
   if (recommendation.risk === "high" && recommendation.recommendedAction) return recommendation.recommendedAction;
   const workflow = memory.activeWorkflow;
@@ -68,7 +68,7 @@ function policyLine(policy?: PolicyProfileDisplay): string[] {
   return policy ? [`Policy profile: ${policy.profile} (${policy.source})`] : [];
 }
 
-function routeStatusLines(workflow: ExecutionMemory["activeWorkflow"]): string[] {
+function routeStatusLines(workflow: RuntimeState["activeWorkflow"]): string[] {
   if (!workflow?.route) return [];
   return [
     `Intent: ${workflow.route.intent}`,
@@ -77,7 +77,7 @@ function routeStatusLines(workflow: ExecutionMemory["activeWorkflow"]): string[]
   ];
 }
 
-function routeReportLines(workflow: ExecutionMemory["activeWorkflow"]): string[] {
+function routeReportLines(workflow: RuntimeState["activeWorkflow"]): string[] {
   if (!workflow?.route) return ["Routing", "- none"];
   return [
     "Routing",
@@ -89,7 +89,7 @@ function routeReportLines(workflow: ExecutionMemory["activeWorkflow"]): string[]
   ];
 }
 
-export function formatJceWorkerStatus(memory: ExecutionMemory, policy?: PolicyProfileDisplay): string {
+export function formatJceWorkerStatus(memory: RuntimeState, policy?: PolicyProfileDisplay): string {
   const workflow = memory.activeWorkflow;
   const latestEvidence = summarizeUnknown(getLatestVerificationEvidence(memory));
   const staleCount = getStaleActiveTasks(memory).length;
@@ -114,9 +114,9 @@ export function formatJceWorkerStatus(memory: ExecutionMemory, policy?: PolicyPr
   ].join("\n");
 }
 
-export function formatJceWorkerTrace(memory: ExecutionMemory, filter: TraceFilter = {}, policy?: PolicyProfileDisplay): string {
+export function formatJceWorkerTrace(memory: RuntimeState, filter: TraceFilter = {}, policy?: PolicyProfileDisplay): string {
   const limit = Math.max(1, Math.trunc(filter.limit ?? 20));
-  const events = asArray<ExecutionMemory["traceEvents"][number]>(memory.traceEvents)
+  const events = asArray<RuntimeState["traceEvents"][number]>(memory.traceEvents)
     .filter((event) => !filter.taskId || event.taskId === filter.taskId)
     .filter((event) => !filter.workflowId || (isRecord(event.metadata) && event.metadata.workflowId === filter.workflowId))
     .sort((left, right) => timestampValue(right.at) - timestampValue(left.at))
@@ -130,7 +130,7 @@ export function formatJceWorkerTrace(memory: ExecutionMemory, filter: TraceFilte
   ].join("\n");
 }
 
-export function formatJceWorkerReport(memory: ExecutionMemory, policy?: PolicyProfileDisplay): string {
+export function formatJceWorkerReport(memory: RuntimeState, policy?: PolicyProfileDisplay): string {
   const workflow = memory.activeWorkflow;
   const blockers = getActiveBlockers(memory).map(summarizeUnknown);
   const evidence = [

@@ -2,10 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { createEmptyExecutionMemory, loadExecutionMemory, saveExecutionMemory } from "../../src/plugin/lib/execution-memory.ts";
+import { createEmptyRuntimeState, loadRuntimeState, saveRuntimeState } from "../../src/plugin/lib/runtime-state.ts";
 import { saveSessionPolicyProfile } from "../../src/plugin/lib/policy-profile.ts";
 import { addWorkflowStep, attachStepEvidence, createWorkflowRun, updateWorkflowStepStatus } from "../../src/plugin/lib/workflow.ts";
-import { getMemoryPath } from "../../src/plugin/lib/orchestration/execution-memory-v2.ts";
+import { getMemoryPath, loadMemoryV2 } from "../../src/plugin/lib/orchestration/execution-memory-v2.ts";
+
 
 const roots: string[] = [];
 
@@ -61,7 +62,7 @@ describe("plugin integration", () => {
     // Runtime passes lowercase tool names; the hook normalizes internally.
     await hooks["tool.execute.after"]!({ tool: "read", sessionID: "s", callID: "c", args: {} }, output);
 
-    const persisted = loadExecutionMemory(root).memory;
+    const persisted = loadRuntimeState(root).runtime;
     expect(output.output).toContain("[context-budget: removed 2 duplicate low-value lines]");
     expect(persisted.contextBudgetSummary?.estimatedTokensSaved).toBeGreaterThan(0);
     expect(persisted.contextBudgetSummary?.tasks).toBe(1);
@@ -169,9 +170,9 @@ describe("plugin integration", () => {
 
   test("dispatch persists task route with parallel agent hint", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-route", goal: "Coordinate background work" });
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
     const client = {
       session: {
         create: async () => ({ id: "child-1" }),
@@ -184,7 +185,7 @@ describe("plugin integration", () => {
     const context = { sessionID: "s", messageID: "m", agent: "jce-worker", directory: root, worktree: root, abort: new AbortController().signal, metadata: () => {}, ask: () => {} } as any;
 
     await hooks.tool!.dispatch.execute({ description: "Run independent research tasks in parallel", prompt: "Use independent checks concurrently", agent: "explorer" } as any, context);
-    const persisted = loadExecutionMemory(root).memory;
+    const persisted = loadRuntimeState(root).runtime;
 
     // New intent router classifies this as "research" (keyword: "research")
     expect(persisted.activeWorkflow?.route).toMatchObject({
@@ -196,9 +197,9 @@ describe("plugin integration", () => {
 
   test("dispatch output after hook preserves task route source for same intent", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-route", goal: "Coordinate background work" });
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
     const client = {
       session: {
         create: async () => ({ id: "child-1" }),
@@ -212,7 +213,7 @@ describe("plugin integration", () => {
 
     const dispatchOutput = await hooks.tool!.dispatch.execute({ description: "Run independent research tasks in parallel", prompt: "Use independent checks concurrently", agent: "explorer" } as any, context);
     await hooks["tool.execute.after"]!({ tool: "dispatch", sessionID: "s", callID: "c", args: {} }, { title: "dispatch", output: String(dispatchOutput), metadata: {} });
-    const persisted = loadExecutionMemory(root).memory;
+    const persisted = loadRuntimeState(root).runtime;
 
     // Route persists with task source after dispatch + after-hook
     expect(persisted.activeWorkflow?.route).toMatchObject({
@@ -223,9 +224,9 @@ describe("plugin integration", () => {
 
   test("dispatch policy warns on balanced agent mismatch", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-policy", goal: "Coordinate parallel work" });
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
     const client = { session: { create: async () => ({ id: "child-1" }), prompt: async () => ({ parts: [{ type: "text", text: "## Summary\nDone\n\n## Files\n- none\n\n## Verification\n- not run\n\n## Risks\n- none" }] }) } } as any;
 
     const mod = await import("../../src/plugin/index.ts");
@@ -242,9 +243,9 @@ describe("plugin integration", () => {
   test("dispatch policy blocks strict agent mismatch", async () => {
     const root = tempRoot();
     saveSessionPolicyProfile(root, "strict");
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-policy", goal: "Coordinate parallel work" });
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
     let createCalls = 0;
     let promptCalls = 0;
     const client = {
@@ -400,12 +401,12 @@ describe("plugin integration", () => {
 
   test("tool.execute.after appends final review gate warning for blocked active workflow completion", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-final", goal: "Ship final gate", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
@@ -420,12 +421,12 @@ describe("plugin integration", () => {
 
   test("tool.execute.after ignores stale persisted workflow gates until current session activates them", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-stale", goal: "Old blocked workflow", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
     memory.blockers = [{ id: "bg-old", failureReason: "Failed to create child session" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
@@ -454,7 +455,7 @@ describe("plugin integration", () => {
 
   test("tool.execute.after final gate blocks review route completion without accepted review", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = {
       ...createWorkflowRun({ id: "wf-review-block", goal: "Complete reviewed work", acceptanceCriteria: ["review accepted"] }),
       route: {
@@ -464,7 +465,7 @@ describe("plugin integration", () => {
         source: "message",
       },
     };
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
@@ -479,13 +480,13 @@ describe("plugin integration", () => {
   test("tool.execute.after uses session policy profile for final review gate", async () => {
     const root = tempRoot();
     saveSessionPolicyProfile(root, "strict");
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-final", goal: "Research", acceptanceCriteria: ["source reviewed"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Research", taskType: "research", expectedOutput: "notes", verification: ["manual source review"] });
     run = attachStepEvidence(run, "step-1", { kind: "manual", summary: "manual review", passed: true });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
@@ -499,13 +500,13 @@ describe("plugin integration", () => {
 
   test("tool.execute.after does not append final review gate warning for verified active workflow completion", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-final", goal: "Ship final gate", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     run = attachStepEvidence(run, "step-1", { kind: "command", command: "bun test", summary: "bun test: pass", passed: true });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
@@ -524,23 +525,24 @@ describe("plugin integration", () => {
     // compared against capitalized "Read"/"Bash" so lowercase names slipped
     // through and gates spammed every file read.
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-l1", goal: "Blocked workflow", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const completionText = "Implemented and complete.";
 
-    for (const tool of ["read", "bash", "grep", "glob", "ls"]) {
+    for (const tool of ["read", "bash", "grep", "glob", "ls", "dispatch", "bg_collect", "bg_status"]) {
       const output = { title: tool, output: completionText, metadata: {} };
       await hooks["tool.execute.after"]!({ tool, sessionID: "s", callID: "c", args: {} }, output);
       expect(output.output).not.toContain("FINAL REVIEW GATE");
       expect(output.output).not.toContain("VERIFICATION CHECK");
       expect(output.output).not.toContain("CLOSED-LOOP ORCHESTRATION");
+      expect(output.output).not.toContain("EXECUTION POLICY: blocked");
     }
 
     // Positive control: the SAME blocked state on an INSPECTED tool (lowercase
@@ -552,19 +554,53 @@ describe("plugin integration", () => {
     expect(inspected.output).toContain("FINAL REVIEW GATE");
   });
 
+  test("chat.message does not auto-activate orchestration for question-only prompts", async () => {
+    const root = tempRoot();
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
+
+    await hooks["chat.message"]!({} as any, {
+      message: "Bisakah Anda menjelaskan arsitektur plugin ini?",
+      parts: [{ type: "text", text: "Bisakah Anda menjelaskan arsitektur plugin ini?" }],
+    } as any);
+    await hooks.event!({ event: { type: "session.idle" } } as any);
+
+    const persisted = loadRuntimeState(root).runtime;
+    const orchestration = loadMemoryV2(root).memory;
+    expect(persisted.activeTasks).toHaveLength(0);
+    expect(persisted.activeWorkflow).toBeUndefined();
+    expect(orchestration.graph).toBeUndefined();
+  });
+
+  test("chat.message can still auto-activate orchestration for imperative complex requests", async () => {
+    const root = tempRoot();
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
+
+    await hooks["chat.message"]!({} as any, {
+      message: "Fix broken tests, update config, verify the workflow, and audit every related file across the project.",
+      parts: [{ type: "text", text: "Fix broken tests, update config, verify the workflow, and audit every related file across the project." }],
+    } as any);
+    await hooks.event!({ event: { type: "session.idle" } } as any);
+
+    expect(existsSync(getMemoryPath(root))).toBe(true);
+    const orchestration = loadMemoryV2(root).memory;
+    expect(orchestration.graph).toBeDefined();
+  });
+
   test("tool.execute.after persists completion claim route on active workflow", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-route", goal: "Complete routed workflow", acceptanceCriteria: ["tests pass"] });
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Implemented and complete.", metadata: {} };
 
     await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
-    const persisted = loadExecutionMemory(root).memory;
+    const persisted = loadRuntimeState(root).runtime;
 
     // New router classifies "complete" as general (no strong signal) — route is applied
     expect(persisted.activeWorkflow?.route).toBeDefined();
@@ -574,7 +610,7 @@ describe("plugin integration", () => {
 
   test("tool.execute.after does not overwrite specific route with general text", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = {
       ...createWorkflowRun({ id: "wf-route", goal: "Fix routed workflow" }),
       route: {
@@ -584,21 +620,21 @@ describe("plugin integration", () => {
         source: "message",
       },
     };
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Here is a neutral progress update.", metadata: {} };
 
     await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
-    const persisted = loadExecutionMemory(root).memory;
+    const persisted = loadRuntimeState(root).runtime;
 
     expect(persisted.activeWorkflow?.route?.intent).toBe("bugfix");
   });
 
   test("tool.execute.after policy blocks generic route overwrite", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = {
       ...createWorkflowRun({ id: "wf-policy", goal: "Preserve route" }),
       route: {
@@ -608,14 +644,14 @@ describe("plugin integration", () => {
         source: "message",
       },
     };
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Here is a neutral progress update.", metadata: {} };
 
     await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
-    const persisted = loadExecutionMemory(root).memory;
+    const persisted = loadRuntimeState(root).runtime;
 
     expect(persisted.activeWorkflow?.route?.intent).toBe("bugfix");
     expect(output.output).not.toContain("EXECUTION POLICY: blocked");
@@ -623,12 +659,12 @@ describe("plugin integration", () => {
 
   test("completion claim policy appends execution policy block when evidence is missing", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-policy", goal: "Complete safely", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
@@ -643,14 +679,14 @@ describe("plugin integration", () => {
 
   test("completion claim output includes task-type verification policy block", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-policy", goal: "Complete docs update", acceptanceCriteria: ["docs updated"] });
     run = addWorkflowStep(run, { id: "step-docs", title: "Update docs", taskType: "docs", expectedOutput: "docs", verification: ["review docs"] });
     run = attachStepEvidence(run, "step-docs", { kind: "command", command: "bun test", summary: "bun test: pass", passed: true });
     run = updateWorkflowStepStatus(run, "step-docs", "completed");
     memory.activeWorkflow = run;
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
@@ -666,7 +702,7 @@ describe("plugin integration", () => {
 
   test("completion claim preserves review route and blocks without accepted review evidence", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = {
       ...createWorkflowRun({ id: "wf-policy", goal: "Complete reviewed work", acceptanceCriteria: ["review accepted"] }),
       route: {
@@ -676,14 +712,14 @@ describe("plugin integration", () => {
         source: "message",
       },
     };
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Implemented and complete.", metadata: {} };
 
     await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
-    const persisted = loadExecutionMemory(root).memory;
+    const persisted = loadRuntimeState(root).runtime;
 
     expect(output.output).toContain("EXECUTION POLICY: blocked");
     expect(output.output).toContain("FINAL REVIEW GATE");
@@ -693,14 +729,14 @@ describe("plugin integration", () => {
 
   test("tool.execute.after blocks completion when delegated work lacks accepted review", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-final", goal: "Ship final gate", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     run = attachStepEvidence(run, "step-1", { kind: "command", command: "bun test", summary: "bun test: pass", passed: true });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
     memory.completedSummaries = [{ id: "bg-1", description: "Delegated review", reviewStatus: "pending_review", result: "delegated output" }];
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
@@ -714,12 +750,12 @@ describe("plugin integration", () => {
 
   test("bg_collect persists delegated review before final review gate runs", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-final", goal: "Ship final gate", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     run = attachStepEvidence(run, "step-1", { kind: "command", command: "bun test", summary: "bun test: pass", passed: true });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
     const promptCalls: unknown[] = [];
     const client = {
       session: {
@@ -741,7 +777,7 @@ describe("plugin integration", () => {
     const output = { title: "Task", output: "Implemented and complete. Verification: bun test passed.", metadata: {} };
 
     await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
-    const persisted = loadExecutionMemory(root).memory;
+    const persisted = loadRuntimeState(root).runtime;
 
     expect(persisted.completedSummaries).toContainEqual(expect.objectContaining({ id: taskId, reviewStatus: "accepted" }));
     expect(output.output).not.toContain("Delegated work has not been accepted by review");
@@ -838,12 +874,12 @@ describe("plugin integration", () => {
 
   test("tool.execute.after translates Chinese blocked completion output after final review gate text", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     let run = createWorkflowRun({ id: "wf-chinese-final", goal: "Ship final gate", acceptanceCriteria: ["tests pass"] });
     run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
     memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
     const promptMessages: string[] = [];
     const client = {
       session: {
@@ -916,7 +952,7 @@ describe("plugin integration", () => {
 
   test("event hook preserves loaded workflow runtime fields when saving memory", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = {
       id: "wf-active",
       goal: "Active workflow",
@@ -941,23 +977,23 @@ describe("plugin integration", () => {
       retryPolicy: { maxRetries: 1 },
       completionGate: { status: "passed", reasons: [] },
     }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     await hooks.event!({ event: { type: "session.idle" } } as any);
-    const loaded = loadExecutionMemory(root, "2026-05-06T00:02:00.000Z");
+    const loaded = loadRuntimeState(root, "2026-05-06T00:02:00.000Z");
 
-    expect(loaded.memory.activeWorkflow?.id).toBe("wf-active");
-    expect(loaded.memory.workflowRuns.map((run) => run.id)).toEqual(["wf-completed"]);
+    expect(loaded.runtime.activeWorkflow?.id).toBe("wf-active");
+    expect(loaded.runtime.workflowRuns.map((run) => run.id)).toEqual(["wf-completed"]);
   });
 
   test("experimental.text.complete flags unverified completion claim in final text (#3)", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-tc", goal: "Ship feature", acceptanceCriteria: ["tests pass"] });
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
@@ -968,10 +1004,10 @@ describe("plugin integration", () => {
 
   test("experimental.text.complete does NOT flag verified claims or questions (#3)", async () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-tc2", goal: "Ship feature", acceptanceCriteria: ["tests pass"] });
     memory.activeTasks = [{ id: "bg-live" }];
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });

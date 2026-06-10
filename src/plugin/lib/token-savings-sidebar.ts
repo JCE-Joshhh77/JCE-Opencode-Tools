@@ -1,5 +1,5 @@
 import { createSignal, onCleanup } from "solid-js";
-import { loadExecutionMemory } from "./execution-memory.js";
+import { loadSessionState } from "./session-store.js";
 
 export const TOKEN_SAVINGS_REFRESH_INTERVAL_MS = 2_000;
 
@@ -16,7 +16,7 @@ export function renderContextBudgetLine(api: TokenSavingsStateApi): string {
   const projectRoot = api.state.path.directory || api.state.path.worktree;
   if (!projectRoot) return "~0 token(s) saved · no project root";
 
-  const summary = loadExecutionMemory(projectRoot).memory.contextBudgetSummary;
+  const summary = loadSessionState(projectRoot).state.runtime.contextBudgetSummary;
   if (!summary || summary.tasks === 0) return "~0 token(s) saved · awaiting budget events";
 
   const topTool = Object.entries(summary.byTool ?? {})

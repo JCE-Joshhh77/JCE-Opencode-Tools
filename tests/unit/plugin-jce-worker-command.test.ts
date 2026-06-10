@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { Command } from "commander";
 import { clearJceWorkerRuntime, createJceWorkerCommand, normalizeTraceLimit, jceWorkerCommand } from "../../src/commands/jce-worker.ts";
-import { createEmptyExecutionMemory, getExecutionMemoryPath } from "../../src/plugin/lib/execution-memory.ts";
+import { createEmptyRuntimeState, getRuntimeStatePath } from "../../src/plugin/lib/runtime-state.ts";
 import { resolvePolicyProfile } from "../../src/plugin/lib/policy-profile.ts";
 
 function createTempRoot(): string {
@@ -47,9 +47,9 @@ describe("JCE-Worker CLI command", () => {
     const output: string[] = [];
 
     try {
-      const path = getExecutionMemoryPath(root);
+      const path = getRuntimeStatePath(root);
       mkdirSync(join(root, ".opencode-jce"), { recursive: true });
-      writeFileSync(path, JSON.stringify({ ...createEmptyExecutionMemory(now), activeTasks: [{ id: "task-1" }] }), "utf-8");
+      writeFileSync(path, JSON.stringify({ ...createEmptyRuntimeState(now), activeTasks: [{ id: "task-1" }] }), "utf-8");
 
       const command = createJceWorkerCommand({
         exitProcess: false,
@@ -77,9 +77,9 @@ describe("JCE-Worker CLI command", () => {
     const now = "2026-05-06T01:02:03.004Z";
 
     try {
-      const path = getExecutionMemoryPath(root);
+      const path = getRuntimeStatePath(root);
       mkdirSync(join(root, ".opencode-jce"), { recursive: true });
-      writeFileSync(path, JSON.stringify({ ...createEmptyExecutionMemory(now), activeTasks: [{ id: "task-1" }] }), "utf-8");
+      writeFileSync(path, JSON.stringify({ ...createEmptyRuntimeState(now), activeTasks: [{ id: "task-1" }] }), "utf-8");
 
       const result = clearJceWorkerRuntime(root, now);
       const saved = JSON.parse(readFileSync(path, "utf-8"));
@@ -100,7 +100,7 @@ describe("JCE-Worker CLI command", () => {
     const now = "2026-05-06T01:02:03.004Z";
 
     try {
-      const path = getExecutionMemoryPath(root);
+      const path = getRuntimeStatePath(root);
 
       const result = clearJceWorkerRuntime(root, now);
       const saved = JSON.parse(readFileSync(path, "utf-8"));
@@ -220,7 +220,7 @@ describe("JCE-Worker CLI command", () => {
 
       await command.parseAsync(["learn", "Version must stay synced before tagging", "--source", "release", "--confidence", "high", "--tag", "release"], { from: "user" });
 
-      const saved = JSON.parse(readFileSync(getExecutionMemoryPath(root), "utf-8"));
+      const saved = JSON.parse(readFileSync(getRuntimeStatePath(root), "utf-8"));
       expect(output).toContain("JCE-Worker learning saved.");
       expect(saved.wisdom[0]).toMatchObject({ learning: "Version must stay synced before tagging", source: "release", confidence: "high", tags: ["release"] });
     } finally {
@@ -319,7 +319,7 @@ describe("JCE-Worker CLI command", () => {
 
       await command.parseAsync(["task-learn", "release request", "--type", "release", "--recipe", "sync version", "--verify", "bun test", "--area", "installers"], { from: "user" });
 
-      const saved = JSON.parse(readFileSync(getExecutionMemoryPath(root), "utf-8"));
+      const saved = JSON.parse(readFileSync(getRuntimeStatePath(root), "utf-8"));
       expect(output).toContain("JCE-Worker task learning saved.");
       expect(saved.taskLearnings[0]).toMatchObject({ taskType: "release", trigger: "release request", successfulRecipe: ["sync version"], verificationCommands: ["bun test"], touchedAreas: ["installers"] });
     } finally {

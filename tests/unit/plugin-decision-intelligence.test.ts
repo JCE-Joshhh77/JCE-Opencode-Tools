@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { createEmptyExecutionMemory, createTaskLearning } from "../../src/plugin/lib/execution-memory.ts";
+import { createEmptyRuntimeState, createRuntimeTaskLearning } from "../../src/plugin/lib/runtime-state.ts";
 import { formatDecisionRecommendation, recommendNextDecision } from "../../src/plugin/lib/decision-intelligence.ts";
 import { createWorkflowRun } from "../../src/plugin/lib/workflow.ts";
 
 describe("JCE-Worker decision intelligence", () => {
   test("recommends verification before completion claims", () => {
-    const memory = createEmptyExecutionMemory("2026-05-13T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-13T00:00:00.000Z");
     memory.activeWorkflow = {
       ...createWorkflowRun({ id: "wf-complete", goal: "finish work" }),
       status: "verifying",
@@ -25,7 +25,7 @@ describe("JCE-Worker decision intelligence", () => {
   });
 
   test("prioritizes active blockers over route agent hints", () => {
-    const memory = createEmptyExecutionMemory("2026-05-13T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-13T00:00:00.000Z");
     memory.activeWorkflow = {
       ...createWorkflowRun({ id: "wf-parallel", goal: "parallel research" }),
       route: {
@@ -46,7 +46,7 @@ describe("JCE-Worker decision intelligence", () => {
   });
 
   test("uses route hints and relevant task learnings for feature work", () => {
-    const memory = createEmptyExecutionMemory("2026-05-13T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-13T00:00:00.000Z");
     memory.activeWorkflow = {
       ...createWorkflowRun({ id: "wf-feature", goal: "add behavior" }),
       route: {
@@ -57,7 +57,7 @@ describe("JCE-Worker decision intelligence", () => {
       },
     };
     memory.taskLearnings = [
-      createTaskLearning({ taskType: "feature", trigger: "phase 5", successfulRecipe: ["route", "verify"], verificationCommands: ["bun test"], touchedAreas: ["src/plugin/lib"] }),
+      createRuntimeTaskLearning({ taskType: "feature", trigger: "phase 5", successfulRecipe: ["route", "verify"], verificationCommands: ["bun test"], touchedAreas: ["src/plugin/lib"] }),
     ];
 
     const recommendation = recommendNextDecision(memory);

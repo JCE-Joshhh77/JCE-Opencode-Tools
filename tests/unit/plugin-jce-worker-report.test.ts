@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createEmptyExecutionMemory } from "../../src/plugin/lib/execution-memory.ts";
+import { createEmptyRuntimeState } from "../../src/plugin/lib/runtime-state.ts";
 import { addWorkflowStep, attachStepEvidence, createWorkflowRun, updateWorkflowStepStatus } from "../../src/plugin/lib/workflow.ts";
 import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace, getJceWorkerNextAction } from "../../src/plugin/lib/jce-worker-report.ts";
 
@@ -8,7 +8,7 @@ describe("JCE-Worker CLI report helpers", () => {
     let run = createWorkflowRun({ id: "wf-1", goal: "Ship Phase 6", now: "2026-05-06T00:00:00.000Z" });
     run = addWorkflowStep(run, { id: "step-1", title: "Add CLI", taskType: "code", expectedOutput: "CLI command", verification: ["bun test"] }, "2026-05-06T00:01:00.000Z");
     run = updateWorkflowStepStatus(run, "step-1", "running", "2026-05-06T00:02:00.000Z");
-    const memory = createEmptyExecutionMemory("2026-05-06T00:03:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:03:00.000Z");
     memory.activeWorkflow = run;
     memory.verificationEvidence = [{ summary: "typecheck passed" }];
 
@@ -22,7 +22,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("formats status safely when no active workflow exists", () => {
-    const output = formatJceWorkerStatus(createEmptyExecutionMemory("2026-05-06T00:00:00.000Z"));
+    const output = formatJceWorkerStatus(createEmptyRuntimeState("2026-05-06T00:00:00.000Z"));
 
     expect(output).toContain("Goal: none");
     expect(output).toContain("State: idle");
@@ -30,7 +30,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("formats status safely when legacy active workflow lacks completion gate", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = {
       id: "wf-legacy",
       goal: "Resume legacy workflow",
@@ -48,7 +48,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("formats status with verification summary from latest memory evidence", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.verificationEvidence = [
       { id: "old", verificationSummary: "old evidence" },
       { id: "latest-id", verificationSummary: "latest verification content" },
@@ -61,7 +61,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("formats trace events newest first with task filtering", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.traceEvents = [
       { type: "task.created", taskId: "task-a", message: "older", at: "2026-05-06T00:01:00.000Z" },
       { type: "task.failed", taskId: "task-b", message: "newer", at: "2026-05-06T00:02:00.000Z" },
@@ -73,7 +73,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("filters trace events by workflow id", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.traceEvents = [
       { type: "task.created", taskId: "task-a", message: "workflow one", at: "2026-05-06T00:01:00.000Z", metadata: { workflowId: "wf-1" } },
       { type: "task.created", taskId: "task-b", message: "workflow two", at: "2026-05-06T00:02:00.000Z", metadata: { workflowId: "wf-2" } },
@@ -88,7 +88,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("limits trace events to newest entries", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.traceEvents = [
       { type: "task.created", taskId: "task-a", message: "oldest", at: "2026-05-06T00:01:00.000Z" },
       { type: "task.created", taskId: "task-b", message: "middle", at: "2026-05-06T00:02:00.000Z" },
@@ -104,7 +104,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("sorts trace events by timestamp before applying limit", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.traceEvents = [
       { type: "task.created", taskId: "task-newest", message: "newest by time", at: "2026-05-06T00:03:00.000Z" },
       { type: "task.created", taskId: "task-oldest", message: "oldest by time", at: "2026-05-06T00:01:00.000Z" },
@@ -123,7 +123,7 @@ describe("JCE-Worker CLI report helpers", () => {
     let run = createWorkflowRun({ id: "wf-1", goal: "Recover workflow", now: "2026-05-06T00:00:00.000Z" });
     run = addWorkflowStep(run, { id: "step-1", title: "Verify fix", taskType: "code", expectedOutput: "green tests", verification: ["bun test"] }, "2026-05-06T00:01:00.000Z");
     run = attachStepEvidence(run, "step-1", { kind: "command", command: "bun test", summary: "tests passed", passed: true }, "2026-05-06T00:02:00.000Z");
-    const memory = createEmptyExecutionMemory("2026-05-06T00:03:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:03:00.000Z");
     memory.activeWorkflow = run;
     memory.blockers = [{ reason: "waiting for credentials" }];
     memory.retryHistory = [{ id: "wf-1", reason: "network timeout" }];
@@ -142,7 +142,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("formats operator report with memory-level verification evidence when workflow evidence is empty", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-1", goal: "Use memory evidence" });
     memory.verificationEvidence = [{ verificationSummary: "memory verification passed" }];
 
@@ -153,7 +153,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("formats operator report with workflow-linked retry history", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = createWorkflowRun({ id: "wf-1", goal: "Recover delegated task" });
     memory.retryHistory = [{ id: "bg-original", rootTaskId: "wf-1", retryTaskId: "bg-retry", failureReason: "network timeout" }];
 
@@ -164,7 +164,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("formats active route in status and operator report", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = {
       ...createWorkflowRun({ id: "wf-route", goal: "Run parallel research" }),
       route: {
@@ -189,7 +189,7 @@ describe("JCE-Worker CLI report helpers", () => {
   });
 
   test("returns conservative next actions for all workflow states", () => {
-    const idle = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const idle = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     expect(getJceWorkerNextAction(idle)).toBe("Start a workflow or dispatch a task.");
 
     const expectedByStatus = {
@@ -205,7 +205,7 @@ describe("JCE-Worker CLI report helpers", () => {
     } as const;
 
     for (const [status, expected] of Object.entries(expectedByStatus)) {
-      const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+      const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
       memory.activeWorkflow = { ...createWorkflowRun({ id: `wf-${status}`, goal: status }), status: status as keyof typeof expectedByStatus };
       expect(getJceWorkerNextAction(memory)).toBe(expected);
     }

@@ -10,12 +10,7 @@ import { dirname, join } from "path";
 import type {
   ExecutionMemoryV2,
   TaskGraphSnapshot,
-  Fact,
-  Decision,
-  Artifact,
   Evidence,
-  Constraint,
-  Signal,
   WisdomEntryV2,
   TaskLearningV2,
   ContextBudgetV2,
@@ -155,6 +150,10 @@ export function getMemoryPath(projectRoot: string): string {
   return join(projectRoot, MEMORY_DIR, MEMORY_FILE);
 }
 
+function getLegacyExecutionMemoryPath(projectRoot: string): string {
+  return join(projectRoot, MEMORY_DIR, "jce-worker-execution.json");
+}
+
 function writeJsonAtomic(path: string, value: unknown): void {
   const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
   try {
@@ -180,6 +179,19 @@ export function loadMemoryV2(projectRoot: string, now?: string): LoadMemoryResul
   const ts = now ?? new Date().toISOString();
 
   if (!existsSync(path)) {
+    const legacyPath = getLegacyExecutionMemoryPath(projectRoot);
+    if (existsSync(legacyPath)) {
+      try {
+        const raw = readFileSync(legacyPath, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (isV1Memory(parsed)) {
+          return { path, memory: migrateV1ToV2(parsed), migrated: true, recoveredFromInvalid: false };
+        }
+      } catch {
+        // Ignore invalid legacy file here; v1 loader remains source of truth for
+        // backing up malformed v1 state. v2 should fall back to empty memory.
+      }
+    }
     return { path, memory: createEmptyMemoryV2(ts), migrated: false, recoveredFromInvalid: false };
   }
 
@@ -187,7 +199,7 @@ export function loadMemoryV2(projectRoot: string, now?: string): LoadMemoryResul
     const raw = readFileSync(path, "utf-8");
     const parsed = JSON.parse(raw);
 
-    // Auto-migrate from v1
+    // Auto-migrate from V1
     if (isV1Memory(parsed)) {
       const migrated = migrateV1ToV2(parsed);
       return { path, memory: migrated, migrated: true, recoveredFromInvalid: false };

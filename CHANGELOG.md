@@ -6,39 +6,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
-## [3.5.5] - 2026-06-10
+## [3.6.0] - 2026-06-10
 
 ### Added
-- **Data-driven skill registry**: Single source-of-truth `SKILL_REGISTRY` for all 74 skills covering routing mode, priority, intents, signals, files, preferred agents, verification, and sample prompts.
-- **Weighted routing engine**: Skill selection now uses multi-signal scoring (priority, intent, regex, file, agent, history, negative) with explainable per-skill contribution traces instead of ad-hoc ordering.
-- **Negative routing**: Explicit suppression rules for common collision pairs (visual design vs API design, Go `interface` vs frontend, auth-heavy vs generic security, backend-only vs visual UI).
-- **Multi-skill bundles**: Five stable bundle templates (android-build-bug, delegation-review, ui-polish, api-contract, release-prep) with routing boost for recurring task families.
-- **Telemetry learning loop**: New `routing_decision` and `task_outcome` events; analytics now ranks useful/noisy/over-selected/failed-task skills and feeds history/bias back into the router.
-- **User-correction loop**: Parses explicit corrections ("jangan load X", "pakai Y", "harusnya researcher bukan oracle") into session-level skill override and dispatch agent override, persisted to execution memory.
-- **Adaptive sub-agent profiles**: Sub-agent skill injection now biases toward telemetry-useful skills and away from noisy ones per role.
-- **Golden routing corpus**: 54-case EN/ID/mixed regression corpus with a test runner guarding routing behavior.
-- **`skills explain` / `skills doctor` CLI**: Inspect weighted routing decisions (intent, candidate scores, selected/rejected, confidence) and registry metadata health from the CLI.
-- **Machine-readable skill frontmatter**: Parser for routing frontmatter plus registry-vs-frontmatter drift validation.
-- **Confidence threshold + fallback mode**: Low-confidence prompts fall back to one core plus one safest domain skill.
+- **Runtime state layer**: Added `runtime-state.ts` as dedicated home for JCE-Worker runtime persistence and bounded runtime snapshots.
+- **Session-store facade**: Added `session-store.ts` to persist runtime state separately from orchestration memory while keeping single-call session load/save behavior.
+- **Legacy shadow projection**: Added `legacy-shadow.ts` to project runtime state into legacy-compatible shapes during migration.
+- **Legacy runtime bootstrap bridge**: `execution-memory-v2` can now read legacy `jce-worker-execution.json` when seeding orchestration memory v2.
 
 ### Changed
-- Capability matrix and startup audit now hydrate exclusively from `SKILL_REGISTRY`; removed scattered fallback inference helpers.
-- `analytics --json` now returns a `routingQuality` summary.
+- JCE-Worker plugin runtime persistence now uses `session-store` instead of direct `execution-memory` reads/writes.
+- Background manager, reports, memory queries, project brain, token savings UI, open-work gate, and CLI helpers now consume `runtime-state` directly.
+- Runtime helper/test naming now reflects `runtime state` instead of legacy `execution memory` where safe.
+- Release version synced to `3.6.0` across package metadata, installers, constants, MCP version, README badge, and version tests.
+
+### Removed
+- Removed legacy runtime shim `src/plugin/lib/execution-memory.ts` after all internal source and tests migrated off it.
 
 ### Fixed
-- Orchestration stale cross-session graph leak (C1) and workflow seeded from tool output instead of user intent (C2).
-- Case-insensitive tool-name matching so completion gates stop leaking onto read/bash/grep (L1).
-- Completion-claim detection hardened to per-sentence with negation and leading-conditional guards.
+- Preserved orchestration memory while clearing or updating runtime-only state paths.
+- Kept token savings sidebar reading current runtime state via session facade.
+- Preserved workflow runtime fields across load/save and session idle persistence after migration.
 
-### CI
-- New `skill-routing-health` job: skill startup audit, golden corpus, `skills doctor --json`, and registry health (count drift, metadata gaps, frontmatter drift).
+### Difference from previous release
+- `3.5.5` focused on routing registry, telemetry learning, and skill-health CI.
+- `3.6.0` focuses on persistence architecture: splitting runtime state from orchestration memory, removing legacy runtime shim, and making release/runtime paths cleaner for future work.
 
 ### Verified
-- `bun run typecheck`
-- `bun test` — 1029 pass, 0 fail
-- Registry health gate — `Status: pass` (74 folders / 74 entries, no drift)
-- `bun ./src/index.ts skills explain ... --json`
-- `bun ./src/index.ts skills doctor --json`
+- `rtk tsc --noEmit`
+- `bun test` — 1032 pass, 0 fail
 
 ---
 

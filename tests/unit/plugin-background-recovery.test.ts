@@ -71,7 +71,7 @@ describe("background manager recovery loop metadata", () => {
     manager.failTask(original.id, "network timeout");
 
     const retry = manager.createRetryTask(original.id, { prompt: "retry", failureReason: "network timeout", category: "transient_network" })!;
-    const memory = manager.toExecutionMemory("2026-05-06T00:01:00.000Z");
+    const memory = manager.toRuntimeState("2026-05-06T00:01:00.000Z");
 
     expect(retry.status).toBe("pending");
     expect(memory.blockers).not.toContainEqual(expect.objectContaining({ id: original.id }));
@@ -157,7 +157,7 @@ describe("background manager recovery loop metadata", () => {
     expect(manager.getTraceEvents().map((event) => event.type)).toContain("task.blocked");
   });
 
-  test("execution memory includes retry lineage and handoff metadata", () => {
+  test("runtime state includes retry lineage and handoff metadata", () => {
     const manager = createManager();
     const task = createTask(manager);
     const retry = manager.createRetryTask(task.id, { prompt: "retry prompt", failureReason: "network timeout", category: "transient_network" })!;
@@ -169,19 +169,19 @@ describe("background manager recovery loop metadata", () => {
       nextOptions: ["Inspect failure, adjust task or retry manually."],
     });
 
-    const memory = manager.toExecutionMemory("2026-05-06T00:01:00.000Z");
+    const memory = manager.toRuntimeState("2026-05-06T00:01:00.000Z");
 
     expect(memory.retryHistory).toContainEqual(expect.objectContaining({ id: task.id, retryTaskId: retry.id, recoveryCategory: "transient_network" }));
     expect(memory.blockers).toContainEqual(expect.objectContaining({ id: retry.id, recoveryCategory: "verification_failed" }));
   });
 
-  test("execution memory preserves delegated review status for completed tasks", () => {
+  test("runtime state preserves delegated review status for completed tasks", () => {
     const manager = createManager();
     const task = createTask(manager);
     manager.completeTask(task.id, "## Summary\nDone\n\n## Files\n- none\n\n## Verification\n- bun test passed\n\n## Risks\n- none");
     manager.markReview(task.id, "accepted", ["accepted: delegated result reviewed"], "delegated output includes required sections");
 
-    const memory = manager.toExecutionMemory("2026-05-06T00:01:00.000Z");
+    const memory = manager.toRuntimeState("2026-05-06T00:01:00.000Z");
 
     expect(memory.completedSummaries).toContainEqual(expect.objectContaining({
       id: task.id,
@@ -196,7 +196,7 @@ describe("background manager recovery loop metadata", () => {
     }));
   });
 
-  test("execution memory marks retry lineage resolved when retry is accepted", () => {
+  test("runtime state marks retry lineage resolved when retry is accepted", () => {
     const manager = createManager();
     const original = createTask(manager);
     manager.failTask(original.id, "network timeout");
@@ -204,7 +204,7 @@ describe("background manager recovery loop metadata", () => {
     manager.completeTask(retry.id, "## Summary\nRetried\n\n## Files\n- none\n\n## Verification\n- bun test passed\n\n## Risks\n- none");
     manager.markReview(retry.id, "accepted", ["accepted: retry passed"], "delegated output includes required sections");
 
-    const memory = manager.toExecutionMemory("2026-05-06T00:01:00.000Z");
+    const memory = manager.toRuntimeState("2026-05-06T00:01:00.000Z");
 
     expect(memory.retryHistory).toContainEqual(expect.objectContaining({ id: original.id, resolved: true }));
     expect(memory.retryHistory).toContainEqual(expect.objectContaining({ id: retry.id, reviewStatus: "accepted", status: "completed", resolved: true }));

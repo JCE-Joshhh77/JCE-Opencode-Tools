@@ -3,16 +3,16 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
-  createEmptyExecutionMemory,
-  createWisdomEntry,
-  addWisdom,
-  createTaskLearning,
-  addTaskLearning,
-  getExecutionMemoryPath,
-  loadExecutionMemory,
-  mergeExecutionMemorySnapshot,
-  saveExecutionMemory,
-} from "../../src/plugin/lib/execution-memory.ts";
+  createEmptyRuntimeState,
+  createRuntimeWisdomEntry,
+  addRuntimeWisdom,
+  createRuntimeTaskLearning,
+  addRuntimeTaskLearning,
+  getRuntimeStatePath,
+  loadRuntimeState,
+  mergeRuntimeStateSnapshot,
+  saveRuntimeState,
+} from "../../src/plugin/lib/runtime-state.ts";
 import { applyWorkflowIntentRoute, createWorkflowRun } from "../../src/plugin/lib/workflow.ts";
 import type { WorkflowIntentRoute } from "../../src/plugin/lib/workflow.ts";
 
@@ -43,10 +43,10 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-describe("execution memory", () => {
-  test("saves and loads bounded execution memory", () => {
+describe("runtime state", () => {
+  test("saves and loads bounded runtime state", () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.traceEvents = Array.from({ length: 205 }, (_, index) => ({
       type: "task.created",
       taskId: `bg-${index}`,
@@ -54,23 +54,23 @@ describe("execution memory", () => {
       at: `2026-05-06T00:00:00.${String(index).padStart(3, "0")}Z`,
     }));
 
-    const saved = saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
-    const loaded = loadExecutionMemory(root);
+    const saved = saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
+    const loaded = loadRuntimeState(root);
 
     expect(existsSync(saved.path)).toBe(true);
-    expect(loaded.memory.traceEvents).toHaveLength(200);
-    expect(loaded.memory.updatedAt).toBe("2026-05-06T00:01:00.000Z");
+    expect(loaded.runtime.traceEvents).toHaveLength(200);
+    expect(loaded.runtime.updatedAt).toBe("2026-05-06T00:01:00.000Z");
   });
 
   test("backs up malformed memory and returns empty memory", () => {
     const root = tempRoot();
-    const filePath = getExecutionMemoryPath(root);
+    const filePath = getRuntimeStatePath(root);
     mkdirSync(join(root, ".opencode-jce"), { recursive: true });
     writeFileSync(filePath, "{not json", "utf-8");
 
-    const loaded = loadExecutionMemory(root, "2026-05-06T00:00:00.000Z");
+    const loaded = loadRuntimeState(root, "2026-05-06T00:00:00.000Z");
 
-    expect(loaded.memory.version).toBe(1);
+    expect(loaded.runtime.version).toBe(1);
     expect(loaded.recoveredFromInvalid).toBe(true);
     expect(loaded.invalidBackupPath).toContain(".invalid-");
     expect(existsSync(loaded.invalidBackupPath!)).toBe(true);
@@ -78,7 +78,7 @@ describe("execution memory", () => {
 
   test("saves and loads workflow runtime fields", () => {
     const root = tempRoot();
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     memory.activeWorkflow = applyWorkflowIntentRoute(createWorkflowRun({
       id: "wf-active",
       goal: "Active workflow",
@@ -98,19 +98,19 @@ describe("execution memory", () => {
     }));
     memory.workflowRuns[2] = applyWorkflowIntentRoute(memory.workflowRuns[2], parallelRoute, "2026-05-06T00:00:00.000Z");
 
-    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
-    const loaded = loadExecutionMemory(root, "2026-05-06T00:02:00.000Z");
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
+    const loaded = loadRuntimeState(root, "2026-05-06T00:02:00.000Z");
 
-    expect(loaded.memory.activeWorkflow?.id).toBe("wf-active");
-    expect(loaded.memory.activeWorkflow?.route).toEqual(parallelRoute);
-    expect(loaded.memory.workflowRuns).toHaveLength(10);
-    expect(loaded.memory.workflowRuns[0].id).toBe("wf-2");
-    expect(loaded.memory.workflowRuns[0].route).toEqual(parallelRoute);
+    expect(loaded.runtime.activeWorkflow?.id).toBe("wf-active");
+    expect(loaded.runtime.activeWorkflow?.route).toEqual(parallelRoute);
+    expect(loaded.runtime.workflowRuns).toHaveLength(10);
+    expect(loaded.runtime.workflowRuns[0].id).toBe("wf-2");
+    expect(loaded.runtime.workflowRuns[0].route).toEqual(parallelRoute);
   });
 
   test("loads older memory files without workflow fields", () => {
     const root = tempRoot();
-    const filePath = getExecutionMemoryPath(root);
+    const filePath = getRuntimeStatePath(root);
     mkdirSync(join(root, ".opencode-jce"), { recursive: true });
     writeFileSync(filePath, JSON.stringify({
       version: 1,
@@ -123,14 +123,14 @@ describe("execution memory", () => {
       traceEvents: [],
     }), "utf-8");
 
-    const loaded = loadExecutionMemory(root, "2026-05-06T00:02:00.000Z");
+    const loaded = loadRuntimeState(root, "2026-05-06T00:02:00.000Z");
 
-    expect(loaded.memory.activeWorkflow).toBeUndefined();
-    expect(loaded.memory.workflowRuns).toEqual([]);
+    expect(loaded.runtime.activeWorkflow).toBeUndefined();
+    expect(loaded.runtime.workflowRuns).toEqual([]);
   });
 
   test("merges task snapshots without erasing workflow runtime fields", () => {
-    const previous = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const previous = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     previous.activeWorkflow = applyWorkflowIntentRoute(createWorkflowRun({
       id: "wf-active",
       goal: "Active workflow",
@@ -148,7 +148,7 @@ describe("execution memory", () => {
       retryPolicy: { maxRetries: 1 },
       completionGate: { status: "passed", reasons: [] },
     }];
-    const next = createEmptyExecutionMemory("2026-05-06T00:01:00.000Z");
+    const next = createEmptyRuntimeState("2026-05-06T00:01:00.000Z");
     next.activeTasks = [{ id: "bg-active" }];
     previous.completedSummaries = [{ id: "bg-done", reviewStatus: "accepted" }];
     previous.blockers = [{ id: "bg-blocked", failureReason: "missing token" }];
@@ -161,7 +161,7 @@ describe("execution memory", () => {
       at: "2026-05-06T00:01:00.000Z",
     }];
 
-    const merged = mergeExecutionMemorySnapshot(previous, next, { preserveWorkflowRuntime: true });
+    const merged = mergeRuntimeStateSnapshot(previous, next, { preserveWorkflowRuntime: true });
 
     expect(merged.activeWorkflow?.id).toBe("wf-active");
     expect(merged.activeWorkflow?.route).toEqual(bugfixRoute);
@@ -175,7 +175,7 @@ describe("execution memory", () => {
   });
 
   test("preserves context budget summary during persisted memory merge", () => {
-    const previous = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const previous = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     previous.contextBudgetSummary = {
       originalChars: 1000,
       compressedChars: 700,
@@ -184,15 +184,15 @@ describe("execution memory", () => {
       tasks: 2,
       byTool: { Read: { originalChars: 1000, compressedChars: 700, estimatedTokensSaved: 75, tasks: 2 } },
     };
-    const next = createEmptyExecutionMemory("2026-05-06T00:01:00.000Z");
+    const next = createEmptyRuntimeState("2026-05-06T00:01:00.000Z");
 
-    const merged = mergeExecutionMemorySnapshot(previous, next, { preserveWorkflowRuntime: true });
+    const merged = mergeRuntimeStateSnapshot(previous, next, { preserveWorkflowRuntime: true });
 
     expect(merged.contextBudgetSummary).toEqual(previous.contextBudgetSummary);
   });
 
   test("preserve merge can explicitly clear workflow runtime fields", () => {
-    const previous = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const previous = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     previous.activeWorkflow = createWorkflowRun({
       id: "wf-active",
       goal: "Active workflow",
@@ -203,16 +203,16 @@ describe("execution memory", () => {
       goal: "Completed workflow",
       now: "2026-05-06T00:00:00.000Z",
     })];
-    const next = createEmptyExecutionMemory("2026-05-06T00:01:00.000Z");
+    const next = createEmptyRuntimeState("2026-05-06T00:01:00.000Z");
 
-    const merged = mergeExecutionMemorySnapshot(previous, next, { preserveWorkflowRuntime: true, clearWorkflowRuntime: true });
+    const merged = mergeRuntimeStateSnapshot(previous, next, { preserveWorkflowRuntime: true, clearWorkflowRuntime: true });
 
     expect(merged.activeWorkflow).toBeUndefined();
     expect(merged.workflowRuns).toEqual([]);
   });
 
   test("default merge allows workflow runtime fields to be cleared", () => {
-    const previous = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    const previous = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
     previous.activeWorkflow = {
       id: "wf-active",
       goal: "Active workflow",
@@ -237,31 +237,31 @@ describe("execution memory", () => {
       retryPolicy: { maxRetries: 1 },
       completionGate: { status: "passed", reasons: [] },
     }];
-    const next = createEmptyExecutionMemory("2026-05-06T00:01:00.000Z");
+    const next = createEmptyRuntimeState("2026-05-06T00:01:00.000Z");
 
-    const merged = mergeExecutionMemorySnapshot(previous, next);
+    const merged = mergeRuntimeStateSnapshot(previous, next);
 
     expect(merged.activeWorkflow).toBeUndefined();
     expect(merged.workflowRuns).toEqual([]);
   });
 
   test("adds structured wisdom entries and deduplicates by learning text", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
-    const first = createWisdomEntry({ learning: " Run focused tests before full suite ", source: "debug", confidence: "high", tags: ["tests", "tests"], now: "2026-05-06T00:00:00.000Z" });
-    const second = createWisdomEntry({ learning: "Run focused tests before full suite", source: "debug", confidence: "medium", tags: ["debug"], now: "2026-05-06T00:01:00.000Z" });
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
+    const first = createRuntimeWisdomEntry({ learning: " Run focused tests before full suite ", source: "debug", confidence: "high", tags: ["tests", "tests"], now: "2026-05-06T00:00:00.000Z" });
+    const second = createRuntimeWisdomEntry({ learning: "Run focused tests before full suite", source: "debug", confidence: "medium", tags: ["debug"], now: "2026-05-06T00:01:00.000Z" });
 
-    const updated = addWisdom(addWisdom(memory, first), second);
+    const updated = addRuntimeWisdom(addRuntimeWisdom(memory, first), second);
 
     expect(updated.wisdom).toHaveLength(1);
     expect(updated.wisdom[0]).toMatchObject({ learning: "Run focused tests before full suite", confidence: "medium", tags: ["debug"] });
   });
 
   test("adds structured task learnings and deduplicates by task type and trigger", () => {
-    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
-    const first = createTaskLearning({ taskType: "release", trigger: "release", successfulRecipe: ["old"], verificationCommands: ["bun test"], touchedAreas: ["package"], now: "2026-05-06T00:00:00.000Z" });
-    const second = createTaskLearning({ taskType: "release", trigger: "release", successfulRecipe: ["new"], verificationCommands: ["bun audit"], touchedAreas: ["lockfile"], now: "2026-05-06T00:01:00.000Z" });
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
+    const first = createRuntimeTaskLearning({ taskType: "release", trigger: "release", successfulRecipe: ["old"], verificationCommands: ["bun test"], touchedAreas: ["package"], now: "2026-05-06T00:00:00.000Z" });
+    const second = createRuntimeTaskLearning({ taskType: "release", trigger: "release", successfulRecipe: ["new"], verificationCommands: ["bun audit"], touchedAreas: ["lockfile"], now: "2026-05-06T00:01:00.000Z" });
 
-    const updated = addTaskLearning(addTaskLearning(memory, first), second);
+    const updated = addRuntimeTaskLearning(addRuntimeTaskLearning(memory, first), second);
 
     expect(updated.taskLearnings).toHaveLength(1);
     expect(updated.taskLearnings[0]).toMatchObject({ successfulRecipe: ["new"], verificationCommands: ["bun audit"], touchedAreas: ["lockfile"] });
