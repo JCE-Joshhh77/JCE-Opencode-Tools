@@ -4,7 +4,7 @@ import { analyzeComplexity, routeToProfile } from "../lib/router.js";
 import { listProfiles } from "../lib/profiles.js";
 import { heading, info, error } from "../lib/ui.js";
 import { logCommandStart, logCommandSuccess, logCommandError } from "../lib/logger.js";
-import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
+import { EXIT_ERROR } from "../types.js";
 
 export const routeCommand = new Command("route")
   .description("Analyze a prompt and show which profile would be selected")

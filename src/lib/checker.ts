@@ -1,6 +1,5 @@
 import { existsSync, readdirSync } from "fs";
 import { join } from "path";
-import { platform } from "os";
 import { getConfigDir, loadConfigFile } from "./config.js";
 import { validateAgainstSchema } from "./schema.js";
 import { commandExistsAsync } from "./utils.js";

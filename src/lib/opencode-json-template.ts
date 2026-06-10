@@ -9,7 +9,6 @@
 
 import { join } from "path";
 import { existsSync, readFileSync } from "fs";
-import { platform } from "os";
 import { commandExistsSync, FILETYPE_EXTENSIONS } from "./utils.js";
 
 // ─── LSP Auto-Detection ──────────────────────────────────────

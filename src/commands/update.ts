@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { existsSync, readdirSync } from "fs";
-import { dirname, join, sep } from "path";
+import { dirname, join } from "path";
 import { cp, mkdir, writeFile, readFile, chmod, rename, rm } from "fs/promises";
 import { platform } from "os";
 import chalk from "chalk";

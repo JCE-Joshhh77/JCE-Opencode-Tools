@@ -1,13 +1,13 @@
 import { existsSync } from "fs";
-import { readFile, writeFile, mkdir, copyFile } from "fs/promises";
+import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { platform } from "os";
 import { createInterface } from "readline";
 import chalk from "chalk";
-import { getConfigDir, loadConfigFile, getConfigPath } from "./config.js";
+import { getConfigDir, loadConfigFile } from "./config.js";
 import { commandExistsAsync } from "./utils.js";
 import type { CheckResult, LspConfig } from "../types.js";
-import { success, warn, info, error } from "./ui.js";
+import { info } from "./ui.js";
 
 // ─── Types ───────────────────────────────────────────────────
 

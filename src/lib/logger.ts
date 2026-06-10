@@ -1,5 +1,5 @@
 import { join } from "path";
-import { existsSync, statSync, renameSync, appendFileSync, mkdirSync, readdirSync, unlinkSync } from "fs";
+import { existsSync, statSync, renameSync, appendFileSync, mkdirSync, unlinkSync } from "fs";
 import { getConfigDir } from "./config.js";
 
 const MAX_LOG_SIZE = 1024 * 1024; // 1MB

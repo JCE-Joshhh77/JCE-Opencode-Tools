@@ -12,15 +12,12 @@ import type {
   AgentRole,
   PlanDelta,
   PlanAssessment,
-  Fact,
-  Constraint,
   IntentType,
   ScoredIntent,
-  Evidence,
 } from "./types.js";
 import { addNode, removeNode, addEdge, type CreateNodeInput } from "./task-graph.js";
 import type { OrchestrationMemory } from "./shared-memory.js";
-import { getTopFacts, getActiveConstraints, getActiveDecisions } from "./shared-memory.js";
+import { getTopFacts, getActiveConstraints } from "./shared-memory.js";
 
 // ─── Plan Templates ───────────────────────────────────────────────────────────
 

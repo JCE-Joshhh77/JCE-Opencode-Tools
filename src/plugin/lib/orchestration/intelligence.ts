@@ -11,7 +11,6 @@
 
 import type {
   TaskGraph,
-  TaskNode,
   IntentType,
   ScoredIntent,
   Fact,
@@ -19,8 +18,8 @@ import type {
   WisdomEntryV2,
   TaskLearningV2,
 } from "./types.js";
-import { getTopFacts, getActiveConstraints, type OrchestrationMemory } from "./shared-memory.js";
-import { getGraphStats, getRunningNodes, getNodesByStatus } from "./task-graph.js";
+import { getTopFacts, type OrchestrationMemory } from "./shared-memory.js";
+import { getGraphStats } from "./task-graph.js";
 import { aggregateEvidence, type AggregateEvidenceScore } from "./evidence-system.js";
 
 // ─── 1. Auto-Activation: Detect Complex Tasks ────────────────────────────────

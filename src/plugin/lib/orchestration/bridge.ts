@@ -11,15 +11,12 @@
 import type { BackgroundManager } from "../../background/manager.js";
 import type { OpenCodeClient } from "../../background/types.js";
 import { spawnBackgroundTask } from "../../background/spawner.js";
-import { resolveModelForCategory, detectTaskCategory } from "../../background/types.js";
+import { resolveModelForCategory } from "../../background/types.js";
 import type { TaskCategory } from "../../background/types.js";
 import { OrchestrationController, type DispatchResult, type CollectResult } from "./controller.js";
 import { buildDelegationEnvelope, formatDelegationEnvelope } from "../delegation-envelope.js";
 import { resolveSubAgentSkills } from "../skill-loader.js";
-import { applyContextBudget } from "../context-budget.js";
-import { filterChineseOutput, type ChineseTranslator } from "../chinese-output-filter.js";
-import { appendResearchOutputWarning } from "../research-output-guard.js";
-import type { AgentRole } from "./types.js";
+import { type ChineseTranslator } from "../chinese-output-filter.js";
 
 // ─── Bridge Types ─────────────────────────────────────────────────────────────
 

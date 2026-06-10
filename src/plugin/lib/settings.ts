@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "fs";
+import { mkdirSync, readFileSync } from "fs";
 import { writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";

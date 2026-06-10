@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { TokenTracker, detectOpenCodeDB } from "../lib/tokens.js";
-import { heading, info, error, formatCost } from "../lib/ui.js";
+import { info, error, formatCost } from "../lib/ui.js";
 import { logCommandStart, logCommandSuccess, logCommandError } from "../lib/logger.js";
 import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
 
