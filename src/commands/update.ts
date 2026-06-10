@@ -295,21 +295,33 @@ function resolveHandoffCommand(): string[] {
  * Fetch the commit SHA for a git ref (tag or branch) from GitHub.
  * Returns null if the ref doesn't exist or fetch fails.
  */
-async function fetchRefSha(repo: string, ref: string): Promise<string | null> {
+export async function fetchRefSha(repo: string, ref: string): Promise<string | null> {
   try {
     const proc = Bun.spawn(
-      ["git", "ls-remote", `https://github.com/${repo}.git`, `refs/tags/${ref}`, `refs/heads/${ref}`],
+      ["git", "ls-remote", `https://github.com/${repo}.git`, `refs/tags/${ref}`, `refs/tags/${ref}^{}`, `refs/heads/${ref}`],
       { stdout: "pipe", stderr: "pipe" }
     );
     const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
     if (exitCode !== 0) return null;
-    
-    const lines = stdout.trim().split("\n").filter(Boolean);
-    for (const line of lines) {
-      const [sha] = line.split(/\s+/);
-      if (sha && /^[0-9a-f]{40}$/i.test(sha)) return sha;
-    }
-    return null;
+
+    const refs = stdout
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [sha, name] = line.split(/\s+/);
+        return { sha, name };
+      })
+      .filter((entry) => entry.sha && entry.name && /^[0-9a-f]{40}$/i.test(entry.sha));
+
+    const branchRef = `refs/heads/${ref}`;
+    const peeledTagRef = `refs/tags/${ref}^{}`;
+    const tagRef = `refs/tags/${ref}`;
+
+    return refs.find((entry) => entry.name === branchRef)?.sha
+      ?? refs.find((entry) => entry.name === peeledTagRef)?.sha
+      ?? refs.find((entry) => entry.name === tagRef)?.sha
+      ?? null;
   } catch {
     return null;
   }
