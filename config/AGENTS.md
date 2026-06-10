@@ -1,5 +1,5 @@
 # OpenCode JCE — Global AI Instructions
-# Version: 3.6.0 (Modular + Context Preservation)
+# Version: 3.6.1 (Modular + Context Preservation)
 # This file is always loaded. Skills in ./skills/ are loaded on-demand.
 # Customize freely — the installer will NOT overwrite your changes.
 

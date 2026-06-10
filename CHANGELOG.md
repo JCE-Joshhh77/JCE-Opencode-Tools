@@ -6,6 +6,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.6.1] - 2026-06-10
+
+### Fixed
+- **Self-update integrity for annotated tags**: `opencode-jce update` now requests peeled tag refs (`refs/tags/<tag>^{}`) and resolves commit SHAs in safe order, preventing false integrity failures when release tags are annotated.
+
+### Changed
+- Release version synced to `3.6.1` across package metadata, installers, constants, MCP version, README badge, and version tests.
+
+### Difference from previous release
+- `3.6.0` shipped runtime/session-store migration and release flow cleanup.
+- `3.6.1` is focused hotfix release for CLI self-update so tagged releases can install without falling back to manual reinstall.
+
+### Verified
+- `rtk tsc --noEmit`
+- `bun test tests/unit/update-integrity.test.ts`
+- `bun test tests/unit/update-process-cleanup.test.ts tests/unit/update-config-hardening.test.ts`
+
+---
+
 ## [3.6.0] - 2026-06-10
 
 ### Added
