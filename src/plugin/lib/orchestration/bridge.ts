@@ -20,14 +20,6 @@ import { applyContextBudget } from "../context-budget.js";
 import { filterChineseOutput, type ChineseTranslator } from "../chinese-output-filter.js";
 import { appendResearchOutputWarning } from "../research-output-guard.js";
 import type { AgentRole } from "./types.js";
-import {
-  evaluateSpeculativeResults,
-  parseReflectionResult,
-  parseConsensusVote,
-  evaluateConsensus,
-  formatConsensusResult,
-  type SpeculativeResult,
-} from "./advanced.js";
 
 // ─── Bridge Types ─────────────────────────────────────────────────────────────
 
@@ -169,107 +161,6 @@ export class OrchestrationBridge {
    */
   hasActivePlan(): boolean {
     return this.orchestrator.getGraph() !== null && !this.orchestrator.isComplete();
-  }
-
-  /**
-   * Dispatch a node with speculative execution (race 2 approaches).
-   * Returns both task IDs — caller should collect both and pick winner.
-   */
-  async dispatchSpeculative(nodeId: string, parentSessionId: string, parentMessageId: string): Promise<{ candidateA: string; candidateB: string } | null> {
-    const candidates = this.orchestrator.getSpeculativeCandidates(nodeId);
-    if (candidates.length < 2) return null;
-
-    const [a, b] = candidates;
-    const dispatched: string[] = [];
-
-    for (const candidate of [a, b]) {
-      try {
-        const skillContent = await resolveSubAgentSkills(candidate.agent, candidate.prompt);
-        const enrichedPrompt = skillContent ? `${candidate.prompt}${skillContent}` : candidate.prompt;
-        const envelope = formatDelegationEnvelope(buildDelegationEnvelope({
-          goal: `[speculative:${candidate.id}] ${nodeId}`,
-          prompt: enrichedPrompt,
-          agent: candidate.agent,
-        }));
-        const category = detectTaskCategory(candidate.agent, candidate.prompt);
-        const modelHint = resolveModelForCategory(candidate.agent, category);
-
-        const taskId = await spawnBackgroundTask(this.manager, this.client, {
-          description: `[speculative:${candidate.approach}] ${nodeId}`,
-          prompt: envelope,
-          agent: candidate.agent,
-          parentSessionId,
-          parentMessageId,
-          modelHint,
-        });
-        dispatched.push(taskId);
-      } catch {
-        dispatched.push("");
-      }
-    }
-
-    if (dispatched[0] && dispatched[1]) {
-      return { candidateA: dispatched[0], candidateB: dispatched[1] };
-    }
-    return null;
-  }
-
-  /**
-   * Dispatch a self-reflection task for a completed node.
-   */
-  async dispatchReflection(nodeId: string, parentSessionId: string, parentMessageId: string): Promise<string | null> {
-    const reflectionPrompt = this.orchestrator.getReflectionPrompt(nodeId);
-    if (!reflectionPrompt) return null;
-
-    try {
-      const envelope = formatDelegationEnvelope(buildDelegationEnvelope({
-        goal: `[reflection] ${nodeId}`,
-        prompt: reflectionPrompt,
-        agent: "oracle",
-      }));
-
-      const taskId = await spawnBackgroundTask(this.manager, this.client, {
-        description: `[reflection] Review output of ${nodeId}`,
-        prompt: envelope,
-        agent: "oracle",
-        parentSessionId,
-        parentMessageId,
-      });
-      return taskId;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Dispatch consensus voting for a critical decision.
-   */
-  async dispatchConsensus(nodeId: string, question: string, parentSessionId: string, parentMessageId: string): Promise<string[]> {
-    const prompts = this.orchestrator.buildConsensusPrompts(nodeId, question);
-    if (!prompts) return [];
-
-    const taskIds: string[] = [];
-    for (const [agent, prompt] of prompts) {
-      try {
-        const envelope = formatDelegationEnvelope(buildDelegationEnvelope({
-          goal: `[consensus:${agent}] ${nodeId}`,
-          prompt,
-          agent,
-        }));
-
-        const taskId = await spawnBackgroundTask(this.manager, this.client, {
-          description: `[consensus:${agent}] Vote on ${nodeId}`,
-          prompt: envelope,
-          agent,
-          parentSessionId,
-          parentMessageId,
-        });
-        taskIds.push(taskId);
-      } catch {
-        // Skip failed dispatches
-      }
-    }
-    return taskIds;
   }
 
   /**

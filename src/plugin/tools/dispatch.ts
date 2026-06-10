@@ -189,6 +189,7 @@ export function buildDispatchTool(
   manager: BackgroundManager,
   client: OpenCodeClient,
   afterRoute?: (text: string, route: SkillRoute, agent: string) => DispatchRoutePolicyResult | void,
+  resolveAgentOverride?: (agent: string, text: string) => { agent: string; reason: string } | undefined,
 ): ToolDefinition {
   return tool({
     description:
@@ -210,31 +211,34 @@ export function buildDispatchTool(
     },
     async execute(args, context) {
       const routeText = `${args.description}\n${args.prompt}`;
+      const override = resolveAgentOverride?.(args.agent as string, routeText);
+      const effectiveAgent = override?.agent ?? (args.agent as string);
       const route = toLegacyRoute(scoreIntent(routeText)) as unknown as SkillRoute;
-      const policy = afterRoute?.(routeText, route, args.agent as string);
+      const policy = afterRoute?.(routeText, route, effectiveAgent);
       if (policy?.status === "block") return policy.message ?? "EXECUTION POLICY: blocked";
 
       // Resolve skills for eligible sub-agents (oracle, frontend)
-      const skillContent = await resolveSubAgentSkills(args.agent as string, args.prompt as string);
+      const skillContent = await resolveSubAgentSkills(effectiveAgent, args.prompt as string);
       const enrichedPrompt = skillContent
         ? `${args.prompt as string}${skillContent}`
         : args.prompt as string;
 
       // Resolve model hint from category (auto-detect if not provided)
-      const category = (args.category as TaskCategory | undefined) ?? detectTaskCategory(args.agent as string, args.prompt as string);
-      const modelHint = resolveModelForCategory(args.agent as string, category);
+      const category = (args.category as TaskCategory | undefined) ?? detectTaskCategory(effectiveAgent, args.prompt as string);
+      const modelHint = resolveModelForCategory(effectiveAgent, category);
 
       const taskId = await spawnBackgroundTask(manager, client, {
         description: args.description as string,
-        prompt: buildDelegatedPrompt(enrichedPrompt, args.description as string, args.agent as string),
-        agent: args.agent as string,
+        prompt: buildDelegatedPrompt(enrichedPrompt, args.description as string, effectiveAgent),
+        agent: effectiveAgent,
         parentSessionId: context.sessionID,
         parentMessageId: context.messageID,
         modelHint,
       });
       const warning = policy?.status === "warn" && policy.message ? `\n\n${policy.message}` : "";
+      const overrideInfo = override ? `\nAgent override: ${args.agent} -> ${effectiveAgent} (user correction)` : "";
       const modelInfo = modelHint ? `\nModel: ${modelHint.providerID}/${modelHint.modelID}` : "";
-      return `Background task launched: ${taskId}\nAgent: ${args.agent}\nCategory: ${category}${modelInfo}\nDescription: ${args.description}\n\nUse bg_status to check progress or bg_collect to retrieve results.${warning}`;
+      return `Background task launched: ${taskId}\nAgent: ${effectiveAgent}\nCategory: ${category}${modelInfo}${overrideInfo}\nDescription: ${args.description}\n\nUse bg_status to check progress or bg_collect to retrieve results.${warning}`;
     },
   });
 }

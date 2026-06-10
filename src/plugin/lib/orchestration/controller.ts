@@ -82,21 +82,6 @@ import {
   type EscalationDecision,
   type OrchestrationStatusReport,
 } from "./intelligence.js";
-import {
-  shouldSpeculate,
-  generateSpeculativeCandidates,
-  shouldReflect,
-  buildReflectionPrompt,
-  selectModelForNode,
-  shouldConsolidate,
-  consolidateMemory,
-  requiresConsensus,
-  buildConsensusPrompts,
-  type SpeculativeCandidate,
-  type ModelSelection,
-  type ConsolidatedPattern,
-  type ConsensusRequest,
-} from "./advanced.js";
 
 // ─── Controller State ─────────────────────────────────────────────────────────
 
@@ -169,8 +154,9 @@ export class OrchestrationController {
     const loaded = loadMemoryV2(this.projectRoot, this.now());
     this.execMemory = startSession(loaded.memory, undefined, this.now());
 
-    // Restore orchestration memory and graph from persisted state
-    const restored = restoreOrchestrationFromMemory(this.execMemory);
+    // Restore orchestration memory and graph from persisted state.
+    // Stale/terminal graphs are dropped to prevent cross-session leakage (C1).
+    const restored = restoreOrchestrationFromMemory(this.execMemory, this.now());
     this.memory = restored.memory ?? createOrchestrationMemory(this.now());
     this.graph = restored.graph ?? null;
   }
@@ -579,94 +565,5 @@ export class OrchestrationController {
   getParallelOpportunities(): string[][] {
     if (!this.graph) return [];
     return identifyParallelGroups(this.graph);
-  }
-
-  // ─── Advanced Capabilities ──────────────────────────────────────────────────
-
-  /**
-   * Check if a node should use speculative execution (race 2 approaches).
-   */
-  shouldSpeculateNode(nodeId: string): boolean {
-    if (!this.graph) return false;
-    const node = this.graph.nodes.get(nodeId);
-    if (!node) return false;
-    const assessment = this.graph ? this.planner.assess(this.graph, this.memory) : null;
-    return shouldSpeculate(node, assessment?.confidence ?? 0.5);
-  }
-
-  /**
-   * Generate speculative candidates for a node.
-   */
-  getSpeculativeCandidates(nodeId: string): SpeculativeCandidate[] {
-    if (!this.graph) return [];
-    const node = this.graph.nodes.get(nodeId);
-    if (!node) return [];
-    return generateSpeculativeCandidates(node);
-  }
-
-  /**
-   * Check if a node's output should go through self-reflection.
-   */
-  shouldReflectNode(nodeId: string): boolean {
-    if (!this.graph) return false;
-    const node = this.graph.nodes.get(nodeId);
-    if (!node || !node.output) return false;
-    return shouldReflect(node, node.output);
-  }
-
-  /**
-   * Build a self-reflection prompt for a node.
-   */
-  getReflectionPrompt(nodeId: string): string | null {
-    if (!this.graph) return null;
-    const node = this.graph.nodes.get(nodeId);
-    if (!node || !node.output) return null;
-    return buildReflectionPrompt(node, node.output);
-  }
-
-  /**
-   * Select optimal model for a node based on complexity and budget.
-   */
-  selectModel(nodeId: string, budgetRemaining: number, isSpeculative = false): ModelSelection | null {
-    if (!this.graph) return null;
-    const node = this.graph.nodes.get(nodeId);
-    if (!node) return null;
-    const assessment = this.planner.assess(this.graph, this.memory);
-    return selectModelForNode(node, { graphConfidence: assessment.confidence, budgetRemaining, isSpeculative });
-  }
-
-  /**
-   * Run memory consolidation if needed.
-   */
-  consolidateIfNeeded(sessionCount: number): ConsolidatedPattern[] {
-    if (!shouldConsolidate(this.execMemory.wisdom, sessionCount)) return [];
-    const result = consolidateMemory(this.execMemory.wisdom, this.execMemory.taskLearnings);
-    return result.patterns;
-  }
-
-  /**
-   * Check if a node requires multi-agent consensus.
-   */
-  requiresConsensus(nodeId: string): boolean {
-    if (!this.graph) return false;
-    const node = this.graph.nodes.get(nodeId);
-    if (!node) return false;
-    return requiresConsensus(node);
-  }
-
-  /**
-   * Build consensus prompts for a critical decision.
-   */
-  buildConsensusPrompts(nodeId: string, question: string): Map<string, string> | null {
-    if (!this.graph) return null;
-    const node = this.graph.nodes.get(nodeId);
-    if (!node) return null;
-    const request: ConsensusRequest = {
-      question,
-      context: node.input.prompt,
-      agents: ["oracle", "self"],
-      requiredAgreement: 0.66,
-    };
-    return buildConsensusPrompts(request);
   }
 }

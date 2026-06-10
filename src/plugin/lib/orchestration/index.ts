@@ -200,22 +200,3 @@ export {
 } from "./reliability.js";
 export type { CancellationResult, RateLimiter, RateLimiterState, RateLimiterConfig, NodeTimeoutConfig, ApprovalGateResult, FileConflict, TokenBudget, TokenBudgetTracker, RollbackPlan, RollbackStep, LogLevel, LogEntry, OrchestrationLogger, HealthCheckResult, HealthCheck } from "./reliability.js";
 
-// Advanced Capabilities
-export {
-  shouldSpeculate,
-  generateSpeculativeCandidates,
-  evaluateSpeculativeResults,
-  shouldReflect,
-  buildReflectionPrompt,
-  parseReflectionResult,
-  selectModelForNode,
-  shouldUpgradeModel,
-  consolidateMemory,
-  shouldConsolidate,
-  requiresConsensus,
-  buildConsensusPrompts,
-  evaluateConsensus,
-  parseConsensusVote,
-  formatConsensusResult,
-} from "./advanced.js";
-export type { SpeculativeCandidate, SpeculativeResult, SpeculativeDecision, ReflectionResult, ModelTier, ModelSelection, ConsolidatedPattern, ConsolidationResult, ConsensusRequest, AgentVote, ConsensusResult } from "./advanced.js";

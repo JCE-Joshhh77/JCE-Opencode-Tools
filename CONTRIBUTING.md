@@ -72,7 +72,7 @@ config/
   lsp.json          — 28 LSP server definitions
   fallback.json     — Provider fallback config
   prompts/          — Prompt template files
-  skills/           — 35 on-demand skill files
+  skills/           — 74 on-demand skill files
   AGENTS.md         — Global AI instructions (router)
 
 schemas/            — JSON Schema validation files

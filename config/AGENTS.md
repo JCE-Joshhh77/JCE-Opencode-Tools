@@ -1,5 +1,5 @@
 # OpenCode JCE — Global AI Instructions
-# Version: 3.5.4 (Modular + Context Preservation)
+# Version: 3.5.5 (Modular + Context Preservation)
 # This file is always loaded. Skills in ./skills/ are loaded on-demand.
 # Customize freely — the installer will NOT overwrite your changes.
 
@@ -184,7 +184,7 @@ If message doesn't match any → use default Identity (staff engineer). Still lo
 
 **You have access to specialized skill files in the OpenCode config directory (`~/.config/opencode/skills/` on all platforms, including Windows).** Load the relevant ones based on the current task. Read the file content when you need the detailed guidance.
 
-### Available Skills (71 files)
+### Available Skills (74 files)
 
 **Core Engineering:**
 | File | Load When |

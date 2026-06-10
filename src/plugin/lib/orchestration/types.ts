@@ -257,6 +257,11 @@ export interface ExecutionMemoryV2 {
   taskLearnings: TaskLearningV2[];
   contextBudget?: ContextBudgetV2;
   sessionHistory: SessionEntry[];
+  /** Persisted orchestration coordination state (constraints/signals) that must survive reloads. */
+  orchestration?: {
+    constraints: Constraint[];
+    signals: Signal[];
+  };
 }
 
 export interface WisdomEntryV2 {

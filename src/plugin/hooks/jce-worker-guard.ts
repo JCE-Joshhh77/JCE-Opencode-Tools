@@ -26,8 +26,50 @@ const STOP_EARLY_PATTERNS = [
 
 export const VERIFICATION_WARNING = "\n\nVERIFICATION CHECK: This looks like a completion claim without clear verification evidence. Return to verification, or explicitly state what has not yet been verified.";
 
+/**
+ * Hard negations flip a completion phrase ANYWHERE in the sentence
+ * ("the fix is not complete", "belum selesai").
+ */
+const HARD_NEGATION = /\b(?:not|isn'?t|aren'?t|won'?t|wasn'?t|weren'?t|cannot|can'?t|don'?t|doesn'?t|never|belum|tidak|bukan)\b/i;
+
+/**
+ * Interrogative/conditional openers negate a completion phrase ONLY when they
+ * LEAD the sentence (they govern the whole clause, e.g. "Once tests pass, it's
+ * complete" / "Is it complete?"). A conditional in a trailing clause does NOT
+ * negate the claim (e.g. "Sudah selesai, kalau mau dicek lagi" is still a
+ * claim). This avoids both false positives and false negatives (#4).
+ */
+const LEADING_NEGATORS = [
+  /^\s*(?:is|are|does|do|did|has|have|will|would|should|shall|can|could|may|might)\b/i,
+  /^\s*(?:how|what|why|where|which|when|whether|who)\b/i,
+  /^\s*(?:if|once|after|before|until|unless|assuming|provided)\b/i,
+  /^\s*(?:apakah|bagaimana|kapan|kalau|jika|jikalau|bila|setelah|sebelum)\b/i,
+];
+
+function sentenceNegatesCompletion(sentence: string): boolean {
+  if (HARD_NEGATION.test(sentence)) return true;
+  if (/\?\s*$/.test(sentence)) return true;
+  return LEADING_NEGATORS.some((pattern) => pattern.test(sentence));
+}
+
+function splitSentences(text: string): string[] {
+  return text.split(/(?<=[.!?\n])\s+|\n/).map((s) => s.trim()).filter(Boolean);
+}
+
+function sentenceIsCleanClaim(sentence: string): boolean {
+  if (!COMPLETION_PATTERNS.some((pattern) => pattern.test(sentence))) return false;
+  return !sentenceNegatesCompletion(sentence);
+}
+
 export function looksLikeCompletionClaim(text: string): boolean {
-  return COMPLETION_PATTERNS.some((pattern) => pattern.test(text));
+  // A claim exists only if at least one SENTENCE asserts completion without a
+  // hard negation, trailing question, or leading conditional in that sentence.
+  // Per-sentence scoping avoids false positives (prose describing/asking about
+  // completion) and false negatives (a real claim with an unrelated trailing
+  // clause or a separate follow-up question).
+  const sentences = splitSentences(text);
+  if (sentences.length === 0) return false;
+  return sentences.some(sentenceIsCleanClaim);
 }
 
 export function looksLikeStopEarlyOrConfirmation(text: string): boolean {

@@ -5,6 +5,7 @@ import { getConfigDir, loadConfigFile } from "../lib/config.js";
 import { validateAgainstSchema } from "../lib/schema.js";
 import { success, error, heading, info } from "../lib/ui.js";
 import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
+import { auditSkillStartup, formatSkillStartupAudit } from "../plugin/lib/skill-sync.js";
 
 interface ConfigFileEntry {
   relativePath: string;
@@ -72,6 +73,15 @@ export const validateCommand = new Command("validate")
         const msg = err instanceof Error ? err.message : String(err);
         error(`${entry.label} — ${msg}`);
       }
+    }
+
+    const skillAudit = auditSkillStartup(process.cwd());
+    console.log();
+    console.log(formatSkillStartupAudit(skillAudit));
+    if (skillAudit.ok) success("skills — startup audit valid");
+    else {
+      hasErrors = true;
+      error("skills — startup audit invalid");
     }
 
     console.log();

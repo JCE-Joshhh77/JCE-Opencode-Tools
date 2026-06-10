@@ -3,6 +3,13 @@ import { dirname, join } from "path";
 import type { TraceEvent } from "./trace.js";
 import type { WorkflowRun } from "./workflow.js";
 
+export interface SkillCorrectionSession {
+  forbidSkills: string[];
+  preferSkills: string[];
+  agentOverride?: string;
+  updatedAt: string;
+}
+
 export interface ExecutionMemory {
   version: 1;
   updatedAt: string;
@@ -17,6 +24,7 @@ export interface ExecutionMemory {
   contextBudgetSummary?: ContextBudgetSummary;
   wisdom: WisdomEntry[];
   taskLearnings: TaskLearning[];
+  skillCorrectionSession?: SkillCorrectionSession;
 }
 
 export interface WisdomEntry {

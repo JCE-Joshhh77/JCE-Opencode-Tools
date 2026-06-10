@@ -265,8 +265,13 @@ export function evaluateCompletionGate(graph: TaskGraph, minConfidence = 0.7): C
   // Aggregate evidence
   const evidenceScore = aggregateEvidence(allEvidence);
 
+  // Confidence gating only applies to graphs that produce verifiable artifacts
+  // (code/verify nodes). Pure research/review/docs/plan graphs have no command
+  // evidence by nature and must not be blocked at "0% confidence" (M1).
+  const requiresEvidence = completedNodes.some((n) => n.type === "code" || n.type === "verify");
+
   // Check confidence threshold
-  if (evidenceScore.overallConfidence < minConfidence) {
+  if (requiresEvidence && evidenceScore.overallConfidence < minConfidence) {
     warnings.push(`Overall confidence ${Math.round(evidenceScore.overallConfidence * 100)}% is below threshold ${Math.round(minConfidence * 100)}%`);
   }
 
@@ -285,7 +290,7 @@ export function evaluateCompletionGate(graph: TaskGraph, minConfidence = 0.7): C
     warnings.push("No type check evidence found");
   }
 
-  const canComplete = blockers.length === 0 && evidenceScore.overallConfidence >= minConfidence;
+  const canComplete = blockers.length === 0 && (!requiresEvidence || evidenceScore.overallConfidence >= minConfidence);
 
   return {
     canComplete,
@@ -329,7 +334,7 @@ export interface ToolEvidenceInput {
  * Determine if a tool output contains evidence worth recording.
  */
 export function shouldRecordToolEvidence(tool: string, output: string): boolean {
-  if (!["Bash"].includes(tool)) return false;
+  if (tool.toLowerCase() !== "bash") return false;
   if (output.length < 10) return false;
   // Only record verification-like commands
   return /\b(test|check|lint|build|typecheck|tsc|eslint|biome|prettier|pytest|cargo test|go test)\b/i.test(output);
@@ -363,7 +368,10 @@ export function extractToolEvidence(input: ToolEvidenceInput): Evidence | null {
   if (testMatch) {
     const passed = parseInt(testMatch[1], 10);
     const failed = parseInt(testMatch[2], 10);
-    confidence = failed === 0 ? 0.95 : passed / (passed + failed);
+    const total = passed + failed;
+    if (total > 0) {
+      confidence = failed === 0 ? 0.95 : passed / total;
+    }
   }
 
   return {

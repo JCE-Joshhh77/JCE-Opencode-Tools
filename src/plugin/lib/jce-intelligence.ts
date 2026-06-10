@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { basename, dirname, join } from "path";
+import { INTENTIONAL_SKILL_ALIASES, SKILL_NAME_TO_FILE, SKILL_REGISTRY } from "./skill-loader.js";
 
 export type SkillTier = "framework" | "language" | "domain" | "workflow" | "generic";
 
@@ -7,15 +8,44 @@ export interface SkillAuditFinding { severity: "info" | "warning" | "error"; mes
 export interface SkillAuditResult { name: string; path: string; score: number; findings: SkillAuditFinding[]; hasFrontmatter: boolean; description?: string }
 export interface SkillAuditReport { total: number; averageScore: number; results: SkillAuditResult[]; errors: number; warnings: number }
 
-export interface SkillConflictResolution { selected: string[]; suppressed: { skill: string; reason: string }[] }
+export interface SkillTraceItem { skill: string; reason: string; source?: "intent" | "regex" | "file" | "subagent" | "duplicate" | "conflict" | "max_cap" | "manual" }
+export interface SkillConflictResolution { selected: string[]; suppressed: { skill: string; reason: string }[]; trace?: { selected: SkillTraceItem[]; rejected: SkillTraceItem[] } }
 export interface SkillHardeningReport { checked: number; changed: number; changes: { name: string; description: string }[] }
 export interface Capability { id: string; title: string; domains: string[]; agents: string[]; skills: string[]; tools: string[]; verification: string[]; maturity: "baseline" | "advanced" | "stateful"; ownerAgent?: string; knownLimitations?: string[]; nextMaturityStep?: string; lastVerifiedAt?: string }
 export interface CapabilityRegistry { capabilities: Capability[] }
+export interface SkillCapability { routingMode: "auto" | "manual_or_keyword" | "internal_support"; intents: string[]; signals: string[]; files: string[]; verification: string[]; preferredAgents?: string[]; samplePrompts: string[] }
 export interface EvidenceRecord { id: string; taskId: string; type: "command" | "source" | "review" | "manual" | "file"; summary: string; command?: string; status: "pass" | "fail" | "blocked" | "unknown"; timestamp: string; workflowId?: string; files?: string[]; area?: string }
-export interface TelemetryEvent { kind: "skill_selected" | "task_blocked" | "agent_retry" | "verification_used"; name: string; at: string; metadata?: Record<string, unknown> }
+export interface TelemetryEvent {
+  kind: "skill_selected" | "task_blocked" | "agent_retry" | "verification_used" | "delegation_accepted" | "delegation_rejected" | "skill_followup" | "skill_final_used" | "user_correction" | "verification_result" | "routing_decision" | "task_outcome";
+  name: string;
+  at: string;
+  metadata?: Record<string, unknown>;
+}
 export interface JceDoctorReport { checks: { name: string; status: "pass" | "warning" | "fail"; message: string }[]; summary: { pass: number; warning: number; fail: number } }
 export interface AgentAuditFinding { severity: "info" | "warning" | "error"; agent: string; message: string }
 export interface AgentAuditReport { total: number; errors: number; warnings: number; findings: AgentAuditFinding[] }
+
+export interface SkillTelemetrySummary {
+  selectedByIntent: Record<string, number>;
+  finalUsed: Record<string, number>;
+  followups: Record<string, number>;
+  acceptedDelegations: Record<string, number>;
+  rejectedDelegations: Record<string, number>;
+  verificationPassBySkill: Record<string, number>;
+  verificationFailBySkill: Record<string, number>;
+  suppressedBySkill: Record<string, number>;
+  userCorrectionsBySkill: Record<string, number>;
+  usefulBySkill: Record<string, number>;
+  noisyBySkill: Record<string, number>;
+  outcomeBySkill: Record<string, { success: number; fail: number; followup: number }>;
+}
+
+export interface RoutingQualitySummary {
+  usefulSkills: Array<{ skill: string; score: number }>;
+  noisySkills: Array<{ skill: string; score: number }>;
+  overSelectedSkills: Array<{ skill: string; score: number }>;
+  failedTaskSkills: Array<{ skill: string; score: number }>;
+}
 
 const FRAMEWORK = new Set(["nextjs", "react", "vue", "svelte", "angular", "laravel", "rails", "spring-boot", "express-nestjs", "django-fastapi", "flutter-dart", "android-kotlin", "react-native"]);
 const LANGUAGE = new Set(["typescript", "python", "rust", "go", "java-kotlin", "php", "ruby", "cpp", "csharp", "shell-bash", "swift-ios", "scala", "elixir"]);
@@ -83,7 +113,7 @@ export function resolveSkillConflicts(skills: string[], max = 4): SkillConflictR
   const ranked = selected.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
   const limited = ranked.slice(0, max);
   for (const skill of ranked.slice(max)) suppress(skill, `Limited to top ${max} skills for token discipline.`);
-  return { selected: limited, suppressed };
+  return { selected: limited, suppressed, trace: { selected: limited.map((skill) => ({ skill, reason: "selected after ranking", source: "intent" })), rejected: suppressed.map((item) => ({ ...item, source: item.reason.includes("Limited to top") ? "max_cap" : "conflict" })) } };
 }
 
 function hardenedDescription(name: string, current?: string): string {
@@ -115,8 +145,9 @@ export function hardenSkillDescriptions(skillsDir: string, options: { write?: bo
 export function resolveSkillConflictsV2(skills: string[], context: { intent?: string; files?: string[]; stack?: string[]; max?: number } = {}): SkillConflictResolution {
   const unique = [...new Set(skills.filter(Boolean))];
   const suppressions: { skill: string; reason: string }[] = [];
+  const traceRejected: SkillTraceItem[] = [];
   const has = (name: string) => unique.includes(name);
-  const suppress = (skill: string, reason: string) => suppressions.push({ skill, reason });
+  const suppress = (skill: string, reason: string, source: SkillTraceItem["source"] = "conflict") => { suppressions.push({ skill, reason }); traceRejected.push({ skill, reason, source }); };
   const fileText = (context.files ?? []).join(" ").toLowerCase();
   const intent = (context.intent ?? "").toLowerCase();
   const score = (skill: string): number => {
@@ -130,19 +161,26 @@ export function resolveSkillConflictsV2(skills: string[], context: { intent?: st
     return value;
   };
   let candidates = unique.filter((skill) => {
-    if (skill === "frontend" && ["react", "nextjs", "vue", "svelte", "angular"].some(has)) { suppress(skill, "Specific frontend framework skill outranks generic frontend."); return false; }
-    if (skill === "react" && has("nextjs")) { suppress(skill, "Next.js skill covers React guidance for this route."); return false; }
-    if (skill === "security" && has("auth-identity") && /oauth|jwt|rbac|session|login|auth/.test(intent)) { suppress(skill, "Auth identity is more specific for authentication work."); return false; }
-    if (skill === "architecture" && has("api-design-patterns") && /api|endpoint|openapi|graphql/.test(intent)) { suppress(skill, "API design patterns are more specific than generic architecture for API work."); return false; }
-    if (skill === "devops" && has("platform-engineering") && /kubernetes|helm|gitops|terraform|pulumi/.test(intent)) { suppress(skill, "Platform engineering is more specific for platform/IaC work."); return false; }
-    if (skill === "observability" && has("reliability-engineering") && /sre|incident|load|chaos|error budget/.test(intent)) { suppress(skill, "Reliability engineering is more specific for SRE/resilience work."); return false; }
-    if (skill === "typescript" && ["nextjs", "react", "vue", "svelte", "angular", "express-nestjs"].some(has) && !(context.files ?? []).some((file) => /\.(ts|tsx|js|jsx)$/.test(file))) { suppress(skill, "Framework skill carries TypeScript guidance unless TS files are explicitly in scope."); return false; }
+    if (skill === "frontend" && ["react", "nextjs", "vue", "svelte", "angular"].some(has)) { suppress(skill, "Specific frontend framework skill outranks generic frontend.", "conflict"); return false; }
+    if (skill === "react" && has("nextjs")) { suppress(skill, "Next.js skill covers React guidance for this route.", "conflict"); return false; }
+    if (skill === "security" && has("auth-identity") && /oauth|jwt|rbac|session|login|auth/.test(intent)) { suppress(skill, "Auth identity is more specific for authentication work.", "conflict"); return false; }
+    if (skill === "architecture" && has("api-design-patterns") && /api|endpoint|openapi|graphql/.test(intent)) { suppress(skill, "API design patterns are more specific than generic architecture for API work.", "conflict"); return false; }
+    if (skill === "devops" && has("platform-engineering") && /kubernetes|helm|gitops|terraform|pulumi/.test(intent)) { suppress(skill, "Platform engineering is more specific for platform/IaC work.", "conflict"); return false; }
+    if (skill === "observability" && has("reliability-engineering") && /sre|incident|load|chaos|error budget/.test(intent)) { suppress(skill, "Reliability engineering is more specific for SRE/resilience work.", "conflict"); return false; }
+    if (skill === "typescript" && ["nextjs", "react", "vue", "svelte", "angular", "express-nestjs"].some(has) && !(context.files ?? []).some((file) => /\.(ts|tsx|js|jsx)$/.test(file))) { suppress(skill, "Framework skill carries TypeScript guidance unless TS files are explicitly in scope.", "file"); return false; }
     return true;
   });
   candidates = candidates.sort((a, b) => score(b) - score(a) || a.localeCompare(b));
   const limit = context.max ?? 4;
-  for (const skill of candidates.slice(limit)) suppress(skill, `Limited to top ${limit} context-ranked skills.`);
-  return { selected: candidates.slice(0, limit), suppressed: suppressions };
+  for (const skill of candidates.slice(limit)) suppress(skill, `Limited to top ${limit} context-ranked skills.`, "max_cap");
+  return {
+    selected: candidates.slice(0, limit),
+    suppressed: suppressions,
+    trace: {
+      selected: candidates.slice(0, limit).map((skill) => ({ skill, reason: `context score ${score(skill)}`, source: fileText.includes(skill) ? "file" : /test|verify|release|fix|bug|api|endpoint|auth/.test(intent) ? "intent" : "regex" })),
+      rejected: traceRejected,
+    },
+  };
 }
 
 export function summarizeCommandEvidence(command: string, output: string): Omit<EvidenceRecord, "id" | "timestamp"> | null {
@@ -170,10 +208,69 @@ export function buildCapabilityRegistry(): CapabilityRegistry {
     { id: "node-api.advanced-flow", title: "Node/API endpoint/auth/schema verification planning", domains: ["api", "node"], agents: ["backend"], skills: ["express-nestjs", "api-design-patterns", "security"], tools: [], verification: ["npm test", "npm run typecheck"], maturity: "baseline" },
     { id: "devops-ci.advanced-flow", title: "Docker/CI workflow readiness and risk checks", domains: ["devops", "ci"], agents: ["devops"], skills: ["devops"], tools: [], verification: ["docker build", "actionlint"], maturity: "baseline" },
     { id: "security.advanced-flow", title: "Threat model, secrets, auth boundary, dependency risk baseline", domains: ["security"], agents: ["security"], skills: ["security", "auth-identity"], tools: [], verification: ["security scan", "test suite"], maturity: "baseline", ownerAgent: "security", knownLimitations: ["No built-in scanner invocation yet"], nextMaturityStep: "Add semgrep/npm audit adapter" },
-    { id: "jce.stateful-enforcement", title: "Stateful completion gates backed by workflow/orchestration state", domains: ["jce", "workflow"], agents: ["jce-worker"], skills: ["jce-worker-operating-system", "verification-discipline"], tools: [], verification: ["bun test tests/unit/workflow-simulator.test.ts"], maturity: "stateful", ownerAgent: "jce-worker", knownLimitations: ["Assistant output is still transformed post-generation"], nextMaturityStep: "Block final responses before generation when OpenCode exposes a pre-final hook" },
+    { id: "jce.stateful-enforcement", title: "Stateful completion gates backed by workflow/orchestration state", domains: ["jce", "workflow"], agents: ["jce-worker"], skills: ["jce-worker-operating-system", "verification-discipline"], tools: [], verification: ["bun test tests/unit/workflow-simulator.test.ts"], maturity: "stateful", ownerAgent: "jce-worker", knownLimitations: ["Gates run on final assistant text (experimental.text.complete) and tool output; the OpenCode SDK exposes no pre-generation cancel hook, so gates flag/append rather than block generation"], nextMaturityStep: "Move to a hard pre-generation block if/when OpenCode adds a cancellable pre-final hook" },
     { id: "jce.evidence-auto-capture", title: "Automatic command evidence persistence from verification tools", domains: ["verification"], agents: ["jce-worker"], skills: ["verification-discipline"], tools: ["Bash"], verification: ["bun test tests/unit/jce-intelligence-hardening.test.ts"], maturity: "stateful", ownerAgent: "jce-worker", knownLimitations: ["Command parsing is heuristic"], nextMaturityStep: "Attach changed-file ownership to evidence records" },
   ] };
 }
+
+export function buildSkillCapabilityMatrix(): Record<string, SkillCapability> {
+  const matrix: Record<string, SkillCapability> = {};
+  for (const [skill] of Object.entries(SKILL_NAME_TO_FILE)) {
+    if (skill in INTENTIONAL_SKILL_ALIASES) continue;
+    const registry = SKILL_REGISTRY[skill];
+    if (!registry) continue;
+    matrix[skill] = {
+      routingMode: registry.routingMode,
+      intents: registry.intents,
+      signals: registry.signals,
+      files: registry.files,
+      verification: registry.verification,
+      preferredAgents: registry.preferredAgents,
+      samplePrompts: registry.samplePrompts,
+    };
+    Object.assign(matrix[skill], SKILL_CAPABILITY_OVERRIDES[skill] ?? {});
+  }
+  return matrix;
+}
+
+const SKILL_CAPABILITY_OVERRIDES: Partial<Record<string, Partial<SkillCapability>>> = {
+  "android-gradle": {
+    intents: ["bugfix", "config"],
+    signals: ["build.gradle", "build.gradle.kts", "settings.gradle", "libs.versions.toml", "duplicate class", "no matching variant", "could not resolve"],
+    verification: ["./gradlew :app:assembleDebug"],
+    preferredAgents: ["android"],
+  },
+  "android-kotlin": {
+    intents: ["bugfix", "feature", "refactor"],
+    signals: ["AndroidManifest.xml", "MainActivity.kt", "Jetpack Compose", "Room", "Hilt", "adb", "logcat"],
+    verification: ["./gradlew testDebugUnitTest", "./gradlew assembleDebug"],
+    preferredAgents: ["android"],
+  },
+  "android-testing": {
+    intents: ["tests", "bugfix"],
+    signals: ["testDebugUnitTest", "connectedDebugAndroidTest", "androidTest", "Robolectric", "Compose test"],
+    verification: ["./gradlew testDebugUnitTest", "./gradlew connectedDebugAndroidTest"],
+    preferredAgents: ["android"],
+  },
+  "android-release": {
+    intents: ["release", "config", "bugfix"],
+    signals: ["bundleRelease", "assembleRelease", "R8", "ProGuard", "signingConfig", "versionCode", "versionName"],
+    verification: ["./gradlew bundleRelease", "./gradlew lintVitalRelease"],
+    preferredAgents: ["android"],
+  },
+  "verification-discipline": {
+    intents: ["bugfix", "release", "review"],
+    signals: ["verify", "test", "evidence", "completion"],
+    verification: ["targeted test", "wider regression command"],
+    preferredAgents: ["oracle"],
+  },
+  "human-ui-design": {
+    intents: ["feature", "review"],
+    signals: ["dashboard", "landing page", "visual", "generated by AI", "human-crafted"],
+    verification: ["browser visual review", "accessibility check"],
+    preferredAgents: ["frontend"],
+  },
+};
 
 export function auditAgents(root: string): AgentAuditReport {
   const path = join(root, "config", "agents.json");
@@ -204,6 +301,8 @@ export function buildAnalyticsRecommendations(events: TelemetryEvent[], evidence
   if (blocked > verification) recommendations.push("Investigate completion gates: blocked tasks exceed verification events.");
   if (failedEvidence > 0) recommendations.push("Review failing evidence records and add regression tests for repeated failures.");
   if (events.length === 0) recommendations.push("Telemetry is empty; run normal JCE workflows to collect local non-PII routing data.");
+  const rejectedDelegations = events.filter((event) => event.kind === "delegation_rejected").length;
+  if (rejectedDelegations > 0) recommendations.push("Delegation rejection detected; inspect sub-agent contract quality and review acceptance rules.");
   return recommendations;
 }
 
@@ -250,6 +349,106 @@ export function loadTelemetry(root: string): TelemetryEvent[] {
 
 export function summarizeTelemetry(events: TelemetryEvent[]): Record<string, number> {
   return events.reduce<Record<string, number>>((acc, event) => { const key = `${event.kind}:${event.name}`; acc[key] = (acc[key] ?? 0) + 1; return acc; }, {});
+}
+
+export function buildSkillDoctorReport(): { totalSkills: number; missingMetadata: string[]; weakPrompts: string[]; manualOnly: string[] } {
+  const missingMetadata: string[] = [];
+  const weakPrompts: string[] = [];
+  const manualOnly: string[] = [];
+  for (const [skill, entry] of Object.entries(SKILL_REGISTRY)) {
+    if (!entry.intents.length || !entry.signals.length || !entry.files.length || !entry.samplePrompts.length) missingMetadata.push(skill);
+    if ((entry.samplePrompts[0] ?? "").length < 20) weakPrompts.push(skill);
+    if (entry.routingMode !== "auto") manualOnly.push(skill);
+  }
+  return { totalSkills: Object.keys(SKILL_REGISTRY).length, missingMetadata: missingMetadata.sort(), weakPrompts: weakPrompts.sort(), manualOnly: manualOnly.sort() };
+}
+
+export function summarizeSkillTelemetry(events: TelemetryEvent[]): SkillTelemetrySummary {
+  const init = (): Record<string, number> => ({});
+  const outcomeInit = (): Record<string, { success: number; fail: number; followup: number }> => ({});
+  const summary: SkillTelemetrySummary = {
+    selectedByIntent: init(),
+    finalUsed: init(),
+    followups: init(),
+    acceptedDelegations: init(),
+    rejectedDelegations: init(),
+    verificationPassBySkill: init(),
+    verificationFailBySkill: init(),
+    suppressedBySkill: init(),
+    userCorrectionsBySkill: init(),
+    usefulBySkill: init(),
+    noisyBySkill: init(),
+    outcomeBySkill: outcomeInit(),
+  };
+  for (const event of events) {
+    const skill = String(event.metadata?.skill ?? event.name ?? "unknown");
+    if (event.kind === "skill_selected") summary.selectedByIntent[skill] = (summary.selectedByIntent[skill] ?? 0) + 1;
+    if (event.kind === "skill_final_used") summary.finalUsed[skill] = (summary.finalUsed[skill] ?? 0) + 1;
+    if (event.kind === "skill_followup") summary.followups[skill] = (summary.followups[skill] ?? 0) + 1;
+    if (event.kind === "delegation_accepted") summary.acceptedDelegations[skill] = (summary.acceptedDelegations[skill] ?? 0) + 1;
+    if (event.kind === "delegation_rejected") summary.rejectedDelegations[skill] = (summary.rejectedDelegations[skill] ?? 0) + 1;
+    if (event.kind === "user_correction") summary.userCorrectionsBySkill[skill] = (summary.userCorrectionsBySkill[skill] ?? 0) + 1;
+    if (event.kind === "verification_result") {
+      const pass = Boolean(event.metadata?.passed);
+      const bucket = pass ? summary.verificationPassBySkill : summary.verificationFailBySkill;
+      bucket[skill] = (bucket[skill] ?? 0) + 1;
+    }
+    if (event.kind === "routing_decision") {
+      const selected = Array.isArray(event.metadata?.selectedSkills) ? event.metadata?.selectedSkills : [];
+      const suppressed = Array.isArray(event.metadata?.suppressedSkills) ? event.metadata?.suppressedSkills : [];
+      for (const item of selected) if (typeof item === "string") summary.selectedByIntent[item] = (summary.selectedByIntent[item] ?? 0) + 1;
+      for (const item of suppressed) if (typeof item === "string") summary.suppressedBySkill[item] = (summary.suppressedBySkill[item] ?? 0) + 1;
+    }
+    if (event.kind === "task_outcome") {
+      const skills = Array.isArray(event.metadata?.skills) ? event.metadata?.skills.filter((item): item is string => typeof item === "string") : [skill];
+      const outcome = String(event.metadata?.outcome ?? "unknown");
+      for (const item of skills) {
+        const bucket = summary.outcomeBySkill[item] ?? { success: 0, fail: 0, followup: 0 };
+        if (outcome === "success") bucket.success += 1;
+        else if (outcome === "fail") bucket.fail += 1;
+        else if (outcome === "followup") bucket.followup += 1;
+        summary.outcomeBySkill[item] = bucket;
+      }
+    }
+  }
+  for (const skill of new Set([...Object.keys(summary.selectedByIntent), ...Object.keys(summary.finalUsed), ...Object.keys(summary.verificationPassBySkill), ...Object.keys(summary.verificationFailBySkill), ...Object.keys(summary.userCorrectionsBySkill), ...Object.keys(summary.suppressedBySkill)])) {
+    const useful = (summary.finalUsed[skill] ?? 0) + (summary.verificationPassBySkill[skill] ?? 0) + ((summary.outcomeBySkill[skill]?.success ?? 0) * 2);
+    const noisy = (summary.suppressedBySkill[skill] ?? 0) + (summary.verificationFailBySkill[skill] ?? 0) + (summary.userCorrectionsBySkill[skill] ?? 0) + (summary.rejectedDelegations[skill] ?? 0);
+    if (useful > 0) summary.usefulBySkill[skill] = useful;
+    if (noisy > 0) summary.noisyBySkill[skill] = noisy;
+  }
+  return summary;
+}
+
+export function summarizeRoutingQuality(events: TelemetryEvent[]): RoutingQualitySummary {
+  const skillSummary = summarizeSkillTelemetry(events);
+  const rank = (values: Record<string, number>) => Object.entries(values).map(([skill, score]) => ({ skill, score })).sort((a, b) => b.score - a.score || a.skill.localeCompare(b.skill)).slice(0, 10);
+  const failedScores: Record<string, number> = {};
+  for (const [skill, outcome] of Object.entries(skillSummary.outcomeBySkill)) {
+    const score = (outcome.fail * 2) + outcome.followup;
+    if (score > 0) failedScores[skill] = score;
+  }
+  const overSelected: Record<string, number> = {};
+  for (const skill of Object.keys(skillSummary.selectedByIntent)) {
+    const selected = skillSummary.selectedByIntent[skill] ?? 0;
+    const useful = skillSummary.usefulBySkill[skill] ?? 0;
+    if (selected > useful) overSelected[skill] = selected - useful;
+  }
+  return {
+    usefulSkills: rank(skillSummary.usefulBySkill),
+    noisySkills: rank(skillSummary.noisyBySkill),
+    overSelectedSkills: rank(overSelected),
+    failedTaskSkills: rank(failedScores),
+  };
+}
+
+export function appendTelemetry(root: string, event: Omit<TelemetryEvent, "at">): TelemetryEvent {
+  const events = loadTelemetry(root);
+  const saved: TelemetryEvent = { ...event, at: new Date().toISOString() };
+  const path = telemetryPath(root);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify([...events, saved], null, 2) + "\n", "utf8");
+  return saved;
 }
 
 export function generateCapabilitiesMarkdown(registry = buildCapabilityRegistry()): string {

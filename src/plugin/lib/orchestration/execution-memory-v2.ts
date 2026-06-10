@@ -14,6 +14,8 @@ import type {
   Decision,
   Artifact,
   Evidence,
+  Constraint,
+  Signal,
   WisdomEntryV2,
   TaskLearningV2,
   ContextBudgetV2,
@@ -23,6 +25,7 @@ import type {
 import type { OrchestrationMemory, OrchestrationMemorySnapshot } from "./shared-memory.js";
 import { snapshotMemory, restoreMemory } from "./shared-memory.js";
 import { snapshotGraph, restoreGraph } from "./task-graph.js";
+import { STALE_TTL_MS, shouldRestorePersistedGraph } from "./staleness.js";
 import type { TaskGraph } from "./types.js";
 
 // ─── V1 Compatibility Types ──────────────────────────────────────────────────
@@ -311,6 +314,13 @@ export function mergeOrchestrationIntoMemory(
   const snapshot = snapshotMemory(orchMemory);
   const ts = now ?? new Date().toISOString();
 
+  // Collect node-level evidence from the graph (evidence lives on nodes, not in
+  // shared memory). Previously this merge silently appended an empty array, so
+  // orchestration evidence never reached persisted memory (H2).
+  const graphEvidence: Evidence[] = graph
+    ? Array.from(graph.nodes.values()).flatMap((node) => node.evidence ?? [])
+    : [];
+
   return {
     ...execMemory,
     updatedAt: ts,
@@ -318,26 +328,62 @@ export function mergeOrchestrationIntoMemory(
     facts: deduplicateByKey(execMemory.facts, snapshot.facts, "key"),
     decisions: [...execMemory.decisions, ...snapshot.decisions.filter((d) => !execMemory.decisions.some((ed) => ed.id === d.id))],
     artifacts: deduplicateByKey([...execMemory.artifacts, ...snapshot.artifacts], [], "path"),
-    evidence: [...execMemory.evidence, ...snapshot.facts.length > 0 ? [] : []], // Evidence comes from nodes, not memory
+    evidence: deduplicateByKey([...execMemory.evidence, ...graphEvidence], [], "id"),
+    orchestration: {
+      constraints: snapshot.constraints,
+      signals: snapshot.signals.filter((s) => !s.consumed),
+    },
   };
 }
 
 /**
- * Restore orchestration memory from execution memory.
+ * Maximum age for a persisted graph to be eligible for restoration.
+ * Re-exported from the shared staleness authority so v1 and v2 share one TTL.
  */
-export function restoreOrchestrationFromMemory(execMemory: ExecutionMemoryV2): { memory: OrchestrationMemory; graph?: TaskGraph } {
+const GRAPH_RESTORE_TTL_MS = STALE_TTL_MS;
+
+/**
+ * Determine whether a persisted graph snapshot is safe to restore.
+ *
+ * Delegates to the shared staleness authority (single source of truth shared
+ * with the v1 activeWorkflow path) so "stale" can never drift between the two
+ * memory systems — the structural root cause of the C1/C2 leakage bugs.
+ */
+export function shouldRestoreGraph(graph: TaskGraphSnapshot | undefined, now: number): boolean {
+  return shouldRestorePersistedGraph(graph, now, GRAPH_RESTORE_TTL_MS);
+}
+
+/**
+ * Restore orchestration memory from execution memory.
+ *
+ * Constraints and signals are restored from the persisted graph metadata when
+ * present so user constraints survive across sessions (see H5). A stale or
+ * terminal graph is dropped rather than restored (see C1).
+ */
+export function restoreOrchestrationFromMemory(execMemory: ExecutionMemoryV2, now?: string): { memory: OrchestrationMemory; graph?: TaskGraph } {
+  const nowMs = Date.parse(now ?? new Date().toISOString());
+  const persisted = isRecord(execMemory.orchestration) ? execMemory.orchestration : undefined;
+  const constraints = Array.isArray(persisted?.constraints) ? (persisted!.constraints as OrchestrationMemorySnapshot["constraints"]) : [];
+  const signals = Array.isArray(persisted?.signals) ? (persisted!.signals as OrchestrationMemorySnapshot["signals"]) : [];
+
   const memory = restoreMemory({
     facts: execMemory.facts,
     decisions: execMemory.decisions,
-    constraints: [],
+    constraints,
     artifacts: execMemory.artifacts,
-    signals: [],
+    signals,
     createdAt: execMemory.updatedAt,
     updatedAt: execMemory.updatedAt,
   });
 
-  const graph = execMemory.graph ? restoreGraph(execMemory.graph) : undefined;
+  const graph = shouldRestoreGraph(execMemory.graph, Number.isNaN(nowMs) ? Date.now() : nowMs)
+    ? restoreGraph(execMemory.graph!)
+    : undefined;
   return { memory, graph };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 // ─── Skill Cache ──────────────────────────────────────────────────────────────

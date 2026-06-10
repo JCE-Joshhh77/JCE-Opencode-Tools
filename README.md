@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions/workflows/ci.yml/badge.svg)](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.5.4-green)]()
+[![Version](https://img.shields.io/badge/Version-3.5.5-green)]()
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen)]()
 
 **Install once. Get structured agents, workflows, orchestration, MCP tools, LSP config, and safer updates.**
@@ -83,7 +83,7 @@ opencode-jce doctor
 - JCE OpenCode plugin agents
 - JCE-Worker orchestration workflow with planning, delegation, review, and verification gates
 - 42 AI agent definitions for global routing and task specialization
-- 64 skill/workflow files, including native Android Gradle/testing/release/Compose/security skills
+- 74 skill/workflow files, including native Android Gradle/testing/release/Compose/security skills
 - 19 model profiles
 - 6 MCP tools
 - 28 LSP server configs
@@ -165,6 +165,25 @@ OpenCode JCE now includes a native Android specialist workflow:
 
 For one authorized device/emulator, `android_logcat` selects it automatically. Pass `packageName` for cleaner app-focused diagnostics.
 
+### Skill Routing Engine
+
+Skill selection is data-driven and explainable. A single skill registry feeds a weighted scoring engine that ranks candidate skills using intent, keyword signals, file hints, agent preference, telemetry history, and negative routing rules.
+
+- Weighted scoring with per-skill contribution traces instead of fixed ordering.
+- Negative routing suppresses common false positives (visual design vs API design, Go `interface` vs frontend, auth-heavy prompts vs generic security).
+- Multi-skill bundles keep recurring task families consistent (Android build, delegation review, UI polish, API contract, release prep).
+- Low-confidence prompts fall back to one core plus one safest domain skill.
+- User corrections ("jangan load X", "pakai Y", "harusnya researcher bukan oracle") adjust routing for the session.
+- Local non-PII telemetry ranks useful, noisy, and over-selected skills and feeds the ranking back into future routing.
+
+Inspect routing decisions from the CLI:
+
+```bash
+opencode-jce skills explain "Fix Android Gradle duplicate class in build.gradle.kts"
+opencode-jce skills doctor
+opencode-jce analytics --json
+```
+
 ### Token Savings Sidebar
 
 OpenCode JCE also registers a TUI-only sidebar widget that displays estimated token savings from context-budget compression and delegated work. The widget is installed through `tui.json` and is separate from the main server plugin.
@@ -185,6 +204,9 @@ opencode-jce plugin configure
 opencode-jce jce-worker status
 opencode-jce jce-worker report
 opencode-jce jce-worker trace
+opencode-jce skills explain "<prompt>"
+opencode-jce skills doctor
+opencode-jce analytics --json
 ```
 
 Useful checks:

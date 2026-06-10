@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { determineSkillsForMessage } from "../../src/plugin/lib/skill-loader.ts";
+import { applySkillCorrection, determineSkillsForMessage, explainSkillsForMessage, getSubAgentSkillProfile, matchSkillBundles, parseSkillCorrection, SKILL_REGISTRY, SKILL_NAME_TO_FILE } from "../../src/plugin/lib/skill-loader.ts";
 
 describe("plugin skill loader", () => {
   test("routes native Android requests to Android Kotlin skill", () => {
@@ -21,7 +21,7 @@ describe("plugin skill loader", () => {
   test("prioritizes Android release and Gradle skills for release shrinker failures", () => {
     const skills = determineSkillsForMessage("Fix Android bundleRelease R8 missing class in app/build.gradle.kts with ProGuard rules");
     expect(skills).toEqual(expect.arrayContaining(["software-engineering", "android-kotlin", "android-release", "android-gradle"]));
-    expect(skills.indexOf("android-kotlin")).toBeLessThan(skills.indexOf("android-release"));
+    expect(skills[0]).toBe("android-gradle");
   });
 
   test("routes Compose prompts to Android Compose skill", () => {
@@ -71,5 +71,82 @@ describe("plugin skill loader", () => {
     expect(skills).toContain("human-ui-design");
     expect(skills).toContain("ui-pattern-library");
     expect(skills).toContain("visual-qa-rubric");
+  });
+
+  test("explains selected and rejected skill routing decisions", () => {
+    const explanation = explainSkillsForMessage("Fix Android Gradle duplicate class in build.gradle.kts with tests and frontend copy mention");
+    expect(explanation.selected).toEqual(expect.arrayContaining([
+      expect.objectContaining({ skill: "software-engineering", reason: expect.stringContaining("intent:35") }),
+      expect.objectContaining({ skill: "android-gradle", reason: expect.stringContaining("regex:24") }),
+    ]));
+    expect(explanation.rejected.some((item) => item.reason.includes("max 4") || item.reason.includes("lower weighted score"))).toBe(true);
+  });
+
+  test("uses per-agent skill profiles for sub-agent injection", () => {
+    expect(getSubAgentSkillProfile("android", "Fix duplicate class in app/build.gradle.kts")).toEqual(expect.arrayContaining(["android-kotlin", "android-gradle"]));
+    expect(getSubAgentSkillProfile("oracle", "Review architecture and verification for auth API")).toEqual(expect.arrayContaining(["architecture", "verification-discipline"]));
+    expect(getSubAgentSkillProfile("frontend", "Review dashboard screenshot visual QA for React frontend")).toEqual(expect.arrayContaining(["human-ui-design", "visual-qa-rubric", "ui-pattern-library"]));
+    expect(getSubAgentSkillProfile("jce-researcher", "Research token optimization and context handoff docs")).toEqual(expect.arrayContaining(["codebase-intelligence", "grill-with-docs", "ai-optimization"]));
+    expect(getSubAgentSkillProfile("jce-researcher", "Research official Android Gradle docs")).not.toContain("software-engineering");
+  });
+
+  test("routes previously orphaned skills from explicit prompts", () => {
+    expect(determineSkillsForMessage("Refactor with SOLID and feature flag performance engineering patterns")).toContain("advanced-patterns");
+    expect(determineSkillsForMessage("Optimize token usage, prompt efficiency, and model selection for lower latency")).toContain("ai-optimization");
+    expect(determineSkillsForMessage("Update .opencode-context.md handoff and session summary for next session continuity")).toContain("context-preservation");
+    expect(determineSkillsForMessage("Improve sub-agent delegation and dispatch review delegated work quality")).toContain("delegation-quality");
+    expect(determineSkillsForMessage("Fix ESLint, Prettier, tsconfig, and LSP formatter tooling drift")).toContain("developer-tooling");
+  });
+
+  test("registry covers all real skills with routing metadata", () => {
+    const concreteSkills = Object.keys(SKILL_NAME_TO_FILE).filter((name) => !name.startsWith("systematic-") && !name.startsWith("test-driven-") && !["brainstorming", "writing-plans", "verification-before-completion", "finishing-a-development-branch", "requesting-code-review", "dispatching-parallel-agents"].includes(name));
+    expect(Object.keys(SKILL_REGISTRY).sort()).toEqual(concreteSkills.sort());
+    for (const [skill, entry] of Object.entries(SKILL_REGISTRY)) {
+      expect(entry.routingMode).toBeDefined();
+      expect(entry.intents.length).toBeGreaterThan(0);
+      expect(entry.samplePrompts.length).toBeGreaterThan(0);
+      expect(entry.preferredAgents).toBeDefined();
+    }
+  });
+
+  test("negative routing blocks api-design-patterns for visual design wording", () => {
+    const explanation = explainSkillsForMessage("Buat visual dashboard UI dengan Figma-like polish dan responsive cards for frontend admin");
+    expect(explanation.selected.map((item) => item.skill)).toContain("human-ui-design");
+    expect(explanation.selected.map((item) => item.skill)).not.toContain("api-design-patterns");
+  });
+
+  test("negative routing keeps security below auth-identity on auth-heavy prompts", () => {
+    const explanation = explainSkillsForMessage("Implement OAuth JWT login with RBAC auth flow and session policy");
+    expect(explanation.selected.map((item) => item.skill)).toContain("auth-identity");
+    expect(explanation.selected.map((item) => item.skill)).not.toContain("security");
+  });
+
+  test("parses explicit user corrections for skills and agents", () => {
+    const correction = parseSkillCorrection("jangan load frontend, pakai react, harusnya researcher bukan oracle");
+    expect(correction).toEqual(expect.objectContaining({
+      forbid: expect.arrayContaining(["frontend"]),
+      prefer: expect.arrayContaining(["react"]),
+      agent: "jce-researcher",
+    }));
+  });
+
+  test("applies session correction override to skill list", () => {
+    const corrected = applySkillCorrection(["frontend", "react", "software-engineering"], {
+      forbid: ["frontend"],
+      prefer: ["react"],
+      reason: "pakai react",
+    });
+    expect(corrected).toEqual(["react", "software-engineering"]);
+  });
+
+  test("multi-skill bundles fire for known task families", () => {
+    const androidBundles = matchSkillBundles("Fix Android build.gradle duplicate class issue");
+    expect(androidBundles.map((b) => b.id)).toContain("android-build-bug");
+
+    const uiBundles = matchSkillBundles("UI polish and design review for dashboard");
+    expect(uiBundles.map((b) => b.id)).toContain("ui-polish");
+
+    const releaseBundles = matchSkillBundles("Prepare release changelog and tag release");
+    expect(releaseBundles.map((b) => b.id)).toContain("release-prep");
   });
 });

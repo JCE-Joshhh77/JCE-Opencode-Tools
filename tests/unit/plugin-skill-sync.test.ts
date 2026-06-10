@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { checkSkillSync, formatSkillSync } from "../../src/plugin/lib/skill-sync.ts";
+import { auditSkillRegistryHealth, auditSkillStartup, checkSkillSync, formatRegistryHealth, formatSkillStartupAudit, formatSkillSync, parseSkillFrontmatter } from "../../src/plugin/lib/skill-sync.ts";
 
 describe("skill sync", () => {
   test("detects skills missing from user config", () => {
@@ -24,5 +24,39 @@ describe("skill sync", () => {
       rmSync(root, { recursive: true, force: true });
       rmSync(user, { recursive: true, force: true });
     }
+  });
+
+  test("audits startup skill routing for mapping, duplicates, unused folders, and docs count", () => {
+    const result = auditSkillStartup(process.cwd());
+    expect(result.ok).toBe(true);
+    expect(result.skillFolders).toBeGreaterThanOrEqual(70);
+    expect(result.mappings).toBeGreaterThanOrEqual(result.skillFolders);
+    expect(result.missingMappedFiles).toEqual([]);
+    expect(result.unmappedSkillFolders).toEqual([]);
+    expect(result.docCountMismatches).toEqual([]);
+    expect(result.autoReachableSkills).toHaveLength(result.skillFolders);
+    expect(result.notAutoReachableSkills).toEqual([]);
+    expect(formatSkillStartupAudit(result)).toContain("Status: pass");
+    expect(formatSkillStartupAudit(result)).toContain(`Auto-reachable skills: ${result.skillFolders}/${result.skillFolders}`);
+  });
+
+  test("registry health passes CI gate: no count drift, metadata gaps, or frontmatter drift", () => {
+    const report = auditSkillRegistryHealth(process.cwd());
+    expect(report.missingSamplePrompts).toEqual([]);
+    expect(report.missingRoutingMode).toEqual([]);
+    expect(report.missingIntents).toEqual([]);
+    expect(report.frontmatterDrift).toEqual([]);
+    expect(report.registryCount).toBeGreaterThanOrEqual(70);
+    expect(report.ok).toBe(true);
+    expect(formatRegistryHealth(report)).toContain("Status: pass");
+  });
+
+  test("parses machine-readable routing frontmatter (inline and block lists)", () => {
+    const inline = parseSkillFrontmatter("---\nname: demo\nroutingMode: auto\nintents: [bugfix, config]\n---\n");
+    expect(inline?.routingMode).toBe("auto");
+    expect(inline?.intents).toEqual(["bugfix", "config"]);
+
+    const block = parseSkillFrontmatter("---\nname: demo\nsignals:\n  - eslint\n  - prettier\n---\n");
+    expect(block?.signals).toEqual(["eslint", "prettier"]);
   });
 });

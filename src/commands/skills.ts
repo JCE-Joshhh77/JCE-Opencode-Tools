@@ -1,10 +1,44 @@
 import { Command } from "commander";
 import { join } from "path";
-import { auditSkills, hardenSkillDescriptions, resolveSkillConflicts, resolveSkillConflictsV2 } from "../plugin/lib/jce-intelligence.js";
+import { auditSkills, buildSkillDoctorReport, hardenSkillDescriptions, resolveSkillConflicts, resolveSkillConflictsV2 } from "../plugin/lib/jce-intelligence.js";
+import { explainSkillRouting } from "../plugin/lib/skill-loader.js";
 import { heading, info, success, warn } from "../lib/ui.js";
 
 export const skillsCommand = new Command("skills")
   .description("Audit and resolve JCE skill routing")
+  .addCommand(new Command("explain")
+    .description("Explain weighted routing for a prompt")
+    .argument("prompt", "Prompt text to analyze")
+    .option("--agent <name>", "Optional sub-agent profile context")
+    .option("--json", "Print JSON")
+    .action((prompt, options) => {
+      const report = explainSkillRouting(String(prompt), options.agent);
+      if (options.json) { console.log(JSON.stringify(report, null, 2)); return; }
+      heading("Skill Routing Explain");
+      info(`Intent: ${report.intent}`);
+      info(`Confidence: ${report.confidence}`);
+      success(`Selected: ${report.selected.map((item) => item.skill).join(", ") || "none"}`);
+      console.log("Candidates:");
+      for (const candidate of report.candidates.slice(0, 10)) console.log(`  - ${candidate.skill}: ${candidate.total} :: ${candidate.contributions.map((item) => `${item.source}=${item.score}`).join(", ")}`);
+      if (report.rejected.length) {
+        console.log("Rejected:");
+        for (const item of report.rejected.slice(0, 10)) warn(`${item.skill}: ${item.reason}`);
+      }
+    }))
+  .addCommand(new Command("doctor")
+    .description("Check registry metadata health for routing")
+    .option("--json", "Print JSON")
+    .action((options) => {
+      const report = buildSkillDoctorReport();
+      if (options.json) { console.log(JSON.stringify(report, null, 2)); return; }
+      heading("Skill Routing Doctor");
+      info(`Total skills: ${report.totalSkills}`);
+      info(`Missing metadata: ${report.missingMetadata.length || 0}`);
+      info(`Weak prompts: ${report.weakPrompts.length || 0}`);
+      info(`Manual/internal routes: ${report.manualOnly.join(", ") || "none"}`);
+      if (report.missingMetadata.length) for (const skill of report.missingMetadata) warn(`Missing metadata: ${skill}`);
+      if (report.weakPrompts.length) for (const skill of report.weakPrompts) warn(`Weak sample prompt: ${skill}`);
+    }))
   .addCommand(new Command("audit")
     .description("Score installed repository skills for routing quality")
     .option("--json", "Print JSON")

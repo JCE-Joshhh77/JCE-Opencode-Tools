@@ -18,14 +18,14 @@ interface KeywordRule {
 }
 
 const KEYWORD_RULES: KeywordRule[] = [
-  { intent: "bugfix", keywords: ["bug", "fix", "error", "crash", "debug", "broken", "failing", "regression", "issue", "problem"], multiWord: ["failing test", "failed test", "stack trace", "not working", "doesn't work"], weight: 1.0 },
+  { intent: "bugfix", keywords: ["bug", "fix", "error", "crash", "debug", "broken", "failing", "regression"], multiWord: ["failing test", "failed test", "stack trace", "not working", "doesn't work"], weight: 1.0 },
   { intent: "feature", keywords: ["add", "implement", "feature", "build", "create", "new", "introduce", "support"], multiWord: ["add support", "new feature", "implement the"], weight: 0.9 },
   { intent: "refactor", keywords: ["refactor", "restructure", "reorganize", "clean", "simplify", "extract", "inline", "rename"], multiWord: ["clean up", "code smell", "technical debt"], weight: 1.0 },
-  { intent: "review", keywords: ["review", "audit", "check", "inspect", "evaluate", "assess"], multiWord: ["code review", "check this", "look at this"], weight: 0.9 },
+  { intent: "review", keywords: ["review", "audit", "inspect", "evaluate", "assess"], multiWord: ["code review", "check this", "look at this", "cari kekurangan", "find issues", "find problems"], weight: 1.1 },
   { intent: "release", keywords: ["release", "version", "tag", "publish", "deploy", "changelog"], multiWord: ["bump version", "prepare release", "cut release"], weight: 1.0 },
-  { intent: "research", keywords: ["research", "investigate", "explore", "understand", "learn", "compare", "evaluate"], multiWord: ["how does", "what is", "best practice", "pros and cons"], weight: 0.8 },
+  { intent: "research", keywords: ["research", "investigate", "explore", "understand", "learn", "compare"], multiWord: ["how does", "what is", "best practice", "pros and cons"], weight: 0.8 },
   { intent: "config", keywords: ["config", "configure", "setup", "settings", "environment", "env"], multiWord: ["set up", "configuration file"], weight: 0.9 },
-  { intent: "docs", keywords: ["document", "documentation", "readme", "explain", "describe", "comment"], multiWord: ["write docs", "add documentation", "update readme"], weight: 0.9 },
+  { intent: "docs", keywords: ["document", "documentation", "readme", "describe", "comment"], multiWord: ["write docs", "add documentation", "update readme"], weight: 0.9 },
 ];
 
 interface FileExtensionRule {
@@ -87,6 +87,11 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
   { patterns: [/\bwebsocket\b/i, /\bsse\b/i, /\bcrdt\b/i, /\brealtime\b/i], skills: ["realtime-systems"] },
   { patterns: [/\bsolidity\b/i, /\bweb3\b/i, /\bsmart\s*contract\b/i], skills: ["blockchain-web3"] },
   { patterns: [/\brag\b/i, /\bembedding/i, /\bvector\s*db\b/i, /\bllm\b/i], skills: ["ai-llm-engineering"] },
+  { patterns: [/\bsolid\b/i, /\b12-factor\b/i, /\bfeature\s*flag\b/i, /\bperformance\s*engineering\b/i, /\bmaintainability\b/i, /\bscalability\s*pattern\b/i], skills: ["advanced-patterns"] },
+  { patterns: [/\btoken\b/i, /\bcontext\s*window\b/i, /\bprompt\s*efficiency\b/i, /\bmodel\s*selection\b/i, /\bcost\s*optimization\b/i, /\blatency\s*optimization\b/i], skills: ["ai-optimization"] },
+  { patterns: [/\.opencode-context\.md/i, /\bhandoff\b/i, /\bsession\s*summary\b/i, /\bcontinuity\b/i, /\bnext\s*session\b/i], skills: ["context-preservation"] },
+  { patterns: [/\bdelegate\b/i, /\bdelegation\b/i, /\bsub-agent\b/i, /\bparallel\s*agent\b/i, /\breview\s*delegated\s*work\b/i], skills: ["delegation-quality"] },
+  { patterns: [/\beslint\b/i, /\bprettier\b/i, /\blint\b/i, /\bformatter\b/i, /\btsconfig\b/i, /\blsp\b/i, /\bcodegen\b/i, /\blanguage\s*server\b/i], skills: ["developer-tooling"] },
 ];
 
 // ─── Intent Scoring ───────────────────────────────────────────────────────────
@@ -258,13 +263,12 @@ function resolveSkills(intent: IntentType, message: string, context: RouterConte
     skills.add(skill);
   }
 
-  // Framework-based skills
+  // Framework-based skills (allow multiple frameworks; final cap applies below)
   for (const rule of FRAMEWORK_RULES) {
     if (rule.patterns.some((p) => p.test(message))) {
       for (const skill of rule.skills) {
         skills.add(skill);
       }
-      break; // Only match first framework
     }
   }
 

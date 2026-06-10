@@ -24,7 +24,7 @@ import { buildWorkflowTool } from "./tools/workflow.js";
 import { buildAndroidLogcatTool } from "./tools/android-logcat.js";
 import { createWorkflowRun } from "./lib/workflow.js";
 import { isRecord } from "./lib/shared-predicates.js";
-import { determineSkillsForMessage, resolveSkills } from "./lib/skill-loader.js";
+import { determineSkillsForMessage, explainSkillRouting, parseSkillCorrection, applySkillCorrection, applySkillHistoryAdjustments, applySubAgentTelemetryQuality, resolveSkills, type SkillCorrection } from "./lib/skill-loader.js";
 import { applyContextBudget } from "./lib/context-budget.js";
 import { POST_COMPACTION_NO_TASK_GUARD, shouldSuppressCompactionAutocontinue } from "./lib/compaction-loop-guard.js";
 import { scoreIntent, toLegacyRoute } from "./lib/orchestration/intent-router.js";
@@ -32,7 +32,8 @@ import type { ScoredIntent } from "./lib/orchestration/types.js";
 import type { AgentRole } from "./lib/orchestration/types.js";
 import { OrchestrationController } from "./lib/orchestration/controller.js";
 import { OrchestrationBridge } from "./lib/orchestration/bridge.js";
-import { appendEvidence, summarizeCommandEvidence } from "./lib/jce-intelligence.js";
+import { shouldDropPersistedWorkflow } from "./lib/orchestration/staleness.js";
+import { appendEvidence, appendTelemetry, loadTelemetry, summarizeCommandEvidence, summarizeRoutingQuality } from "./lib/jce-intelligence.js";
 import {
   withErrorBoundary,
   withAsyncErrorBoundary,
@@ -95,16 +96,24 @@ function buildChineseTranslator(client: any): ChineseTranslator | undefined {
   };
 }
 
+// NOTE: the `tool` argument to these helpers MUST already be normalized to
+// lowercase via normalizeToolName(). Normalization happens once at the hook
+// boundary (tool.execute.after) so tool-name casing can never drift again (L1).
 function shouldTranslateToolOutput(tool: string): boolean {
-  return tool === "Task" || tool === "bg_collect" || tool === "jce_workflow";
+  return tool === "task" || tool === "bg_collect" || tool === "jce_workflow";
 }
 
 function shouldInspectCompletionOutput(tool: string): boolean {
-  return !["Read", "Grep", "Glob", "LS", "Bash", "TodoWrite", "dispatch", "bg_status", "bg_collect"].includes(tool);
+  return !["read", "grep", "glob", "ls", "bash", "todowrite", "dispatch", "bg_status", "bg_collect"].includes(tool);
 }
 
 function shouldApplyDirectContextBudget(tool: string): boolean {
-  return ["Read", "Grep", "Glob", "LS", "Bash"].includes(tool);
+  return ["read", "grep", "glob", "ls", "bash"].includes(tool);
+}
+
+/** Single source of truth for tool-name normalization. */
+function normalizeToolName(tool: unknown): string {
+  return typeof tool === "string" ? tool.toLowerCase() : "";
 }
 
 function ensureProjectContextFile(projectRoot: string): boolean {
@@ -119,8 +128,8 @@ function ensureProjectContextFile(projectRoot: string): boolean {
  * Lightweight heuristic extraction — not exhaustive, just high-value signals.
  */
 function extractFactsFromToolOutput(orchestrator: OrchestrationController, tool: string, output: string): void {
-  // Only extract from informational tools
-  if (!["Bash", "Read", "Grep", "Task", "bg_collect"].includes(tool)) return;
+  // Only extract from informational tools (tool is pre-normalized to lowercase)
+  if (!["bash", "read", "grep", "task", "bg_collect"].includes(tool)) return;
   if (output.length < 20 || output.length > 10000) return;
 
   // Detect test framework from output
@@ -154,9 +163,31 @@ const jcePlugin: Plugin = async (input) => {
   let projectContextEnsured = false;
   const loadedMemory = loadExecutionMemory(projectRoot);
   let currentMemory = loadedMemory.memory;
+  // Drop a stale/terminal persisted activeWorkflow at load using the SAME
+  // staleness authority the v2 graph uses (C1/C2 root cause: month-old workflow
+  // with no active tasks resurrecting and forcing bogus gates). The active-task
+  // gate preserves genuinely in-progress runtime sessions.
+  if (currentMemory.activeWorkflow && shouldDropPersistedWorkflow(
+    {
+      status: currentMemory.activeWorkflow.status,
+      updatedAt: currentMemory.activeWorkflow.updatedAt,
+      hasActiveTasks: currentMemory.activeTasks.length > 0,
+    },
+    Date.now(),
+  )) {
+    currentMemory = { ...currentMemory, activeWorkflow: undefined };
+  }
   let lastUserMessage = "";
   let workflowRuntimeActive = currentMemory.activeTasks.length > 0;
   let lastTodoState: TodoState | undefined;
+  let sessionSkillCorrection: SkillCorrection | null = currentMemory.skillCorrectionSession
+    ? {
+        forbid: currentMemory.skillCorrectionSession.forbidSkills,
+        prefer: currentMemory.skillCorrectionSession.preferSkills,
+        agent: currentMemory.skillCorrectionSession.agentOverride,
+        reason: "restored from session memory",
+      }
+    : null;
 
   // Initialize orchestration controller (v2 system — runs alongside BackgroundManager)
   const orchestrator = new OrchestrationController({ projectRoot });
@@ -177,6 +208,24 @@ const jcePlugin: Plugin = async (input) => {
       blockers: [],
     }, undefined, { preserveWorkflowRuntime: false }).memory;
   }
+
+  const refreshSkillRoutingBias = () => {
+    withErrorBoundary(() => {
+      const events = loadTelemetry(projectRoot);
+      const quality = summarizeRoutingQuality(events);
+      const history: Record<string, number> = {};
+      for (const item of quality.usefulSkills) history[item.skill] = Math.min(15, Math.round(item.score / 2));
+      for (const item of quality.noisySkills) history[item.skill] = (history[item.skill] ?? 0) - Math.min(20, item.score * 2);
+      const bias: Record<string, number> = {};
+      if (sessionSkillCorrection) {
+        for (const skill of sessionSkillCorrection.prefer) bias[skill] = 30;
+        for (const skill of sessionSkillCorrection.forbid) bias[skill] = -60;
+      }
+      applySkillHistoryAdjustments(history, bias);
+      applySubAgentTelemetryQuality(quality);
+    }, undefined, orchestrationLogger);
+  };
+  refreshSkillRoutingBias();
 
   const persistCurrentMemory = () => {
     withErrorBoundary(() => {
@@ -246,11 +295,15 @@ const jcePlugin: Plugin = async (input) => {
     });
   };
 
-  const ensureActiveWorkflow = (text: string, source: WorkflowIntentRouteSource) => {
+  const ensureActiveWorkflow = (text: string, source: WorkflowIntentRouteSource, goalSeed?: string) => {
     if (currentMemory.activeWorkflow || !text.trim()) return;
-    const route = routeJceWorkerIntent(text);
+    // Seed the workflow goal AND route from the real user message when
+    // available, never from tool output / injected skill content / gate text (C2).
+    const seed = (goalSeed ?? lastUserMessage ?? "").trim();
+    const route = routeJceWorkerIntent(seed || text);
+    const goal = (seed || "JCE worker session").slice(0, 240);
     currentMemory.activeWorkflow = applyWorkflowIntentRoute(
-      createWorkflowRun({ id: `workflow-${Date.now()}`, goal: text.trim().slice(0, 240) || "JCE worker session" }),
+      createWorkflowRun({ id: `workflow-${Date.now()}`, goal }),
       { ...route, source },
     );
     workflowRuntimeActive = true;
@@ -329,6 +382,12 @@ const jcePlugin: Plugin = async (input) => {
           }, undefined, orchestrationLogger);
         }
         if (policy.status === "warn") return { status: "warn", message: formatExecutionPolicyDecision(policy) };
+      }, (agent, text) => {
+        const correction = sessionSkillCorrection ?? undefined;
+        if (!correction?.agent) return undefined;
+        if (!isJceWorkerAgentHint(correction.agent)) return undefined;
+        if (correction.agent === agent) return undefined;
+        return { agent: correction.agent, reason: correction.reason ?? "user correction" };
       }),
       bg_status: buildStatusTool(manager, () => {
         const statusReport = withErrorBoundary(() => orchestrator.formatStatusReport(), "", orchestrationLogger);
@@ -371,6 +430,41 @@ const jcePlugin: Plugin = async (input) => {
       const text = typeof msg === "string" ? msg : output.parts?.filter((p: any) => p.type === "text").map((p: any) => p.text).join(" ") || "";
       if (typeof text === "string" && text.trim()) {
         lastUserMessage = text;
+        const correction = parseSkillCorrection(text);
+        if (correction) {
+          sessionSkillCorrection = correction;
+          currentMemory.skillCorrectionSession = {
+            forbidSkills: correction.forbid,
+            preferSkills: correction.prefer,
+            agentOverride: correction.agent,
+            updatedAt: new Date().toISOString(),
+          };
+          withErrorBoundary(() => {
+            currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: true }).memory;
+          }, undefined, orchestrationLogger);
+          refreshSkillRoutingBias();
+          withErrorBoundary(() => {
+            for (const skill of correction.forbid) appendTelemetry(projectRoot, { kind: "user_correction", name: skill, metadata: { skill, action: "forbid", reason: correction.reason, agent: correction.agent } });
+            for (const skill of correction.prefer) appendTelemetry(projectRoot, { kind: "user_correction", name: skill, metadata: { skill, action: "prefer", reason: correction.reason, agent: correction.agent } });
+            if (correction.agent) appendTelemetry(projectRoot, { kind: "user_correction", name: correction.agent, metadata: { agent: correction.agent, action: "agent_override", reason: correction.reason } });
+          }, undefined, orchestrationLogger);
+        }
+        withErrorBoundary(() => {
+          const routing = explainSkillRouting(text);
+          appendTelemetry(projectRoot, {
+            kind: "routing_decision",
+            name: routing.intent,
+            metadata: {
+              intent: routing.intent,
+              selectedSkills: routing.selected.map((item) => item.skill),
+              suppressedSkills: routing.rejected.map((item) => item.skill),
+              confidence: routing.confidence,
+            },
+          });
+          for (const skill of routing.selected.map((item) => item.skill)) {
+            appendTelemetry(projectRoot, { kind: "skill_selected", name: skill, metadata: { skill, intent: routing.intent } });
+          }
+        }, undefined, orchestrationLogger);
         // Route intent through orchestration controller (v2) — with error boundary
         withErrorBoundary(() => orchestrator.routeIntent(text), undefined, orchestrationLogger);
 
@@ -420,10 +514,13 @@ const jcePlugin: Plugin = async (input) => {
     "experimental.chat.system.transform": async (_input, output) => {
       output.system.push(POST_COMPACTION_NO_TASK_GUARD);
       if (!lastUserMessage) return;
-      const skillNames = determineSkillsForMessage(lastUserMessage);
+      const skillNames = applySkillCorrection(determineSkillsForMessage(lastUserMessage), sessionSkillCorrection);
       if (skillNames.length === 0) return;
       const skillContents = await resolveSkills(skillNames);
       if (skillContents.length > 0) {
+        withErrorBoundary(() => {
+          for (const skill of skillNames) appendTelemetry(projectRoot, { kind: "skill_final_used", name: skill, metadata: { skill, source: "system_injection" } });
+        }, undefined, orchestrationLogger);
         output.system.push("\n\n<!-- JCE Skills (auto-injected based on task context) -->\n" + skillContents.join("\n\n"));
       }
     },
@@ -441,23 +538,49 @@ const jcePlugin: Plugin = async (input) => {
       }
     },
 
+    // #3: Gate the FINAL assistant text — the real surface where a "done" claim
+    // is asserted (tool-output gating in tool.execute.after misses plain final
+    // answers). The OpenCode SDK exposes no pre-generation cancel hook, so this
+    // post-text hook is the earliest correct point to flag an unverified
+    // completion claim. It only appends a warning (cannot block generation).
+    "experimental.text.complete": async (_input, output) => {
+      if (!output || typeof output.text !== "string" || !output.text.trim()) return;
+      const text = output.text;
+      if (text.includes("VERIFICATION CHECK") || text.includes("FINAL REVIEW GATE")) return;
+      withErrorBoundary(() => {
+        if (!shouldWarnForMissingVerification(text)) return;
+        // Only enforce when a real workflow is in progress this session, mirroring
+        // the tool.execute.after gate conditions (avoids noise in plain chat).
+        if (!currentMemory.activeWorkflow || !workflowRuntimeActive) return;
+        output.text = `${text}${VERIFICATION_WARNING}`;
+      }, undefined, orchestrationLogger);
+    },
+
+
     "tool.execute.after": async (input, output) => {
+      // Normalize tool name ONCE here; all downstream checks use `toolName`.
+      // Runtime passes lowercase names (e.g. "read", "bash"); never compare
+      // against capitalized literals downstream (root cause of L1).
+      const toolName = normalizeToolName(input.tool);
       const hadActiveWorkflow = Boolean(currentMemory.activeWorkflow);
       const hadWorkflowRuntimeActive = workflowRuntimeActive;
 
       // Extract facts from tool outputs into orchestration memory (with error boundary)
       if (typeof output.output === "string" && output.output.length > 0) {
-        withErrorBoundary(() => extractFactsFromToolOutput(orchestrator, input.tool, output.output as string), undefined, orchestrationLogger);
+        withErrorBoundary(() => extractFactsFromToolOutput(orchestrator, toolName, output.output as string), undefined, orchestrationLogger);
       }
 
       // Record direct tool evidence in orchestration graph (e.g., bun test run directly)
-      if (typeof output.output === "string" && input.tool === "Bash") {
-        withErrorBoundary(() => orchestrator.recordDirectToolEvidence(input.tool, output.output as string), undefined, orchestrationLogger);
+      if (typeof output.output === "string" && toolName === "bash") {
+        withErrorBoundary(() => orchestrator.recordDirectToolEvidence(toolName, output.output as string), undefined, orchestrationLogger);
         const command = typeof input.args?.command === "string" ? input.args.command : typeof input.args?.cmd === "string" ? input.args.cmd : "Bash";
         const evidence = summarizeCommandEvidence(command, output.output as string);
         if (evidence) {
           withErrorBoundary(() => {
             appendEvidence(projectRoot, { ...evidence, workflowId: currentMemory.activeWorkflow?.id });
+            const primarySkill = applySkillCorrection(determineSkillsForMessage(lastUserMessage), sessionSkillCorrection)[0] ?? "unknown";
+            appendTelemetry(projectRoot, { kind: "verification_used", name: evidence.command ?? command, metadata: { command: evidence.command ?? command, status: evidence.status } });
+            appendTelemetry(projectRoot, { kind: "verification_result", name: evidence.command ?? command, metadata: { skill: primarySkill, passed: evidence.status === "pass", command: evidence.command ?? command } });
             currentMemory.verificationEvidence = [...currentMemory.verificationEvidence, { ...evidence, captured: "auto", workflowId: currentMemory.activeWorkflow?.id }].slice(-100);
             currentMemory.traceEvents = [...(currentMemory.traceEvents ?? []), { type: "verification.recorded", message: evidence.summary, at: new Date().toISOString(), metadata: { command } }];
             currentMemory = saveExecutionMemory(projectRoot, currentMemory, undefined, { preserveWorkflowRuntime: true }).memory;
@@ -485,7 +608,7 @@ const jcePlugin: Plugin = async (input) => {
         }, undefined, orchestrationLogger);
       }
 
-      if (input.tool === "Write" || input.tool === "Edit") {
+      if (toolName === "write" || toolName === "edit") {
         const filePath = input.args?.filePath || input.args?.path || "";
         const content = output.output || "";
         if (filePath && content && typeof content === "string") {
@@ -496,21 +619,21 @@ const jcePlugin: Plugin = async (input) => {
         }
       }
 
-      if (typeof output.output === "string" && shouldApplyDirectContextBudget(input.tool)) {
+      if (typeof output.output === "string" && shouldApplyDirectContextBudget(toolName)) {
         const originalOutput = output.output;
         const budget = applyContextBudget(originalOutput, { level: "aggressive" });
         if (budget.changed || budget.estimatedTokensSaved > 0) {
           output.output = budget.text;
-          recordDirectContextBudget(input.tool, originalOutput, budget.text, budget);
+          recordDirectContextBudget(toolName, originalOutput, budget.text, budget);
         }
       }
 
-      if (typeof output.output === "string" && input.tool === "TodoWrite") {
+      if (typeof output.output === "string" && toolName === "todowrite") {
         lastTodoState = extractTodoState(output.output);
       }
 
       let routeUpdatePolicy: ExecutionPolicyDecision | undefined;
-      if (typeof output.output === "string" && shouldInspectCompletionOutput(input.tool)) {
+      if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName)) {
         ensureActiveWorkflow(output.output, looksLikeCompletionClaim(output.output) ? "completion" : "message");
         const routeSource = looksLikeCompletionClaim(output.output) ? "completion" : "message";
         routeUpdatePolicy = evaluateRouteUpdatePolicy(routeSource, routeJceWorkerIntent(output.output));
@@ -518,11 +641,11 @@ const jcePlugin: Plugin = async (input) => {
       }
 
       const shouldEnforceWorkflowGates = workflowRuntimeActive && (!hadActiveWorkflow || hadWorkflowRuntimeActive);
-      const openWork = typeof output.output === "string" && shouldInspectCompletionOutput(input.tool) && looksLikeStopEarlyOrConfirmation(output.output)
+      const openWork = typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && looksLikeStopEarlyOrConfirmation(output.output)
         ? evaluateOpenWork(currentMemory, currentPolicyProfile(), lastTodoState, { includeWorkflowGate: hadActiveWorkflow || hadWorkflowRuntimeActive })
         : undefined;
 
-      if (typeof output.output === "string" && shouldInspectCompletionOutput(input.tool) && looksLikeCompletionClaim(output.output) && currentMemory.activeWorkflow && (shouldEnforceWorkflowGates || currentMemory.activeWorkflow.route?.intent === "review")) {
+      if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && looksLikeCompletionClaim(output.output) && currentMemory.activeWorkflow && (shouldEnforceWorkflowGates || currentMemory.activeWorkflow.route?.intent === "review")) {
         const executionPolicy = evaluateExecutionPolicy({
           action: "completion_claim",
           profile: currentPolicyProfile(),
@@ -545,20 +668,24 @@ const jcePlugin: Plugin = async (input) => {
         const blockedPolicy = routeUpdatePolicy?.status === "block" ? routeUpdatePolicy : executionPolicy.status === "block" ? executionPolicy : undefined;
         const policyText = blockedPolicy ? `${formatExecutionPolicyDecision(blockedPolicy)}\n\n` : "";
         if (reasons.length > 0) {
+          withErrorBoundary(() => appendTelemetry(projectRoot, { kind: "task_blocked", name: "completion_gate", metadata: { reasons, skills: applySkillCorrection(determineSkillsForMessage(lastUserMessage), sessionSkillCorrection) } }), undefined, orchestrationLogger);
           output.output = `${output.output}\n\n${policyText}FINAL REVIEW GATE: Completion is blocked.\n${Array.from(new Set(reasons)).map((reason) => `- ${reason}`).join("\n")}`;
+        } else {
+          withErrorBoundary(() => appendTelemetry(projectRoot, { kind: "task_outcome", name: "completion", metadata: { outcome: "success", skills: applySkillCorrection(determineSkillsForMessage(lastUserMessage), sessionSkillCorrection), verificationPassed: currentMemory.verificationEvidence.length > 0 } }), undefined, orchestrationLogger);
         }
       }
 
       if (typeof output.output === "string" && openWork?.blocked && !output.output.includes("BOULDER CONTINUATION")) {
+        withErrorBoundary(() => appendTelemetry(projectRoot, { kind: "task_outcome", name: "followup_needed", metadata: { outcome: "followup", skills: applySkillCorrection(determineSkillsForMessage(lastUserMessage), sessionSkillCorrection), blockers: openWork.reasons } }), undefined, orchestrationLogger);
         output.output = `${output.output}\n\n${openWork.prompt}`;
       }
 
-      if (typeof output.output === "string" && shouldInspectCompletionOutput(input.tool) && shouldWarnForMissingVerification(output.output)) {
+      if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && shouldWarnForMissingVerification(output.output)) {
         output.output = `${output.output}${VERIFICATION_WARNING}`;
       }
 
       // Todo enforcer: warn when completion is claimed but todos remain incomplete
-      if (typeof output.output === "string" && shouldInspectCompletionOutput(input.tool) && looksLikeCompletionClaim(output.output) && detectPrematureStop(output.output)) {
+      if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && looksLikeCompletionClaim(output.output) && detectPrematureStop(output.output)) {
         const messages = [{ role: "assistant", content: output.output }];
         if (shouldEnforceContinuation(messages)) {
           output.output = `${output.output}\n\n${CONTINUATION_PROMPT}`;
@@ -566,7 +693,7 @@ const jcePlugin: Plugin = async (input) => {
       }
 
       // Evidence-based completion gating (v2 orchestration system)
-      if (typeof output.output === "string" && shouldInspectCompletionOutput(input.tool) && looksLikeCompletionClaim(output.output) && bridge.hasActivePlan()) {
+      if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && looksLikeCompletionClaim(output.output) && bridge.hasActivePlan()) {
         const gateResult = withErrorBoundary(() => orchestrator.formatCompletionGate(), "", orchestrationLogger);
         if (gateResult) {
           output.output = `${output.output}\n\n${gateResult}`;
@@ -578,7 +705,7 @@ const jcePlugin: Plugin = async (input) => {
       }
 
       // Human escalation: detect when orchestration is stuck and needs user input
-      if (typeof output.output === "string" && shouldInspectCompletionOutput(input.tool) && bridge.hasActivePlan()) {
+      if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && bridge.hasActivePlan()) {
         const escalation = withErrorBoundary(() => orchestrator.formatEscalation(), "", orchestrationLogger);
         if (escalation) {
           output.output = `${output.output}${escalation}`;
@@ -599,7 +726,7 @@ const jcePlugin: Plugin = async (input) => {
         }, undefined, orchestrationLogger);
       }
 
-      if (typeof output.output === "string" && shouldTranslateToolOutput(input.tool)) {
+      if (typeof output.output === "string" && shouldTranslateToolOutput(toolName)) {
         output.output = await filterChineseOutput(output.output, chineseTranslator);
       }
     },

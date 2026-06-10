@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { auditAgents, auditSkills, resolveSkillConflicts, resolveSkillConflictsV2, buildAnalyticsRecommendations, buildCapabilityRegistry, appendEvidence, loadEvidence, summarizeCommandEvidence, summarizeTelemetry, assessJceDoctor, generateAgentsCanonicalMarkdown } from "../../src/plugin/lib/jce-intelligence.ts";
+import { auditAgents, auditSkills, resolveSkillConflicts, resolveSkillConflictsV2, buildAnalyticsRecommendations, buildCapabilityRegistry, buildSkillCapabilityMatrix, appendEvidence, appendTelemetry, loadEvidence, summarizeCommandEvidence, summarizeSkillTelemetry, summarizeTelemetry, assessJceDoctor, generateAgentsCanonicalMarkdown } from "../../src/plugin/lib/jce-intelligence.ts";
 import { buildWebAdvancedFlow } from "../../src/plugin/lib/web/index.ts";
 import { buildApiAdvancedFlow } from "../../src/plugin/lib/api/index.ts";
 import { buildDevopsAdvancedFlow } from "../../src/plugin/lib/devops/index.ts";
@@ -33,6 +33,8 @@ describe("JCE priorities 1-10 intelligence", () => {
     expect(result.selected).toContain("auth-identity");
     expect(result.selected).toContain("api-design-patterns");
     expect(result.suppressed.some((item) => item.skill === "security")).toBe(true);
+    expect(result.trace?.selected.some((item) => item.skill === "api-design-patterns")).toBe(true);
+    expect(result.trace?.rejected.some((item) => item.skill === "security" && item.source === "conflict")).toBe(true);
   });
 
   test("registers priority capabilities", () => {
@@ -58,6 +60,35 @@ describe("JCE priorities 1-10 intelligence", () => {
   test("summarizes telemetry locally", () => {
     const summary = summarizeTelemetry([{ kind: "skill_selected", name: "react", at: "now" }, { kind: "skill_selected", name: "react", at: "now" }]);
     expect(summary["skill_selected:react"]).toBe(2);
+  });
+
+  test("stores skill telemetry and exposes capability matrix", () => {
+    const root = fixture();
+    const event = appendTelemetry(root, { kind: "skill_selected", name: "android-gradle", metadata: { testsPass: true, delegationAccepted: true } });
+    expect(event.name).toBe("android-gradle");
+    const matrix = buildSkillCapabilityMatrix();
+    expect(Object.keys(matrix).length).toBeGreaterThanOrEqual(74);
+    expect(matrix["android-gradle"]?.signals).toContain("duplicate class");
+    expect(matrix["android-gradle"]?.verification).toContain("./gradlew :app:assembleDebug");
+    expect(matrix["write-a-skill"]?.routingMode).toBe("manual_or_keyword");
+    expect(matrix["developer-tooling"]?.files).toContain("tsconfig.json");
+  });
+
+  test("summarizes skill telemetry outcomes", () => {
+    const summary = summarizeSkillTelemetry([
+      { kind: "skill_selected", name: "evt1", at: "now", metadata: { skill: "android-gradle" } },
+      { kind: "skill_final_used", name: "evt2", at: "now", metadata: { skill: "android-gradle" } },
+      { kind: "skill_followup", name: "evt3", at: "now", metadata: { skill: "android-gradle" } },
+      { kind: "delegation_accepted", name: "evt4", at: "now", metadata: { skill: "android-gradle" } },
+      { kind: "verification_result", name: "evt5", at: "now", metadata: { skill: "android-gradle", passed: true } },
+      { kind: "delegation_rejected", name: "evt6", at: "now", metadata: { skill: "react" } },
+    ]);
+    expect(summary.selectedByIntent["android-gradle"]).toBe(1);
+    expect(summary.finalUsed["android-gradle"]).toBe(1);
+    expect(summary.followups["android-gradle"]).toBe(1);
+    expect(summary.acceptedDelegations["android-gradle"]).toBe(1);
+    expect(summary.verificationPassBySkill["android-gradle"]).toBe(1);
+    expect(summary.rejectedDelegations["react"]).toBe(1);
   });
 
   test("builds analytics recommendations from evidence gaps", () => {

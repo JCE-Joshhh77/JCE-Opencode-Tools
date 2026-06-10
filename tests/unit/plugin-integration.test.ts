@@ -58,15 +58,16 @@ describe("plugin integration", () => {
       metadata: {},
     };
 
-    await hooks["tool.execute.after"]!({ tool: "Read", sessionID: "s", callID: "c", args: {} }, output);
+    // Runtime passes lowercase tool names; the hook normalizes internally.
+    await hooks["tool.execute.after"]!({ tool: "read", sessionID: "s", callID: "c", args: {} }, output);
 
     const persisted = loadExecutionMemory(root).memory;
     expect(output.output).toContain("[context-budget: removed 2 duplicate low-value lines]");
     expect(persisted.contextBudgetSummary?.estimatedTokensSaved).toBeGreaterThan(0);
     expect(persisted.contextBudgetSummary?.tasks).toBe(1);
-    expect(persisted.contextBudgetSummary?.byTool?.Read?.tasks).toBe(1);
-    expect(persisted.contextBudgetSummary?.byTool?.Read?.estimatedTokensSaved).toBeGreaterThan(0);
-    expect(persisted.traceEvents.some((event) => event.message === "Context budget applied to Read output")).toBe(true);
+    expect(persisted.contextBudgetSummary?.byTool?.read?.tasks).toBe(1);
+    expect(persisted.contextBudgetSummary?.byTool?.read?.estimatedTokensSaved).toBeGreaterThan(0);
+    expect(persisted.traceEvents.some((event) => event.message === "Context budget applied to read output")).toBe(true);
   });
 
   test("plugin runtime persistence writes orchestration memory v2", async () => {
@@ -319,7 +320,7 @@ describe("plugin integration", () => {
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server(mockInput);
 
-    const input = { tool: "Write", sessionID: "s", callID: "c", args: { filePath: "test.ts" } };
+    const input = { tool: "write", sessionID: "s", callID: "c", args: { filePath: "test.ts" } };
     // 10 lines, 5 are comments = 50% ratio > 40% threshold
     const output = {
       title: "Write",
@@ -334,7 +335,7 @@ describe("plugin integration", () => {
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server(mockInput);
 
-    const input = { tool: "Write", sessionID: "s", callID: "c", args: { filePath: "test.ts" } };
+    const input = { tool: "write", sessionID: "s", callID: "c", args: { filePath: "test.ts" } };
     const output = {
       title: "Write",
       output: "const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\n// one comment",
@@ -348,7 +349,7 @@ describe("plugin integration", () => {
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server(mockInput);
 
-    const input = { tool: "Task", sessionID: "s", callID: "c", args: {} };
+    const input = { tool: "task", sessionID: "s", callID: "c", args: {} };
     const output = {
       title: "Task",
       output: "Implemented the change and it is complete.",
@@ -408,7 +409,7 @@ describe("plugin integration", () => {
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
-    const input = { tool: "Task", sessionID: "s", callID: "c", args: {} };
+    const input = { tool: "task", sessionID: "s", callID: "c", args: {} };
     const output = { title: "Task", output: "Implemented and complete.", metadata: {} };
 
     await hooks["tool.execute.after"]!(input, output);
@@ -430,7 +431,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Here is a neutral progress update.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "fresh-session", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "fresh-session", callID: "c", args: {} }, output);
 
     expect(output.output).not.toContain("EXECUTION POLICY: blocked");
     expect(output.output).not.toContain("FINAL REVIEW GATE");
@@ -442,10 +443,10 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
 
     const todoOutput = { title: "TodoWrite", output: JSON.stringify([{ content: "Run verification", status: "pending" }]), metadata: {} };
-    await hooks["tool.execute.after"]!({ tool: "TodoWrite", sessionID: "s", callID: "todo", args: {} }, todoOutput);
+    await hooks["tool.execute.after"]!({ tool: "todowrite", sessionID: "s", callID: "todo", args: {} }, todoOutput);
 
     const finalOutput = { title: "Task", output: "Sisanya tinggal dikonfirmasi dulu ya.", metadata: {} };
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "final", args: {} }, finalOutput);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "final", args: {} }, finalOutput);
 
     expect(finalOutput.output).toContain("BOULDER CONTINUATION");
     expect(finalOutput.output).toContain("Run verification");
@@ -469,7 +470,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Implemented and complete.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
 
     expect(output.output).toContain("FINAL REVIEW GATE");
     expect(output.output).toContain("Review route requires accepted review evidence");
@@ -490,7 +491,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Finished and complete. Verification: manual review passed.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
 
     expect(output.output).toContain("FINAL REVIEW GATE");
     expect(output.output).toContain("requires source, file, or review evidence for research");
@@ -508,12 +509,47 @@ describe("plugin integration", () => {
 
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root });
-    const input = { tool: "Task", sessionID: "s", callID: "c", args: {} };
+    const input = { tool: "task", sessionID: "s", callID: "c", args: {} };
     const output = { title: "Task", output: "Implemented and complete. Verification: bun test passed.", metadata: {} };
 
     await hooks["tool.execute.after"]!(input, output);
 
     expect(output.output).not.toContain("FINAL REVIEW GATE");
+  });
+
+  test("tool.execute.after does NOT inject gates onto lowercase read/bash output (L1 regression)", async () => {
+    // Regression for L1: runtime passes lowercase tool names. A blocked active
+    // workflow that WOULD inject gates onto inspected tools must never leak
+    // those gates onto read/grep/glob/ls/bash output. The previous code
+    // compared against capitalized "Read"/"Bash" so lowercase names slipped
+    // through and gates spammed every file read.
+    const root = tempRoot();
+    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    let run = createWorkflowRun({ id: "wf-l1", goal: "Blocked workflow", acceptanceCriteria: ["tests pass"] });
+    run = addWorkflowStep(run, { id: "step-1", title: "Implement", taskType: "code", expectedOutput: "code", verification: ["bun test"] });
+    memory.activeWorkflow = updateWorkflowStepStatus(run, "step-1", "completed");
+    memory.activeTasks = [{ id: "bg-live" }];
+    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root });
+    const completionText = "Implemented and complete.";
+
+    for (const tool of ["read", "bash", "grep", "glob", "ls"]) {
+      const output = { title: tool, output: completionText, metadata: {} };
+      await hooks["tool.execute.after"]!({ tool, sessionID: "s", callID: "c", args: {} }, output);
+      expect(output.output).not.toContain("FINAL REVIEW GATE");
+      expect(output.output).not.toContain("VERIFICATION CHECK");
+      expect(output.output).not.toContain("CLOSED-LOOP ORCHESTRATION");
+    }
+
+    // Positive control: the SAME blocked state on an INSPECTED tool (lowercase
+    // "task") MUST still inject the gate. This proves the exclusion above is
+    // tool-specific, not a blanket suppression that would silently disable all
+    // gating (which would also "pass" the negative assertions and hide breakage).
+    const inspected = { title: "task", output: completionText, metadata: {} };
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, inspected);
+    expect(inspected.output).toContain("FINAL REVIEW GATE");
   });
 
   test("tool.execute.after persists completion claim route on active workflow", async () => {
@@ -527,7 +563,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Implemented and complete.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
     const persisted = loadExecutionMemory(root).memory;
 
     // New router classifies "complete" as general (no strong signal) — route is applied
@@ -554,7 +590,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Here is a neutral progress update.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
     const persisted = loadExecutionMemory(root).memory;
 
     expect(persisted.activeWorkflow?.route?.intent).toBe("bugfix");
@@ -578,7 +614,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Here is a neutral progress update.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
     const persisted = loadExecutionMemory(root).memory;
 
     expect(persisted.activeWorkflow?.route?.intent).toBe("bugfix");
@@ -598,7 +634,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Implemented and complete.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
 
     expect(output.output).toContain("EXECUTION POLICY: blocked");
     expect(output.output).toContain("task_type_verification.required");
@@ -620,7 +656,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Documentation update complete.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
 
     expect(output.output).toContain("EXECUTION POLICY: blocked");
     expect(output.output).toContain("completion.task_type_verification.required");
@@ -646,7 +682,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Implemented and complete.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
     const persisted = loadExecutionMemory(root).memory;
 
     expect(output.output).toContain("EXECUTION POLICY: blocked");
@@ -670,7 +706,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, directory: root });
     const output = { title: "Task", output: "Implemented and complete. Verification: bun test passed.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
 
     expect(output.output).toContain("FINAL REVIEW GATE");
     expect(output.output).toContain("Delegated review has not been accepted yet.");
@@ -704,7 +740,7 @@ describe("plugin integration", () => {
     await hooks.tool!.bg_collect.execute({ taskId } as any, context);
     const output = { title: "Task", output: "Implemented and complete. Verification: bun test passed.", metadata: {} };
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
     const persisted = loadExecutionMemory(root).memory;
 
     expect(persisted.completedSummaries).toContainEqual(expect.objectContaining({ id: taskId, reviewStatus: "accepted" }));
@@ -727,7 +763,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, client });
     const output = { output: "请修复这个错误" } as any;
 
-    await hooks["tool.execute.after"]!({ tool: "Task", args: {} } as any, output);
+    await hooks["tool.execute.after"]!({ tool: "task", args: {} } as any, output);
 
     expect(promptRequests).toHaveLength(1);
     expect(promptRequests[0]).toMatchObject({
@@ -758,7 +794,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, client });
     const output = { output: "请修复这个错误" } as any;
 
-    await hooks["tool.execute.after"]!({ tool: "Task", args: {} } as any, output);
+    await hooks["tool.execute.after"]!({ tool: "task", args: {} } as any, output);
 
     expect(chatRequests).toHaveLength(1);
     expect(chatRequests[0]).toMatchObject({
@@ -783,7 +819,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, client });
     const output = { output: "请修复这个错误" } as any;
 
-    await hooks["tool.execute.after"]!({ tool: "Task", args: {} } as any, output);
+    await hooks["tool.execute.after"]!({ tool: "task", args: {} } as any, output);
 
     expect(output.output).toContain("请修复这个错误");
     expect(output.output).toContain("Chinese text was detected, but automatic translation failed. Original output preserved.");
@@ -794,7 +830,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, client: {} as any });
     const output = { output: "请修复这个错误" } as any;
 
-    await hooks["tool.execute.after"]!({ tool: "Task", args: {} } as any, output);
+    await hooks["tool.execute.after"]!({ tool: "task", args: {} } as any, output);
 
     expect(output.output).toContain("请修复这个错误");
     expect(output.output).toContain("Chinese text was detected, but automatic translation failed. Original output preserved.");
@@ -828,7 +864,7 @@ describe("plugin integration", () => {
     const hooks = await mod.default.server({ ...mockInput, client, directory: root });
     const output = { output: "已完成这个修复。Implemented and complete. Verification: bun test passed." } as any;
 
-    await hooks["tool.execute.after"]!({ tool: "Task", sessionID: "s", callID: "c", args: {} }, output);
+    await hooks["tool.execute.after"]!({ tool: "task", sessionID: "s", callID: "c", args: {} }, output);
 
     expect(promptMessages).toHaveLength(1);
     expect(output.output).toContain("This fix is complete. Verification: bun test passed.");
@@ -847,7 +883,7 @@ describe("plugin integration", () => {
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, client });
 
-    for (const tool of ["Write", "Edit"] as const) {
+    for (const tool of ["write", "edit"] as const) {
       const output = { output: "请修复这个错误" } as any;
       await hooks["tool.execute.after"]!({ tool, args: {} } as any, output);
       expect(output.output).toBe("请修复这个错误");
@@ -864,7 +900,7 @@ describe("plugin integration", () => {
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, client });
 
-    for (const tool of ["Bash", "Read", "Grep", "Glob", "dispatch"] as const) {
+    for (const tool of ["bash", "read", "grep", "glob", "dispatch"] as const) {
       const output = { output: "请修复这个错误" } as any;
       await hooks["tool.execute.after"]!({ tool, args: {} } as any, output);
       expect(output.output).toBe("请修复这个错误");
@@ -914,5 +950,47 @@ describe("plugin integration", () => {
 
     expect(loaded.memory.activeWorkflow?.id).toBe("wf-active");
     expect(loaded.memory.workflowRuns.map((run) => run.id)).toEqual(["wf-completed"]);
+  });
+
+  test("experimental.text.complete flags unverified completion claim in final text (#3)", async () => {
+    const root = tempRoot();
+    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    memory.activeWorkflow = createWorkflowRun({ id: "wf-tc", goal: "Ship feature", acceptanceCriteria: ["tests pass"] });
+    memory.activeTasks = [{ id: "bg-live" }];
+    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root });
+    const out = { text: "The fix is complete." };
+    await hooks["experimental.text.complete"]!({ sessionID: "s", messageID: "m", partID: "p" } as any, out);
+    expect(out.text).toContain("VERIFICATION CHECK");
+  });
+
+  test("experimental.text.complete does NOT flag verified claims or questions (#3)", async () => {
+    const root = tempRoot();
+    const memory = createEmptyExecutionMemory("2026-05-06T00:00:00.000Z");
+    memory.activeWorkflow = createWorkflowRun({ id: "wf-tc2", goal: "Ship feature", acceptanceCriteria: ["tests pass"] });
+    memory.activeTasks = [{ id: "bg-live" }];
+    saveExecutionMemory(root, memory, "2026-05-06T00:01:00.000Z");
+
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root });
+
+    const verified = { text: "The fix is complete. Verification: bun test passed." };
+    await hooks["experimental.text.complete"]!({ sessionID: "s", messageID: "m", partID: "p" } as any, verified);
+    expect(verified.text).not.toContain("VERIFICATION CHECK");
+
+    const question = { text: "Is the implementation complete?" };
+    await hooks["experimental.text.complete"]!({ sessionID: "s", messageID: "m", partID: "p2" } as any, question);
+    expect(question.text).not.toContain("VERIFICATION CHECK");
+  });
+
+  test("experimental.text.complete stays silent when no active workflow (#3)", async () => {
+    const root = tempRoot();
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root });
+    const out = { text: "The fix is complete." };
+    await hooks["experimental.text.complete"]!({ sessionID: "s", messageID: "m", partID: "p" } as any, out);
+    expect(out.text).not.toContain("VERIFICATION CHECK");
   });
 });
