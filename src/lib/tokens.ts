@@ -28,16 +28,6 @@ export interface TokenData {
   };
 }
 
-export interface MessageTokenInfo {
-  timestamp: number;
-  provider: string;
-  model: string;
-  agent: string;
-  role: string;
-  tokens: TokenData;
-  cost: number;
-}
-
 export interface TokenSummary {
   totalMessages: number;
   totalSessions: number;

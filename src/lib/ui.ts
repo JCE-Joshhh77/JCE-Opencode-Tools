@@ -32,10 +32,6 @@ export function error(msg: string): void {
   console.log(chalk.red("  ❌"), msg);
 }
 
-export function skip(msg: string): void {
-  console.log(chalk.yellow("[SKIP]"), msg);
-}
-
 export function heading(msg: string): void {
   console.log();
   console.log(chalk.bold.underline(msg));

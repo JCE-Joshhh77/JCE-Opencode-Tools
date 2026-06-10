@@ -1,5 +1,5 @@
 import { join, dirname } from "path";
-import { homedir, platform } from "os";
+import { homedir } from "os";
 import { existsSync } from "fs";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { FILETYPE_EXTENSIONS } from "./utils.js";
@@ -37,17 +37,6 @@ export function getConfigDir(): string {
 }
 
 /**
- * Returns the legacy config directory (%APPDATA%\opencode on Windows).
- * Used for migration purposes only.
- */
-export function getLegacyConfigDir(): string {
-  if (platform() === "win32" && process.env.APPDATA) {
-    return join(process.env.APPDATA, "opencode");
-  }
-  return getConfigDir();
-}
-
-/**
  * Validate a relative path to prevent path traversal attacks.
  * Rejects paths containing "..", absolute paths, and null bytes.
  */
@@ -62,15 +51,6 @@ function validateRelativePath(relativePath: string): void {
   if (segments.some((seg) => seg === "..")) {
     throw new Error(`Invalid config path: path traversal not allowed: ${relativePath}`);
   }
-}
-
-/**
- * Check if a config file exists at the given path relative to config dir.
- */
-export function configFileExists(relativePath: string): boolean {
-  validateRelativePath(relativePath);
-  const fullPath = join(getConfigDir(), relativePath);
-  return existsSync(fullPath);
 }
 
 /**

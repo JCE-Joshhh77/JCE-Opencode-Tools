@@ -121,9 +121,3 @@ export function logCommandError(command: string, error: string): void {
   log("ERROR", command, `result=error error=${error}`);
 }
 
-/**
- * Log a warning during command execution.
- */
-export function logCommandWarn(command: string, message: string): void {
-  log("WARN", command, message);
-}

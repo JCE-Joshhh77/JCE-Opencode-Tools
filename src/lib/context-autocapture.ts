@@ -1,6 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { CONTEXT_FILENAME } from "./context-template.js";
 import { getSection, replaceSection } from "./context-sections.js";
 
 export const PROJECT_FACTS_FILENAME = ".opencode-jce/project-facts.json";
@@ -178,10 +177,4 @@ export async function writeProjectFacts(projectRoot: string, input: ContextCaptu
   return facts;
 }
 
-export async function readContextFile(projectRoot: string): Promise<string | null> {
-  try {
-    return await readFile(join(projectRoot, CONTEXT_FILENAME), "utf8");
-  } catch {
-    return null;
-  }
-}
+
