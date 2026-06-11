@@ -67,6 +67,12 @@ export function createEmptyMemoryV2(now?: string): ExecutionMemoryV2 {
   return {
     version: 2,
     updatedAt: ts,
+    memoryTiers: {
+      session: { blockers: [] },
+      project: { conventions: [], releaseFiles: [], standardVerification: [], dangerousAreas: [] },
+      failure: { knownErrors: [], badFixes: [], successfulFixes: [] },
+      operator: { preferTerseReports: false, preferAutonomousCompletion: false, preferBroadVerification: true },
+    },
     facts: [],
     decisions: [],
     artifacts: [],
@@ -337,6 +343,16 @@ export function mergeOrchestrationIntoMemory(
     ...execMemory,
     updatedAt: ts,
     graph: graph ? snapshotGraph(graph) : execMemory.graph,
+    memoryTiers: {
+      session: {
+        currentTask: graph?.goal,
+        blockers: snapshot.signals.filter((s) => s.type === "blocker").map((s) => s.message),
+        pendingPlan: graph ? `${graph.goal} (${graph.status})` : execMemory.memoryTiers?.session.pendingPlan,
+      },
+      project: execMemory.memoryTiers?.project ?? { conventions: [], releaseFiles: [], standardVerification: [], dangerousAreas: [] },
+      failure: execMemory.memoryTiers?.failure ?? { knownErrors: [], badFixes: [], successfulFixes: [] },
+      operator: execMemory.memoryTiers?.operator ?? { preferTerseReports: false, preferAutonomousCompletion: false, preferBroadVerification: true },
+    },
     facts: deduplicateByKey(execMemory.facts, snapshot.facts, "key"),
     decisions: [...execMemory.decisions, ...snapshot.decisions.filter((d) => !execMemory.decisions.some((ed) => ed.id === d.id))],
     artifacts: deduplicateByKey([...execMemory.artifacts, ...snapshot.artifacts], [], "path"),

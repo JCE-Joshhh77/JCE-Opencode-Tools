@@ -3,6 +3,8 @@ import { formatDecisionRecommendation, recommendNextDecision } from "./decision-
 import { getActiveBlockers, getAttemptedCommands, getLatestVerificationEvidence, getRetryHistoryFor, getStaleActiveTasks } from "./memory-query.js";
 import type { PolicyProfileSource } from "./policy-profile.js";
 import type { WorkflowEvidence, WorkflowStep } from "./workflow.js";
+import { detectEnvironmentCapabilities, summarizeCapabilities } from "./environment-capabilities.js";
+import type { LoadMemoryResult } from "./orchestration/execution-memory-v2.js";
 
 interface TraceFilter {
   taskId?: string;
@@ -16,6 +18,8 @@ interface PolicyProfileDisplay {
   profile: string;
   source: PolicyProfileSource;
 }
+
+type OrchestrationMemoryState = LoadMemoryResult["memory"];
 
 function isRecord(value: unknown): value is RecordLike {
   return typeof value === "object" && value !== null;
@@ -55,6 +59,8 @@ export function getJceWorkerNextAction(memory: RuntimeState): string {
   const recommendation = recommendNextDecision(memory);
   if (recommendation.risk === "high" && recommendation.recommendedAction) return recommendation.recommendedAction;
   const workflow = memory.activeWorkflow;
+  const caps = detectEnvironmentCapabilities();
+  if (!caps.bun) return "Install or restore Bun before continuing verification-heavy work.";
   if (!workflow) return "Start a workflow or dispatch a task.";
   if (workflow.status === "blocked" || workflow.blocker) return "Resolve blocker before continuing.";
   if (workflow.status === "awaiting_user") return "Wait for user input before continuing.";
@@ -104,7 +110,56 @@ function failureMemoryLines(memory: RuntimeState): string[] {
   return ["Failure Memory", lineList(entries)];
 }
 
-export function formatJceWorkerStatus(memory: RuntimeState, policy?: PolicyProfileDisplay): string {
+function plannerRationaleLines(orchestration?: OrchestrationMemoryState): string[] {
+  const graph = orchestration?.graph;
+  if (!graph) return ["Planner Rationale", "- none"];
+  const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  const parallelUnits = Array.from(new Set(nodes.flatMap((node: any) => Array.isArray(node?.metadata?.parallelUnits) ? node.metadata.parallelUnits.filter((item: unknown): item is string => typeof item === "string") : [])));
+  const plannerModes = Array.from(new Set(nodes.map((node: any) => typeof node?.metadata?.plannerMode === "string" ? node.metadata.plannerMode : undefined).filter((value): value is string => Boolean(value))));
+  const plannerReasons = Array.from(new Set(nodes.map((node: any) => typeof node?.metadata?.plannerReason === "string" ? node.metadata.plannerReason : undefined).filter((value): value is string => Boolean(value))));
+  const fanOutTriggered = nodes.some((node: any) => node?.metadata?.parallelization === "explicit-independent-units");
+  const fallbackReasons = Array.from(new Set(nodes.map((node: any) => typeof node?.metadata?.parallelFallbackReason === "string" ? node.metadata.parallelFallbackReason : undefined).filter((value): value is string => Boolean(value))));
+  return [
+    "Planner Rationale",
+    `- Graph status: ${text(graph.status, "unknown")}`,
+    `- Planner mode: ${plannerModes.length ? plannerModes.join(", ") : "none"}`,
+    `- Planner reason: ${plannerReasons.length ? plannerReasons.join(" | ") : "none"}`,
+    `- Parallel fan-out: ${fanOutTriggered ? "yes" : "no"}`,
+    `- Detected units: ${parallelUnits.length ? parallelUnits.join(", ") : "none"}`,
+    `- Linear fallback reason: ${fallbackReasons.length ? fallbackReasons.join(" | ") : "none"}`,
+  ];
+}
+
+export function getPlannerRationaleSummary(orchestration?: OrchestrationMemoryState): { graphStatus: string; plannerModes: string[]; plannerReasons: string[]; fanOutTriggered: boolean; detectedUnits: string[]; linearFallbackReasons: string[] } {
+  const graph = orchestration?.graph;
+  if (!graph) {
+    return { graphStatus: "no_graph", plannerModes: [], plannerReasons: [], fanOutTriggered: false, detectedUnits: [], linearFallbackReasons: [] };
+  }
+  const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  return {
+    graphStatus: text(graph.status, "unknown"),
+    plannerModes: Array.from(new Set(nodes.map((node: any) => typeof node?.metadata?.plannerMode === "string" ? node.metadata.plannerMode : undefined).filter((value): value is string => Boolean(value)))),
+    plannerReasons: Array.from(new Set(nodes.map((node: any) => typeof node?.metadata?.plannerReason === "string" ? node.metadata.plannerReason : undefined).filter((value): value is string => Boolean(value)))),
+    fanOutTriggered: nodes.some((node: any) => node?.metadata?.parallelization === "explicit-independent-units"),
+    detectedUnits: Array.from(new Set(nodes.flatMap((node: any) => Array.isArray(node?.metadata?.parallelUnits) ? node.metadata.parallelUnits.filter((item: unknown): item is string => typeof item === "string") : []))),
+    linearFallbackReasons: Array.from(new Set(nodes.map((node: any) => typeof node?.metadata?.parallelFallbackReason === "string" ? node.metadata.parallelFallbackReason : undefined).filter((value): value is string => Boolean(value)))),
+  };
+}
+
+export function formatPlannerExplain(orchestration?: OrchestrationMemoryState): string {
+  const summary = getPlannerRationaleSummary(orchestration);
+  return [
+    "JCE-Worker Planner Explain",
+    `Graph status: ${summary.graphStatus}`,
+    `Planner modes: ${summary.plannerModes.length ? summary.plannerModes.join(", ") : "none"}`,
+    `Planner reasons: ${summary.plannerReasons.length ? summary.plannerReasons.join(" | ") : "none"}`,
+    `Parallel fan-out: ${summary.fanOutTriggered ? "yes" : "no"}`,
+    `Detected units: ${summary.detectedUnits.length ? summary.detectedUnits.join(", ") : "none"}`,
+    `Linear fallback reasons: ${summary.linearFallbackReasons.length ? summary.linearFallbackReasons.join(" | ") : "none"}`,
+  ].join("\n");
+}
+
+export function formatJceWorkerStatus(memory: RuntimeState, policy?: PolicyProfileDisplay, orchestration?: OrchestrationMemoryState): string {
   const workflow = memory.activeWorkflow;
   const latestEvidence = summarizeUnknown(getLatestVerificationEvidence(memory));
   const staleCount = getStaleActiveTasks(memory).length;
@@ -125,6 +180,7 @@ export function formatJceWorkerStatus(memory: RuntimeState, policy?: PolicyProfi
     `Decision recommendation: ${recommendation.recommendedAction}`,
     ...(recommendation.recommendedAgent ? [`Recommended agent: ${recommendation.recommendedAgent}`] : []),
     ...policyLine(policy),
+    ...plannerRationaleLines(orchestration).slice(1),
     `Next action: ${getJceWorkerNextAction(memory)}`,
   ].join("\n");
 }
@@ -145,7 +201,7 @@ export function formatJceWorkerTrace(memory: RuntimeState, filter: TraceFilter =
   ].join("\n");
 }
 
-export function formatJceWorkerReport(memory: RuntimeState, policy?: PolicyProfileDisplay): string {
+export function formatJceWorkerReport(memory: RuntimeState, policy?: PolicyProfileDisplay, orchestration?: OrchestrationMemoryState): string {
   const workflow = memory.activeWorkflow;
   const blockers = getActiveBlockers(memory).map(summarizeUnknown);
   const evidence = [
@@ -157,6 +213,7 @@ export function formatJceWorkerReport(memory: RuntimeState, policy?: PolicyProfi
   const retries = retryId ? getRetryHistoryFor(memory, retryId).map(summarizeUnknown) : [];
   const staleTasks = getStaleActiveTasks(memory).map(summarizeUnknown);
   const decisionLines = formatDecisionRecommendation(recommendNextDecision(memory));
+  const capabilities = summarizeCapabilities(detectEnvironmentCapabilities());
 
   return [
     "JCE-Worker Operator Report",
@@ -167,6 +224,8 @@ export function formatJceWorkerReport(memory: RuntimeState, policy?: PolicyProfi
     `Next action: ${getJceWorkerNextAction(memory)}`,
     "",
     ...routeReportLines(workflow),
+    "",
+    ...plannerRationaleLines(orchestration),
     "",
     ...decisionLines,
     "",
@@ -184,6 +243,9 @@ export function formatJceWorkerReport(memory: RuntimeState, policy?: PolicyProfi
     "",
     "Retry History",
     lineList(retries),
+    "",
+    "Environment Capabilities",
+    lineList(capabilities),
     "",
     ...failureMemoryLines(memory),
     "",

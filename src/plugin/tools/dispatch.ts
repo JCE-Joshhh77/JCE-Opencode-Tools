@@ -141,6 +141,7 @@ async function handleRecovery(manager: BackgroundManager, client: OpenCodeClient
       prompt: buildDelegatedPrompt(retryPrompt, `${task.description} retry`, task.agent),
       failureReason: errorText,
       category: decision.category,
+      agentOverride: task.agent,
     });
     switch (result.status) {
     case "created":
@@ -317,9 +318,28 @@ export function buildCollectTool(
 
       if (reviewStatus === "needs_followup" && reviewMissing.length) {
         const reason = review.notes.join(", ") || "Delegated result did not satisfy the required contract";
+        const switchHint = review.suggestedAgent ? `\nRecommended action: switch agent to ${review.suggestedAgent} for the next retry.` : review.notes.some((note) => /switching agent|switch agent/i.test(note)) ? "\nRecommended action: switch agent for the next retry." : "";
+        const contextHint = review.notes.some((note) => /richer context/i.test(note)) ? "\nRecommended action: retry with richer context and stronger verification requirements." : "";
+        if (review.notes.some((note) => /switching agent|switch agent/i.test(note))) {
+          const nextAgent = review.suggestedAgent && ["oracle", "jce-researcher", "explorer", "frontend", "android"].includes(review.suggestedAgent)
+            ? review.suggestedAgent as BackgroundTask["agent"]
+            : task.agent;
+          const retryPrompt = buildDelegatedPrompt(stripDelegatedResultContract(task.prompt), `${task.description} retry`, nextAgent);
+          manager.createRetryTaskResult(task.id, {
+            prompt: retryPrompt,
+            failureReason: `Switch agent recovery: ${reason}`,
+            category: "delegated_contract_failure",
+            agentOverride: nextAgent,
+          });
+          manager.recordRetryableFailure(task.id, `Auto-recovery hint: switch agent — ${reason}`);
+        } else if (review.notes.some((note) => /richer context/i.test(note))) {
+          manager.recordRetryableFailure(task.id, `Auto-recovery hint: retry with richer context — ${reason}`);
+        } else if (review.notes.some((note) => /retryable failure|network|timeout|temporary/i.test(note))) {
+          manager.recordRetryableFailure(task.id, `Auto-recovery hint: retry same agent with updated context — ${reason}`);
+        }
         const result = `${await handleRecovery(manager, client, task, reason)}\n\nOriginal task output:\n${compressedResult}`;
         afterMutation?.();
-        return filterOutput(result);
+        return filterOutput(`${result}${switchHint}${contextHint}`);
       }
 
       if (reviewStatus === "blocked") {

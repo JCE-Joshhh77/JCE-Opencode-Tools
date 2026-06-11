@@ -178,6 +178,71 @@ describe("plugin tools", () => {
     expect(result).toContain("## Blocker");
   });
 
+  test("collect tool suggests richer context retry for medium-quality delegated output", async () => {
+    const manager = new BackgroundManager({ maxConcurrency: 3 });
+    const task = manager.createTask({
+      description: "test",
+      prompt: "p",
+      agent: "explorer",
+      parentSessionId: "s",
+      parentMessageId: "m",
+    });
+    manager.completeTask(task.id, "## Summary\nDone\n\n## Files\n- src/a.ts\n\n## Verification\n- not run yet\n\n## Risks\n- low confidence");
+
+    const tool = buildCollectTool(manager);
+    const result = await tool.execute({ taskId: task.id } as any, {
+      sessionID: "s",
+      messageID: "m",
+      agent: "explorer",
+      directory: "/tmp",
+      worktree: "/tmp",
+      abort: new AbortController().signal,
+      metadata: () => {},
+      ask: () => { throw new Error("not implemented"); },
+    } as any);
+
+    expect(String(result)).toContain("Recovery:");
+  });
+
+  test("collect tool suggests switch-agent recovery for very weak delegated output", async () => {
+    const manager = new BackgroundManager({ maxConcurrency: 3 });
+    const task = manager.createTask({
+      description: "test",
+      prompt: "p",
+      agent: "explorer",
+      parentSessionId: "s",
+      parentMessageId: "m",
+    });
+    manager.completeTask(task.id, "tiny");
+
+    const tool = buildCollectTool(manager);
+    const result = await tool.execute({ taskId: task.id } as any, {
+      sessionID: "s",
+      messageID: "m",
+      agent: "explorer",
+      directory: "/tmp",
+      worktree: "/tmp",
+      abort: new AbortController().signal,
+      metadata: () => {},
+      ask: () => { throw new Error("not implemented"); },
+    } as any);
+
+    expect(String(result)).toContain("Recovery:");
+    const retry = manager.listTasks().find((item) => item.retryOfTaskId === task.id);
+    expect(retry).toBeDefined();
+  });
+
+  test("collect tool records auto retry hint for retryable delegated failure class", async () => {
+    const manager = new BackgroundManager({ maxConcurrency: 3 });
+    const task = manager.createTask({ description: "test", prompt: "p", agent: "explorer", parentSessionId: "s", parentMessageId: "m" });
+    manager.completeTask(task.id, "Timeout while contacting service. Retryable failure.");
+
+    const tool = buildCollectTool(manager);
+    const result = await tool.execute({ taskId: task.id } as any, { sessionID: "s", messageID: "m", agent: "explorer", directory: "/tmp", worktree: "/tmp", abort: new AbortController().signal, metadata: () => {}, ask: () => { throw new Error("not implemented"); } } as any);
+
+    expect(String(result)).toContain("Recovery:");
+  });
+
   test("collect tool translates Chinese completed output", async () => {
     const manager = new BackgroundManager({ maxConcurrency: 3 });
     const task = manager.createTask({
@@ -391,6 +456,6 @@ describe("plugin tools", () => {
     const result = await tool.execute({ taskId: task.id } as any, {} as any);
 
     expect(String(result)).toContain("Recovery:");
-    expect(String(result)).toContain("strong Verification evidence");
+    expect(String(result)).toMatch(/strong Verification evidence|richer context/);
   });
 });

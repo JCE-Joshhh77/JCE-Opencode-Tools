@@ -9,6 +9,7 @@ interface RetryTaskInput {
   prompt: string;
   failureReason: string;
   category: JceWorkerErrorCategory;
+  agentOverride?: BackgroundTask["agent"];
 }
 
 export type RetryTaskResult =
@@ -271,7 +272,7 @@ export class BackgroundManager {
     const retry = this.createTask({
       description: `${task.description} (retry ${nextRetryCount}/${task.maxRetries})`,
       prompt: input.prompt,
-      agent: task.agent,
+      agent: input.agentOverride ?? task.agent,
       parentSessionId: task.parentSessionId,
       parentMessageId: task.parentMessageId,
       maxRetries: task.maxRetries,
@@ -313,18 +314,19 @@ export class BackgroundManager {
   toRuntimeState(updatedAt = this.now()): RuntimeState {
     const tasks = this.listTasks();
     const budgets = tasks.map((task) => task.contextBudget).filter((budget): budget is NonNullable<BackgroundTask["contextBudget"]> => Boolean(budget));
-    const originalChars = budgets.reduce((sum, budget) => sum + budget.originalChars, 0);
-    const compressedChars = budgets.reduce((sum, budget) => sum + budget.compressedChars, 0);
-    const estimatedTokensSaved = budgets.reduce((sum, budget) => sum + budget.estimatedTokensSaved, 0);
+    const safe = (value: number) => !Number.isFinite(value) || value <= 0 ? 0 : Math.min(Math.trunc(value), Number.MAX_SAFE_INTEGER);
+    const originalChars = safe(budgets.reduce((sum, budget) => sum + safe(budget.originalChars), 0));
+    const compressedChars = safe(budgets.reduce((sum, budget) => sum + safe(budget.compressedChars), 0));
+    const estimatedTokensSaved = safe(budgets.reduce((sum, budget) => sum + safe(budget.estimatedTokensSaved), 0));
     const byTool = budgets.reduce<Record<string, { originalChars: number; compressedChars: number; estimatedTokensSaved: number; tasks: number }>>((summary, budget) => {
       const source = budget.source ?? "delegation";
       const previous = summary[source] ?? { originalChars: 0, compressedChars: 0, estimatedTokensSaved: 0, tasks: 0 };
-      summary[source] = {
-        originalChars: previous.originalChars + budget.originalChars,
-        compressedChars: previous.compressedChars + budget.compressedChars,
-        estimatedTokensSaved: previous.estimatedTokensSaved + budget.estimatedTokensSaved,
-        tasks: previous.tasks + 1,
-      };
+        summary[source] = {
+          originalChars: safe(previous.originalChars + safe(budget.originalChars)),
+          compressedChars: safe(previous.compressedChars + safe(budget.compressedChars)),
+          estimatedTokensSaved: safe(previous.estimatedTokensSaved + safe(budget.estimatedTokensSaved)),
+          tasks: safe(previous.tasks + 1),
+        };
       return summary;
     }, {});
     const resolvedRetryRootIds = new Set(

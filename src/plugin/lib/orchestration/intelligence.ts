@@ -17,6 +17,7 @@ import type {
   Evidence,
   WisdomEntryV2,
   TaskLearningV2,
+  ConfidenceVector,
 } from "./types.js";
 import { getTopFacts, type OrchestrationMemory } from "./shared-memory.js";
 import { getGraphStats } from "./task-graph.js";
@@ -171,7 +172,6 @@ export function formatCrossNodeContext(facts: Fact[]): string {
  * Returns groups of node IDs that are independent of each other.
  */
 export function identifyParallelGroups(graph: TaskGraph): string[][] {
-  const nodes = Array.from(graph.nodes.values());
   const groups: string[][] = [];
   const assigned = new Set<string>();
 
@@ -231,9 +231,32 @@ function computeNodeDepths(graph: TaskGraph): Map<string, number> {
 export interface CompletionGateResult {
   canComplete: boolean;
   overallConfidence: number;
+  confidenceByDimension?: ConfidenceVector;
   evidence: AggregateEvidenceScore;
   blockers: string[];
   warnings: string[];
+}
+
+export function buildConfidenceVector(graph: TaskGraph, routingConfidence = 0.7): ConfidenceVector {
+  const nodes = Array.from(graph.nodes.values());
+  const completedNodes = nodes.filter((n) => n.status === "done" && n.output);
+  const implementation = completedNodes.length > 0
+    ? completedNodes.reduce((sum, n) => sum + (n.output?.confidence ?? 0), 0) / completedNodes.length
+    : 0;
+  const verificationNodes = completedNodes.filter((n) => n.type === "verify");
+  const verification = verificationNodes.length > 0
+    ? verificationNodes.reduce((sum, n) => sum + (n.output?.confidence ?? 0), 0) / verificationNodes.length
+    : implementation;
+  const total = nodes.length || 1;
+  const completion = completedNodes.length / total;
+  const intent = routingConfidence;
+  return {
+    intent: Math.round(intent * 100) / 100,
+    routing: Math.round(routingConfidence * 100) / 100,
+    implementation: Math.round(implementation * 100) / 100,
+    verification: Math.round(verification * 100) / 100,
+    completion: Math.round(completion * 100) / 100,
+  };
 }
 
 /**
@@ -290,10 +313,12 @@ export function evaluateCompletionGate(graph: TaskGraph, minConfidence = 0.7): C
   }
 
   const canComplete = blockers.length === 0 && (!requiresEvidence || evidenceScore.overallConfidence >= minConfidence);
+  const confidenceByDimension = buildConfidenceVector(graph, 0.7);
 
   return {
     canComplete,
     overallConfidence: evidenceScore.overallConfidence,
+    confidenceByDimension,
     evidence: evidenceScore,
     blockers,
     warnings,
@@ -403,7 +428,7 @@ export interface EscalationDecision {
 /**
  * Determine if the orchestration should escalate to the user.
  */
-export function shouldEscalateToUser(graph: TaskGraph, memory: OrchestrationMemory): EscalationDecision {
+export function shouldEscalateToUser(graph: TaskGraph, _memory: OrchestrationMemory): EscalationDecision {
   const stats = getGraphStats(graph);
   const nodes = Array.from(graph.nodes.values());
 
@@ -538,9 +563,29 @@ export interface OrchestrationStatusReport {
   progress: string;
   nodes: string;
   confidence: string;
+  confidenceByDimension?: ConfidenceVector;
   parallelGroups: number;
   escalation: EscalationDecision | null;
   completionGate: CompletionGateResult | null;
+}
+
+export function computeNextBestAction(graph: TaskGraph | null, memory: OrchestrationMemory, preferences?: { preferBroadVerification?: boolean; preferAutonomousCompletion?: boolean }): string {
+  if (!graph) return "Create or resume an orchestration plan.";
+  const stats = getGraphStats(graph);
+  const blocked = Array.from(graph.nodes.values()).filter((node) => node.status === "blocked" || node.status === "awaiting_approval");
+  if (blocked.length > 0) return `Resolve blocked node: ${blocked[0]!.title}`;
+  if (preferences?.preferAutonomousCompletion && stats.done > 0 && stats.ready === 0 && stats.running === 0 && stats.pending > 0) {
+    return "Continue autonomous execution by promoting remaining pending work.";
+  }
+  const ready = Array.from(graph.nodes.values()).filter((node) => node.status === "ready");
+  if (ready.length > 0) return `Dispatch next ready node: ${ready[0]!.title}`;
+  const verifying = Array.from(graph.nodes.values()).filter((node) => node.status === "verifying");
+  if (verifying.length > 0) return preferences?.preferBroadVerification ? `Run broader verification for: ${verifying[0]!.title}` : `Run targeted verification for: ${verifying[0]!.title}`;
+  const pending = Array.from(graph.nodes.values()).filter((node) => node.status === "pending" || node.status === "intake");
+  if (pending.length > 0) return `Promote and schedule pending node: ${pending[0]!.title}`;
+  const signals = memory.signals.filter((signal) => !signal.consumed && signal.type === "blocker");
+  if (signals.length > 0) return `Resolve orchestration blocker signal: ${signals[0]!.message}`;
+  return graph.status === "completed" ? "Run final completion review and report evidence." : "Inspect orchestration graph for stalled progress.";
 }
 
 /**
@@ -585,6 +630,7 @@ export function buildOrchestrationStatusReport(graph: TaskGraph | null, memory: 
   const avgConfidence = completedNodes.length > 0
     ? completedNodes.reduce((sum, n) => sum + (n.output?.confidence ?? 0), 0) / completedNodes.length
     : 0;
+  const confidenceByDimension = buildConfidenceVector(graph, avgConfidence || 0.7);
 
   return {
     active: true,
@@ -593,6 +639,7 @@ export function buildOrchestrationStatusReport(graph: TaskGraph | null, memory: 
     progress: `${done}/${total} nodes complete (${progressPct}%)`,
     nodes: nodeLines.join("\n"),
     confidence: avgConfidence > 0 ? `${Math.round(avgConfidence * 100)}% avg confidence` : "no evidence yet",
+    confidenceByDimension,
     parallelGroups: parallelGroups.length,
     escalation: escalation.shouldEscalate ? escalation : null,
     completionGate,
@@ -608,6 +655,9 @@ export function formatOrchestrationStatus(report: OrchestrationStatusReport): st
   const parts: string[] = [];
   parts.push(`\n─── Orchestration ───`);
   parts.push(`Status: ${report.status} | ${report.progress} | ${report.confidence}`);
+  if (report.confidenceByDimension) {
+    parts.push(`Confidence breakdown: intent ${Math.round(report.confidenceByDimension.intent * 100)}%, routing ${Math.round(report.confidenceByDimension.routing * 100)}%, implementation ${Math.round(report.confidenceByDimension.implementation * 100)}%, verification ${Math.round(report.confidenceByDimension.verification * 100)}%, completion ${Math.round(report.confidenceByDimension.completion * 100)}%`);
+  }
 
   if (report.parallelGroups > 0) {
     parts.push(`Parallel opportunities: ${report.parallelGroups} group(s)`);

@@ -1,8 +1,10 @@
 import { existsSync, renameSync } from "fs";
 import { Command } from "commander";
 import {
+  addFailureMemory,
   addRuntimeTaskLearning,
   addRuntimeWisdom,
+  createFailureMemoryEntry,
   createEmptyRuntimeState,
   createRuntimeTaskLearning,
   createRuntimeWisdomEntry,
@@ -13,14 +15,16 @@ import {
 } from "../plugin/lib/session-store.js";
 import { clearSessionPolicyProfile, isPolicyProfile, resolvePolicyProfile, saveProjectPolicyProfile, saveSessionPolicyProfile } from "../plugin/lib/policy-profile.js";
 import type { PolicyProfile } from "../plugin/lib/verification-gate.js";
-import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace } from "../plugin/lib/jce-worker-report.js";
+import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace, formatPlannerExplain, getPlannerRationaleSummary } from "../plugin/lib/jce-worker-report.js";
 import { summarizeToolDiscipline } from "../plugin/lib/tool-discipline.js";
 import { buildProjectBrain } from "../plugin/lib/project-brain.js";
 import { formatEvalScenarios } from "../plugin/lib/phase3-eval.js";
 import { checkSkillSync, formatSkillSync } from "../plugin/lib/skill-sync.js";
-import { assessJceDoctor } from "../plugin/lib/jce-intelligence.js";
+import { assessJceDoctor, buildPolicyEnforcementReport, getPolicyEnforcementReport } from "../plugin/lib/jce-intelligence.js";
+import { buildFailureSignature } from "../plugin/lib/failure-signature.js";
 import { error, info, success, warn } from "../lib/ui.js";
 import { EXIT_ERROR, EXIT_SUCCESS } from "../types.js";
+import { buildSafeCommitPlan } from "../plugin/lib/workflow-assistant.js";
 
 interface CreateJceWorkerCommandOptions {
   exitProcess?: boolean;
@@ -84,6 +88,42 @@ function formatEval(memory: RuntimeState): string {
   return ["JCE-Worker Eval", "===============", ...checks.map((check) => `${check.passed ? "PASS" : "FAIL"}: ${check.name}`), `Score: ${passed}/${checks.length}`].join("\n");
 }
 
+function explainLast(memory: RuntimeState): string {
+  const trace = memory.traceEvents.at(-1);
+  const blocker = memory.blockers.at(-1) as any;
+  return [
+    "JCE-Worker Explain Last",
+    `Last trace: ${trace ? `${trace.type} — ${trace.message}` : "none"}`,
+    `Last blocker: ${blocker ? (blocker.failureReason ?? blocker.reason ?? blocker.id ?? "unknown") : "none"}`,
+    `Latest verification: ${memory.verificationEvidence.at(-1) ? JSON.stringify(memory.verificationEvidence.at(-1)) : "none"}`,
+    `Latest failure memory: ${memory.failureMemories.at(-1)?.summary ?? "none"}`,
+  ].join("\n");
+}
+
+function whyBlocked(memory: RuntimeState): string {
+  const blocker = memory.blockers.at(-1) as any;
+  return [
+    "JCE-Worker Why Blocked",
+    blocker ? `Reason: ${blocker.failureReason ?? blocker.reason ?? blocker.id}` : "Reason: none",
+  ].join("\n");
+}
+
+function whyAsked(memory: RuntimeState): string {
+  const blocker = memory.blockers.at(-1) as any;
+  return [
+    "JCE-Worker Why Asked",
+    blocker ? `Asked user because blocker remains: ${blocker.failureReason ?? blocker.reason ?? blocker.id}` : "Asked user reason: none recorded",
+  ].join("\n");
+}
+
+function nextAction(memory: RuntimeState): string {
+  const blocker = memory.blockers.at(-1) as any;
+  if (blocker) return `JCE-Worker Next Action\nResolve blocker: ${blocker.failureReason ?? blocker.reason ?? blocker.id}`;
+   if (memory.failureMemories.length > 0) return `JCE-Worker Next Action\nCheck known failure memory before retrying: ${memory.failureMemories.at(-1)?.summary ?? "unknown failure"}`;
+  if (memory.activeTasks.length > 0) return "JCE-Worker Next Action\nContinue active task execution.";
+  return "JCE-Worker Next Action\nRun verification or start next planned task.";
+}
+
 export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = {}): Command {
   const cwd = options.cwd ?? (() => process.cwd());
   const write = options.write ?? ((text: string) => console.log(text));
@@ -95,10 +135,20 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
   const statusCommand = new Command("status")
     .description("Show current JCE-Worker workflow status")
     .option("--profile <profile>", "Policy profile override for this command: strict, balanced, or fast")
-    .action((opts: { profile?: string }) => {
+    .option("--json", "Print JSON")
+    .action((opts: { profile?: string; json?: boolean }) => {
       const loaded = loadSessionState(cwd());
       const policy = resolvePolicyProfile(cwd(), parsePolicyProfile(opts.profile));
-      write(formatJceWorkerStatus(loaded.state.runtime, policy));
+      if (opts.json) {
+        write(JSON.stringify({
+          runtime: loaded.state.runtime,
+          policy,
+          planner: getPlannerRationaleSummary(loaded.state.orchestration),
+        }, null, 2));
+        exitIfEnabled(options, EXIT_SUCCESS);
+        return;
+      }
+      write(formatJceWorkerStatus(loaded.state.runtime, policy, loaded.state.orchestration));
       exitIfEnabled(options, EXIT_SUCCESS);
     });
 
@@ -108,9 +158,20 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .option("--workflow <workflowId>", "Filter trace events by workflow id")
     .option("--limit <count>", "Maximum events to print", "20")
     .option("--profile <profile>", "Policy profile override for this command: strict, balanced, or fast")
-    .action((opts: { task?: string; workflow?: string; limit?: string; profile?: string }) => {
+    .option("--json", "Print JSON")
+    .action((opts: { task?: string; workflow?: string; limit?: string; profile?: string; json?: boolean }) => {
       const loaded = loadSessionState(cwd());
       const policy = resolvePolicyProfile(cwd(), parsePolicyProfile(opts.profile));
+      if (opts.json) {
+        const events = (loaded.state.runtime.traceEvents ?? [])
+          .filter((event) => !opts.task || event.taskId === opts.task)
+          .filter((event) => !opts.workflow || ((event as any).metadata?.workflowId === opts.workflow))
+          .sort((left, right) => Date.parse(right.at) - Date.parse(left.at))
+          .slice(0, normalizeTraceLimit(opts.limit));
+        write(JSON.stringify({ policy, planner: getPlannerRationaleSummary(loaded.state.orchestration), events }, null, 2));
+        exitIfEnabled(options, EXIT_SUCCESS);
+        return;
+      }
       write(formatJceWorkerTrace(loaded.state.runtime, { taskId: opts.task, workflowId: opts.workflow, limit: normalizeTraceLimit(opts.limit) }, policy));
       exitIfEnabled(options, EXIT_SUCCESS);
     });
@@ -118,10 +179,36 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
   const reportCommand = new Command("report")
     .description("Show detailed JCE-Worker operator report")
     .option("--profile <profile>", "Policy profile override for this command: strict, balanced, or fast")
-    .action((opts: { profile?: string }) => {
+    .option("--json", "Print JSON")
+    .action((opts: { profile?: string; json?: boolean }) => {
       const loaded = loadSessionState(cwd());
       const policy = resolvePolicyProfile(cwd(), parsePolicyProfile(opts.profile));
-      write(formatJceWorkerReport(loaded.state.runtime, policy));
+      if (opts.json) {
+        write(JSON.stringify({
+          runtime: loaded.state.runtime,
+          policy,
+          planner: getPlannerRationaleSummary(loaded.state.orchestration),
+          orchestration: loaded.state.orchestration,
+        }, null, 2));
+        exitIfEnabled(options, EXIT_SUCCESS);
+        return;
+      }
+      write(formatJceWorkerReport(loaded.state.runtime, policy, loaded.state.orchestration));
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const plannerExplainCommand = new Command("planner-explain")
+    .description("Explain planner fan-out vs linear fallback rationale")
+    .option("--json", "Print JSON")
+    .action((opts: { json?: boolean }) => {
+      const loaded = loadSessionState(cwd());
+      const planner = getPlannerRationaleSummary(loaded.state.orchestration);
+      if (opts.json) {
+        write(JSON.stringify(planner, null, 2));
+        exitIfEnabled(options, EXIT_SUCCESS);
+        return;
+      }
+      write(formatPlannerExplain(loaded.state.orchestration));
       exitIfEnabled(options, EXIT_SUCCESS);
     });
 
@@ -187,13 +274,35 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .description("Diagnose JCE-Worker runtime health and tool discipline")
     .option("--path <path...>", "Check paths for commit/tool-discipline issues")
     .option("--skills", "Check repo skills against user config skills")
-    .action((opts: { path?: string[]; skills?: boolean }) => {
+    .option("--policy", "Show policy-vs-enforcement audit summary")
+    .option("--json", "Print JSON")
+    .action((opts: { path?: string[]; skills?: boolean; policy?: boolean; json?: boolean }) => {
       const loaded = loadSessionState(cwd());
       const issues = summarizeToolDiscipline(opts.path ?? []);
-      const skillOutput = opts.skills ? `\n\n${formatSkillSync(checkSkillSync(cwd()))}` : "";
       const jceDoctor = assessJceDoctor(cwd());
+      const skillReport = opts.skills ? checkSkillSync(cwd()) : undefined;
+      const policyReport = opts.policy ? getPolicyEnforcementReport() : undefined;
+      if (opts.json) {
+        write(JSON.stringify({
+          runtime: {
+            activeTasks: loaded.state.runtime.activeTasks.length,
+            blockers: loaded.state.runtime.blockers.length,
+            verificationEvidence: loaded.state.runtime.verificationEvidence.length,
+            learnings: loaded.state.runtime.wisdom.length,
+          },
+          doctor: jceDoctor,
+          toolDiscipline: issues,
+          skills: skillReport,
+          policy: policyReport,
+        }, null, 2));
+        exitIfEnabled(options, issues.some((issue) => issue.severity === "block") || jceDoctor.summary.fail > 0 ? EXIT_ERROR : EXIT_SUCCESS);
+        return;
+      }
+
+      const skillOutput = skillReport ? `\n\n${formatSkillSync(skillReport)}` : "";
       const intelligenceOutput = ["", "JCE Intelligence Checks", ...jceDoctor.checks.map((check) => `- ${check.status.toUpperCase()}: ${check.name}: ${check.message}`)].join("\n");
-      write([formatDoctor(loaded.state.runtime), intelligenceOutput, issues.length ? "\nTool discipline issues:" : "\nTool discipline issues: none", ...issues.map((issue) => `- ${issue.severity.toUpperCase()}: ${issue.path}: ${issue.reason}`)].join("\n") + skillOutput);
+      const policyOutput = policyReport ? `\n\n${buildPolicyEnforcementReport()}\n${policyReport.rows.map((row) => `  prompt: ${row.promptSource ?? "n/a"}\n  runtime: ${row.runtimeSource ?? "n/a"}`).join("\n")}` : "";
+      write([formatDoctor(loaded.state.runtime), intelligenceOutput, issues.length ? "\nTool discipline issues:" : "\nTool discipline issues: none", ...issues.map((issue) => `- ${issue.severity.toUpperCase()}: ${issue.path}: ${issue.reason}`)].join("\n") + skillOutput + policyOutput);
       exitIfEnabled(options, issues.some((issue) => issue.severity === "block") || jceDoctor.summary.fail > 0 ? EXIT_ERROR : EXIT_SUCCESS);
     });
 
@@ -238,9 +347,18 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
   const commitCheckCommand = new Command("commit-check")
     .description("Check paths for safe commit discipline")
     .argument("[paths...]", "Paths intended for staging/commit")
-    .action((paths: string[]) => {
+    .option("--plan", "Print safe commit plan summary")
+    .option("--json", "Print JSON")
+    .action((paths: string[], opts: { plan?: boolean; json?: boolean }) => {
       const issues = summarizeToolDiscipline(paths);
-      write(["JCE-Worker Commit Check", ...issues.map((issue) => `${issue.severity.toUpperCase()}: ${issue.path}: ${issue.reason}`), issues.length ? "" : "No path issues detected."].join("\n"));
+      const safePlan = buildSafeCommitPlan(paths.map((path) => ({ path, status: "M" as const })), { includeDocs: false, release: false });
+      if (opts.json) {
+        write(JSON.stringify({ issues, safeCommitPlan: safePlan }, null, 2));
+        exitIfEnabled(options, issues.some((issue) => issue.severity === "block") ? EXIT_ERROR : EXIT_SUCCESS);
+        return;
+      }
+      const maybePlan = opts.plan ? `\n\nSafe Commit Plan\n${safePlan}` : "";
+      write(["JCE-Worker Commit Check", ...issues.map((issue) => `${issue.severity.toUpperCase()}: ${issue.path}: ${issue.reason}`), issues.length ? "" : "No path issues detected."].join("\n") + maybePlan);
       exitIfEnabled(options, issues.some((issue) => issue.severity === "block") ? EXIT_ERROR : EXIT_SUCCESS);
     });
 
@@ -248,6 +366,107 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .description("Print release guard checklist")
     .action(() => {
       write(["JCE-Worker Release Check", "- version sync files reviewed", "- typecheck/test/audit evidence required", "- commit before push", "- tag after push", "- generated/context files excluded"].join("\n"));
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const preferencesCommand = new Command("preferences")
+    .description("Show or set JCE-Worker operator preferences")
+    .option("--autonomous <bool>", "prefer autonomous completion: true/false")
+    .option("--ask-architecture <bool>", "ask before architecture changes: true/false")
+    .option("--broad-verify <bool>", "prefer broad verification: true/false")
+    .option("--terse <bool>", "prefer terse reports: true/false")
+    .action((opts: { autonomous?: string; askArchitecture?: string; broadVerify?: string; terse?: string }) => {
+      const loaded = loadSessionState(cwd());
+      const current = loaded.state.runtime.autonomousExecutionSession;
+      const currentPrefs = (loaded.state.orchestration as any).operatorPreferences ?? {};
+      if (!opts.autonomous && !opts.askArchitecture && !opts.broadVerify && !opts.terse) {
+        write(JSON.stringify({ autonomousExecutionSession: current ?? null, operatorPreferences: currentPrefs }, null, 2));
+        exitIfEnabled(options, EXIT_SUCCESS);
+        return;
+      }
+      loaded.state.runtime.autonomousExecutionSession = {
+        continueUntilDone: opts.autonomous === "true" ? true : opts.autonomous === "false" ? false : current?.continueUntilDone ?? false,
+        reason: "updated via preferences command",
+        updatedAt: new Date().toISOString(),
+      };
+      (loaded.state.orchestration as any).operatorPreferences = {
+        ...currentPrefs,
+        askBeforeArchitectureChange: opts.askArchitecture === undefined ? currentPrefs.askBeforeArchitectureChange : opts.askArchitecture === "true",
+        preferBroadVerification: opts.broadVerify === undefined ? currentPrefs.preferBroadVerification : opts.broadVerify === "true",
+        preferTerseReports: opts.terse === undefined ? currentPrefs.preferTerseReports : opts.terse === "true",
+      };
+      saveSessionState(cwd(), loaded.state, undefined, { saveOrchestration: true });
+      successOutput("JCE-Worker preferences updated.");
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const releaseCommanderCommand = new Command("release-commander")
+    .description("Show release commander checklist and compatibility summary")
+    .action(() => {
+      write([
+        "JCE-Worker Release Commander",
+        "- version sync audit",
+        "- changelog truth-check",
+        "- previous tag delta",
+        "- safe staging plan",
+        "- verification strength",
+        "- tag sanity",
+        "- updater compatibility check",
+        "- release notes generation",
+      ].join("\n"));
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const explainLastCommand = new Command("explain-last")
+    .description("Explain the latest JCE-Worker decision trail")
+    .action(() => {
+      write(explainLast(loadSessionState(cwd()).state.runtime));
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const whyBlockedCommand = new Command("why-blocked")
+    .description("Show why JCE-Worker is blocked")
+    .action(() => {
+      write(whyBlocked(loadSessionState(cwd()).state.runtime));
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const whyAskedCommand = new Command("why-asked")
+    .description("Show why JCE-Worker asked for user input")
+    .action(() => {
+      write(whyAsked(loadSessionState(cwd()).state.runtime));
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const nextActionCommand = new Command("next-action")
+    .description("Show the best next JCE-Worker action")
+    .action(() => {
+      write(nextAction(loadSessionState(cwd()).state.runtime));
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
+  const failureRememberCommand = new Command("failure-remember")
+    .description("Store failure memory with automatic signature generation")
+    .argument("<summary>", "Failure summary")
+    .option("--command <command>", "Failing command")
+    .option("--class <errorClass>", "Error class")
+    .option("--file <file>", "Related file")
+    .option("--root <phrase>", "Root phrase")
+    .option("--stack <marker>", "Stack marker")
+    .option("--cause <cause>", "Root cause note")
+    .option("--fix <fix>", "Fix note")
+    .action((summary: string, opts: { command?: string; class?: string; file?: string; root?: string; stack?: string; cause?: string; fix?: string }) => {
+      const loaded = loadSessionState(cwd());
+      const signature = buildFailureSignature({ command: opts.command, errorClass: opts.class, file: opts.file, rootPhrase: opts.root, stackMarker: opts.stack });
+      const nextRuntime = addFailureMemory(loaded.state.runtime, createFailureMemoryEntry({
+        signature,
+        summary,
+        rootCause: opts.cause,
+        fixNote: opts.fix,
+        failedCommands: opts.command ? [opts.command] : [],
+      }));
+      saveSessionState(cwd(), { runtime: nextRuntime, orchestration: loaded.state.orchestration }, undefined, { saveOrchestration: false });
+      successOutput(`JCE-Worker failure memory saved: ${signature}`);
       exitIfEnabled(options, EXIT_SUCCESS);
     });
 
@@ -272,7 +491,9 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .addCommand(statusCommand)
     .addCommand(traceCommand)
     .addCommand(reportCommand)
+    .addCommand(plannerExplainCommand)
     .addCommand(profileCommand)
+    .addCommand(preferencesCommand)
     .addCommand(clearCommand)
     .addCommand(doctorCommand)
     .addCommand(learnCommand)
@@ -280,6 +501,12 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .addCommand(brainCommand)
     .addCommand(commitCheckCommand)
     .addCommand(releaseCheckCommand)
+    .addCommand(releaseCommanderCommand)
+    .addCommand(explainLastCommand)
+    .addCommand(whyBlockedCommand)
+    .addCommand(whyAskedCommand)
+    .addCommand(nextActionCommand)
+    .addCommand(failureRememberCommand)
     .addCommand(taskLearnCommand);
 }
 

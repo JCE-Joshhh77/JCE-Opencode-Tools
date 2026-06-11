@@ -49,14 +49,12 @@ export class OrchestrationBridge {
   private manager: BackgroundManager;
   private client: OpenCodeClient;
   private orchestrator: OrchestrationController;
-  private chineseTranslator?: ChineseTranslator;
   private onPersist?: () => void;
 
   constructor(config: OrchestrationBridgeConfig) {
     this.manager = config.manager;
     this.client = config.client;
     this.orchestrator = config.orchestrator;
-    this.chineseTranslator = config.chineseTranslator;
     this.onPersist = config.onPersist;
   }
 

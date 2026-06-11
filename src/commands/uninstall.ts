@@ -179,19 +179,6 @@ async function runCommand(command: string, args: string[]): Promise<CommandResul
 }
 
 /**
- * Check if the current process is running with admin/elevated privileges.
- */
-async function isRunningAsAdmin(): Promise<boolean> {
-  if (platform() !== "win32") return process.getuid?.() === 0;
-  try {
-    const proc = Bun.spawn(["net", "session"], { stdout: "pipe", stderr: "pipe" });
-    return (await proc.exited) === 0;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Run a command elevated (as Administrator) on Windows via PowerShell.
  * Triggers UAC prompt automatically. Returns true if successful.
  */
@@ -438,7 +425,6 @@ async function removeLspServers(force: boolean, keep: boolean): Promise<{ remove
     return { removed: [], skipped: installed.map((s) => s.name) };
   }
 
-  const isAdmin = await isRunningAsAdmin();
   const isWindows = platform() === "win32";
 
   const removed: string[] = [];
@@ -511,7 +497,7 @@ async function removeLspServers(force: boolean, keep: boolean): Promise<{ remove
   return { removed, skipped };
 }
 
-async function removeOpenCodeJceCli(force: boolean): Promise<boolean> {
+async function removeOpenCodeJceCli(_force: boolean): Promise<boolean> {
   console.log();
   heading("4. opencode-jce CLI");
 

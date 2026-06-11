@@ -7,9 +7,12 @@
 
 // ─── Node Types ───────────────────────────────────────────────────────────────
 
-export type TaskNodeStatus = "pending" | "ready" | "running" | "verifying" | "done" | "failed" | "blocked" | "cancelled";
+export type TaskNodeStatus = "intake" | "pending" | "ready" | "running" | "verifying" | "awaiting_approval" | "done" | "failed" | "blocked" | "cancelled" | "abandoned";
 export type TaskNodeType = "code" | "research" | "review" | "shell" | "config" | "verify" | "plan";
 export type AgentRole = "self" | "oracle" | "jce-researcher" | "explorer" | "frontend" | "android";
+export type BlockerClass = "missing_info" | "permission_boundary" | "verification_failure" | "architecture_uncertainty" | "flaky_environment" | "external_dependency" | "requirements_conflict" | "unknown";
+export type RecoveryActionV2 = "retry_same" | "retry_with_more_context" | "switch_agent" | "run_narrower_verification" | "rollback_local_change" | "block_and_handoff";
+export type AutonomyLevel = "conservative" | "balanced" | "autonomous" | "release-lock";
 
 export type RetryStrategy = "same" | "different_approach" | "different_agent" | "escalate_user";
 
@@ -45,7 +48,16 @@ export interface TaskNode {
   startedAt?: string;
   completedAt?: string;
   failureReason?: string;
+  blockerClass?: BlockerClass;
+  transitionHistory?: TaskNodeTransition[];
   metadata?: Record<string, unknown>;
+}
+
+export interface TaskNodeTransition {
+  from: TaskNodeStatus;
+  to: TaskNodeStatus;
+  reason: string;
+  at: string;
 }
 
 export interface TaskNodeInput {
@@ -64,7 +76,16 @@ export interface TaskNodeOutput {
   newFacts: Fact[];
   confidence: number;
   blockers?: string[];
+  confidenceByDimension?: ConfidenceVector;
   raw?: string;
+}
+
+export interface ConfidenceVector {
+  intent: number;
+  routing: number;
+  implementation: number;
+  verification: number;
+  completion: number;
 }
 
 export interface OutputExpectation {
@@ -201,9 +222,19 @@ export interface PlanDelta {
 
 export interface PlanAssessment {
   confidence: number;
+  confidenceByDimension?: ConfidenceVector;
   completionEstimate: number;
   risks: string[];
   suggestions: string[];
+}
+
+export interface BlockerDecision {
+  classification: BlockerClass;
+  action: RecoveryActionV2;
+  askUser: boolean;
+  delegateToOracle: boolean;
+  continueWithSafeAssumption: boolean;
+  reason: string;
 }
 
 // ─── Scheduler Types ──────────────────────────────────────────────────────────
@@ -249,6 +280,7 @@ export interface ExecutionMemoryV2 {
   version: 2;
   updatedAt: string;
   graph?: TaskGraphSnapshot;
+  memoryTiers?: MemoryTierSnapshot;
   facts: Fact[];
   decisions: Decision[];
   artifacts: Artifact[];
@@ -257,11 +289,45 @@ export interface ExecutionMemoryV2 {
   taskLearnings: TaskLearningV2[];
   contextBudget?: ContextBudgetV2;
   sessionHistory: SessionEntry[];
+  operatorPreferences?: OperatorPreferences;
+  autonomyLevel?: AutonomyLevel;
   /** Persisted orchestration coordination state (constraints/signals) that must survive reloads. */
   orchestration?: {
     constraints: Constraint[];
     signals: Signal[];
   };
+}
+
+export interface MemoryTierSnapshot {
+  session: {
+    currentTask?: string;
+    blockers: string[];
+    pendingPlan?: string;
+  };
+  project: {
+    conventions: string[];
+    releaseFiles: string[];
+    standardVerification: string[];
+    dangerousAreas: string[];
+  };
+  failure: {
+    knownErrors: string[];
+    badFixes: string[];
+    successfulFixes: string[];
+  };
+  operator: {
+    preferTerseReports: boolean;
+    preferAutonomousCompletion: boolean;
+    preferBroadVerification: boolean;
+  };
+}
+
+export interface OperatorPreferences {
+  preferAutonomousCompletion?: boolean;
+  askBeforeArchitectureChange?: boolean;
+  preferBroadVerification?: boolean;
+  preferTerseReports?: boolean;
+  defaultReleaseStrictness?: "low" | "medium" | "high";
 }
 
 export interface WisdomEntryV2 {

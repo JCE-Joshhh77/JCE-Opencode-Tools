@@ -1,5 +1,7 @@
 import {
+  addFailureMemory,
   createEmptyRuntimeState,
+  createFailureMemoryEntry,
   createRuntimeTaskLearning,
   createRuntimeWisdomEntry,
   addRuntimeTaskLearning,
@@ -75,9 +77,11 @@ export function saveSessionState(
 }
 
 export {
+  addFailureMemory,
   addRuntimeTaskLearning,
   addRuntimeWisdom,
   createEmptyRuntimeState,
+  createFailureMemoryEntry,
   createRuntimeTaskLearning,
   createRuntimeWisdomEntry,
   getRuntimeStatePath,

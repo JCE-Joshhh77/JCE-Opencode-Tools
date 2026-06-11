@@ -1,5 +1,6 @@
 import { validateDelegatedResult } from "./policy.js";
 import type { ReviewStatus } from "../background/types.js";
+import { scoreDelegatedContract } from "./delegated-contract-scoring.js";
 
 export type RichReviewStatus = ReviewStatus | "blocked" | "retryable_failure";
 
@@ -8,6 +9,7 @@ export interface DelegatedReviewVerdict {
   missing: string[];
   notes: string[];
   retryable: boolean;
+  suggestedAgent?: string;
 }
 
 export interface DelegatedReviewOptions {
@@ -16,14 +18,6 @@ export interface DelegatedReviewOptions {
 
 const BLOCKED_PATTERNS = [/\bblocked\b/i, /missing credentials/i, /approval required/i, /access denied/i, /merge conflict/i, /user action/i];
 const RETRYABLE_PATTERNS = [/timeout/i, /rate limit/i, /network/i, /temporar/i, /retry may succeed/i, /service unavailable/i];
-
-/** Research-specific sections that satisfy the contract for jce-researcher */
-const RESEARCH_EQUIVALENT_SECTIONS: Record<string, string[]> = {
-  Summary: ["Short Answer", "Research Scope"],
-  Files: [], // Not required for research
-  Verification: ["Evidence", "Findings"],
-  Risks: ["Risks & Unknowns", "Risks"],
-};
 
 function validateResearchResult(text: string): { valid: boolean; missing: string[] } {
   const missing: string[] = [];
@@ -40,6 +34,9 @@ function validateResearchResult(text: string): { valid: boolean; missing: string
 }
 
 export function classifyDelegatedReview(text: string, options: DelegatedReviewOptions = {}): DelegatedReviewVerdict {
+  if (text.trim().length < 20 && !/^##\s+/m.test(text)) {
+    return { status: "needs_followup", missing: [], notes: ["Delegated output quality too low; consider switching agent"], retryable: true, suggestedAgent: options.agent === "explorer" ? "oracle" : "explorer" };
+  }
   // Use research-specific validation for jce-researcher
   const contract = options.agent === "jce-researcher"
     ? validateResearchResult(text)
@@ -58,6 +55,17 @@ export function classifyDelegatedReview(text: string, options: DelegatedReviewOp
 
   if (!contract.valid) {
     return { status: "needs_followup", missing: contract.missing, notes: [`Missing required sections: ${contract.missing.join(", ")}`], retryable: false };
+  }
+
+  const score = scoreDelegatedContract(text);
+  if (score.recommendSwitchAgent) {
+    return { status: "needs_followup", missing: [], notes: ["Delegated output quality too low; consider switching agent"], retryable: true, suggestedAgent: options.agent === "explorer" ? "oracle" : "explorer" };
+  }
+  if (score.recommendRetryWithContext) {
+    return { status: "needs_followup", missing: [], notes: ["Delegated output needs retry with richer context"], retryable: true };
+  }
+  if (score.needsFollowup) {
+    return { status: "needs_followup", missing: [], notes: ["Delegated output needs follow-up due to weak contract score"], retryable: true };
   }
 
   return { status: "accepted", missing: [], notes: [], retryable: false };

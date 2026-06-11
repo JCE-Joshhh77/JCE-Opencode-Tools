@@ -24,6 +24,8 @@ export interface TelemetryEvent {
 export interface JceDoctorReport { checks: { name: string; status: "pass" | "warning" | "fail"; message: string }[]; summary: { pass: number; warning: number; fail: number } }
 export interface AgentAuditFinding { severity: "info" | "warning" | "error"; agent: string; message: string }
 export interface AgentAuditReport { total: number; errors: number; warnings: number; findings: AgentAuditFinding[] }
+export interface PolicyEnforcementRow { area: string; level: "hard" | "hard+telemetry" | "partial" | "prompt-only" | "warning+gate"; note: string; promptSource?: string; runtimeSource?: string }
+export interface PolicyEnforcementReport { rows: PolicyEnforcementRow[] }
 
 export interface SkillTelemetrySummary {
   selectedByIntent: Record<string, number>;
@@ -38,6 +40,12 @@ export interface SkillTelemetrySummary {
   usefulBySkill: Record<string, number>;
   noisyBySkill: Record<string, number>;
   outcomeBySkill: Record<string, { success: number; fail: number; followup: number }>;
+}
+
+export interface PlannerTelemetrySummary {
+  fanOutTriggered: number;
+  linearFallback: number;
+  recentModes: Array<{ at: string; mode: "fanout" | "linear-fallback"; detectedUnits: number; fallbackReason?: string }>;
 }
 
 export interface RoutingQualitySummary {
@@ -303,6 +311,8 @@ export function buildAnalyticsRecommendations(events: TelemetryEvent[], evidence
   if (events.length === 0) recommendations.push("Telemetry is empty; run normal JCE workflows to collect local non-PII routing data.");
   const rejectedDelegations = events.filter((event) => event.kind === "delegation_rejected").length;
   if (rejectedDelegations > 0) recommendations.push("Delegation rejection detected; inspect sub-agent contract quality and review acceptance rules.");
+  const planner = summarizePlannerTelemetry(events);
+  if (planner.linearFallback >= 3 && planner.linearFallback > planner.fanOutTriggered) recommendations.push("Planner linear fallback is frequent; inspect decomposition prompts and fan-out heuristics.");
   return recommendations;
 }
 
@@ -317,8 +327,36 @@ export function assessJceDoctor(root: string): JceDoctorReport {
   const capabilities = buildCapabilityRegistry().capabilities.length;
   add("capabilities", capabilities >= 10 ? "pass" : "warning", `${capabilities} capabilities registered.`);
   add("context-keeper", existsSync(join(root, "src", "mcp", "context-keeper.ts")) ? "pass" : "warning", "Context keeper source checked.");
+  const plannerSummary = summarizePlannerTelemetry(loadTelemetry(root));
+  if (plannerSummary.linearFallback >= 3 && plannerSummary.linearFallback > plannerSummary.fanOutTriggered) {
+    add("planner-fallback", "warning", `Planner linear fallback ${plannerSummary.linearFallback} exceeds fan-out ${plannerSummary.fanOutTriggered}. Review decomposition prompts or planner heuristics.`);
+  } else {
+    add("planner-fallback", "pass", `Planner fan-out ${plannerSummary.fanOutTriggered}, linear fallback ${plannerSummary.linearFallback}.`);
+  }
   const summary = { pass: checks.filter((c) => c.status === "pass").length, warning: checks.filter((c) => c.status === "warning").length, fail: checks.filter((c) => c.status === "fail").length };
   return { checks, summary };
+}
+
+export function getPolicyEnforcementReport(): PolicyEnforcementReport {
+  const rows: PolicyEnforcementRow[] = [
+    { area: "Intent routing", level: "hard+telemetry", note: "Intent scored, route persisted, telemetry recorded.", promptSource: "src/plugin/agents/jce-worker.ts#IntentGate", runtimeSource: "src/plugin/index.ts chat.message + routing telemetry" },
+    { area: "Skill auto-loading", level: "hard", note: "Skills auto-selected and injected into system prompt when routing resolves matches.", promptSource: "src/plugin/agents/jce-worker.ts#Auto-Dispatch", runtimeSource: "src/plugin/index.ts experimental.chat.system.transform + skill-loader.ts" },
+    { area: "Skill count 1-2", level: "prompt-only", note: "Runtime may load up to 4 skills; prompt wording is stricter than enforcement.", promptSource: "global AGENTS.md auto-dispatch wording", runtimeSource: "src/plugin/lib/skill-loader.ts max cap = 4" },
+    { area: "Parallel delegation", level: "partial", note: "Planner now fans out clearly independent implementation units into sibling nodes; generic cases still fall back to safest linear path.", promptSource: "src/plugin/agents/jce-worker.ts#IntentGate + #Delegation Contract", runtimeSource: "src/plugin/lib/orchestration/planner.ts + scheduler.ts + bridge.ts" },
+    { area: "Delegated output contract", level: "hard", note: "Collected sub-agent output is scored/reviewed for contract quality and evidence strength.", promptSource: "src/plugin/agents/jce-worker.ts#Delegation Contract", runtimeSource: "src/plugin/tools/dispatch.ts bg_collect review path" },
+    { area: "Main-agent verification", level: "warning+gate", note: "Final text is inspected for completion claims; runtime appends verification/final-gate warnings but cannot pre-block generation.", promptSource: "src/plugin/agents/jce-worker.ts#Verification Evidence", runtimeSource: "src/plugin/index.ts experimental.text.complete + tool.execute.after" },
+    { area: "Context preservation", level: "partial", note: "Context file existence enforced; full context-update/checkpoint lifecycle still depends on agent behavior/tool use.", promptSource: "global AGENTS.md context rules", runtimeSource: "src/plugin/index.ts createProjectContextIfMissing + external context-keeper usage" },
+  ];
+  return { rows };
+}
+
+export function buildPolicyEnforcementReport(): string {
+  const { rows } = getPolicyEnforcementReport();
+  return [
+    "Policy vs Enforcement",
+    "=====================",
+    ...rows.map((row) => `- ${row.area}: ${row.level} — ${row.note}`),
+  ].join("\n");
 }
 
 export function evidencePath(root: string): string { return join(root, ".opencode-jce", "evidence.json"); }
@@ -440,6 +478,27 @@ export function summarizeSkillTelemetry(events: TelemetryEvent[]): SkillTelemetr
     if (noisy > 0) summary.noisyBySkill[skill] = noisy;
   }
   return summary;
+}
+
+export function summarizePlannerTelemetry(events: TelemetryEvent[]): PlannerTelemetrySummary {
+  let fanOutTriggered = 0;
+  let linearFallback = 0;
+  const recentModes: PlannerTelemetrySummary["recentModes"] = [];
+  for (const event of events) {
+    if (event.kind !== "routing_decision") continue;
+    const plannerMode = event.metadata?.plannerMode;
+    if (plannerMode === "fanout") fanOutTriggered += 1;
+    if (plannerMode === "linear-fallback") linearFallback += 1;
+    if (plannerMode === "fanout" || plannerMode === "linear-fallback") {
+      recentModes.push({
+        at: event.at,
+        mode: plannerMode,
+        detectedUnits: Array.isArray(event.metadata?.detectedUnits) ? event.metadata?.detectedUnits.length : 0,
+        fallbackReason: typeof event.metadata?.fallbackReason === "string" ? event.metadata.fallbackReason : undefined,
+      });
+    }
+  }
+  return { fanOutTriggered, linearFallback, recentModes: recentModes.slice(-10).reverse() };
 }
 
 export function summarizeRoutingQuality(events: TelemetryEvent[]): RoutingQualitySummary {

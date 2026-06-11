@@ -55,6 +55,35 @@ describe("Adaptive Planner", () => {
       expect(result.nodes.some((n) => n.title.toLowerCase().includes("implement"))).toBe(true);
     });
 
+    test("fans out explicit independent implementation units into parallel code nodes", () => {
+      const planner = new AdaptivePlanner();
+      const memory = createOrchestrationMemory(NOW);
+      const intent = makeIntent("feature", ["software-engineering"]);
+
+      const result = planner.plan(intent, "Implement login flow, settings page, and admin audit log", memory);
+      const codeNodes = result.nodes.filter((n) => n.type === "code" && n.title.startsWith("Implement unit:"));
+      const integrationNode = result.nodes.find((n) => n.title === "Integrate parallel implementation units");
+
+      expect(codeNodes.length).toBeGreaterThanOrEqual(3);
+      expect(integrationNode).toBeDefined();
+      for (const node of codeNodes) {
+        expect((node.dependencies ?? []).length).toBe(1);
+      }
+      const edgesToIntegration = result.edges.filter((edge) => edge.to === integrationNode!.id);
+      expect(edgesToIntegration.length).toBe(codeNodes.length);
+    });
+
+    test("does not fan out sequential work into parallel implementation units", () => {
+      const planner = new AdaptivePlanner();
+      const memory = createOrchestrationMemory(NOW);
+      const intent = makeIntent("feature", ["software-engineering"]);
+
+      const result = planner.plan(intent, "First update schema, then wire API, then verify migration", memory);
+      const codeNodes = result.nodes.filter((n) => n.type === "code" && n.title.startsWith("Implement unit:"));
+      expect(codeNodes.length).toBe(0);
+      expect(result.nodes.some((n) => (n.metadata as any)?.parallelFallbackReason === "Sequential dependency signals detected; keep linear plan.")).toBe(true);
+    });
+
     test("creates nodes for refactor intent", () => {
       const planner = new AdaptivePlanner();
       const memory = createOrchestrationMemory(NOW);

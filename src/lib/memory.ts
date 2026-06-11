@@ -26,12 +26,10 @@ const GLOBAL_FILE = "global.json";
 // ─── Memory Store Class ──────────────────────────────────────
 
 export class MemoryStore {
-  private configDir: string;
   private memoryDir: string;
   private projectHash: string;
 
   constructor(configDir: string, projectDir?: string) {
-    this.configDir = configDir;
     this.memoryDir = join(configDir, MEMORY_DIR);
     this.projectHash = projectDir
       ? createHash("sha256").update(projectDir).digest("hex").slice(0, 12)

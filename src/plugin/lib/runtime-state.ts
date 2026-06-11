@@ -65,6 +65,14 @@ export interface FailureMemoryEntry {
   createdAt: string;
 }
 
+export interface FailureCaptureInput {
+  command?: string;
+  errorClass?: string;
+  file?: string;
+  rootPhrase?: string;
+  stackMarker?: string;
+}
+
 export interface ContextBudgetSummary {
   originalChars: number;
   compressedChars: number;
@@ -79,11 +87,40 @@ export interface ContextBudgetSummary {
   }>;
 }
 
+function safeFiniteInt(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(Math.trunc(value), Number.MAX_SAFE_INTEGER);
+}
+
+function safePercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+export function sanitizeContextBudgetSummary(summary: ContextBudgetSummary | undefined): ContextBudgetSummary | undefined {
+  if (!summary) return undefined;
+  const byTool = Object.fromEntries(Object.entries(summary.byTool ?? {}).map(([tool, value]) => [tool, {
+    originalChars: safeFiniteInt(value.originalChars),
+    compressedChars: safeFiniteInt(value.compressedChars),
+    estimatedTokensSaved: safeFiniteInt(value.estimatedTokensSaved),
+    tasks: safeFiniteInt(value.tasks),
+  }]));
+  return {
+    originalChars: safeFiniteInt(summary.originalChars),
+    compressedChars: safeFiniteInt(summary.compressedChars),
+    estimatedTokensSaved: safeFiniteInt(summary.estimatedTokensSaved),
+    estimatedSavingsPercent: safePercent(summary.estimatedSavingsPercent),
+    tasks: safeFiniteInt(summary.tasks),
+    byTool,
+  };
+}
+
 export interface LoadRuntimeStateResult {
   path: string;
   runtime: RuntimeState;
   recoveredFromInvalid: boolean;
   invalidBackupPath?: string;
+  healedContextBudget?: boolean;
 }
 
 export interface MergeRuntimeStateOptions {
@@ -205,10 +242,12 @@ function mergeById(previous: unknown[], next: unknown[]): unknown[] {
 function mergeContextBudgetSummary(previous?: ContextBudgetSummary, next?: ContextBudgetSummary): ContextBudgetSummary | undefined {
   if (!previous) return next;
   if (!next) return previous;
-  const originalChars = previous.originalChars + next.originalChars;
-  const compressedChars = previous.compressedChars + next.compressedChars;
+  const safePrevious = sanitizeContextBudgetSummary(previous)!;
+  const safeNext = sanitizeContextBudgetSummary(next)!;
+  const originalChars = safePrevious.originalChars + safeNext.originalChars;
+  const compressedChars = safePrevious.compressedChars + safeNext.compressedChars;
   const byTool: NonNullable<ContextBudgetSummary["byTool"]> = { ...(previous.byTool ?? {}) };
-  for (const [tool, value] of Object.entries(next.byTool ?? {})) {
+  for (const [tool, value] of Object.entries(safeNext.byTool ?? {})) {
     const prior = byTool[tool] ?? { originalChars: 0, compressedChars: 0, estimatedTokensSaved: 0, tasks: 0 };
     byTool[tool] = {
       originalChars: prior.originalChars + value.originalChars,
@@ -218,11 +257,11 @@ function mergeContextBudgetSummary(previous?: ContextBudgetSummary, next?: Conte
     };
   }
   return {
-    originalChars,
-    compressedChars,
-    estimatedTokensSaved: previous.estimatedTokensSaved + next.estimatedTokensSaved,
-    estimatedSavingsPercent: originalChars === 0 ? 0 : Math.max(0, Math.round((1 - compressedChars / originalChars) * 100)),
-    tasks: previous.tasks + next.tasks,
+    originalChars: safeFiniteInt(originalChars),
+    compressedChars: safeFiniteInt(compressedChars),
+    estimatedTokensSaved: safeFiniteInt(safePrevious.estimatedTokensSaved + safeNext.estimatedTokensSaved),
+    estimatedSavingsPercent: originalChars === 0 ? 0 : safePercent((1 - compressedChars / originalChars) * 100),
+    tasks: safeFiniteInt(safePrevious.tasks + safeNext.tasks),
     byTool,
   };
 }
@@ -238,7 +277,7 @@ export function pruneRuntimeState(runtime: RuntimeState): RuntimeState {
     traceEvents: newest(runtime.traceEvents, 200),
     activeWorkflow: runtime.activeWorkflow,
     workflowRuns: newest(runtime.workflowRuns ?? [], 10),
-    contextBudgetSummary: runtime.contextBudgetSummary,
+    contextBudgetSummary: sanitizeContextBudgetSummary(runtime.contextBudgetSummary),
     wisdom: newest(runtime.wisdom ?? [], 50),
     taskLearnings: newest(runtime.taskLearnings ?? [], 25),
     failureMemories: newest(runtime.failureMemories ?? [], 25),
@@ -280,16 +319,21 @@ function writeJsonAtomic(path: string, value: unknown): void {
 export function loadRuntimeState(projectRoot: string, now = new Date().toISOString()): LoadRuntimeStateResult {
   const path = getRuntimeStatePath(projectRoot);
   if (!existsSync(path)) {
-    return { path, runtime: createEmptyRuntimeState(now), recoveredFromInvalid: false };
+    return { path, runtime: createEmptyRuntimeState(now), recoveredFromInvalid: false, healedContextBudget: false };
   }
 
   try {
     const parsed = JSON.parse(readFileSync(path, "utf-8")) as RuntimeState;
-    return { path, runtime: pruneRuntimeState({ ...createEmptyRuntimeState(now), ...parsed, workflowRuns: parsed.workflowRuns ?? [], wisdom: parsed.wisdom ?? [], taskLearnings: parsed.taskLearnings ?? [], failureMemories: parsed.failureMemories ?? [], autonomousExecutionSession: parsed.autonomousExecutionSession }), recoveredFromInvalid: false };
+    const rawBudget = parsed.contextBudgetSummary;
+    const healedBudget = sanitizeContextBudgetSummary(rawBudget);
+    const healedContextBudget = JSON.stringify(rawBudget) !== JSON.stringify(healedBudget);
+    const runtime = pruneRuntimeState({ ...createEmptyRuntimeState(now), ...parsed, contextBudgetSummary: healedBudget, workflowRuns: parsed.workflowRuns ?? [], wisdom: parsed.wisdom ?? [], taskLearnings: parsed.taskLearnings ?? [], failureMemories: parsed.failureMemories ?? [], autonomousExecutionSession: parsed.autonomousExecutionSession });
+    if (healedContextBudget) writeJsonAtomic(path, runtime);
+    return { path, runtime, recoveredFromInvalid: false, healedContextBudget };
   } catch {
     const backupPath = `${path}.invalid-${Date.now()}`;
     renameSync(path, backupPath);
-    return { path, runtime: createEmptyRuntimeState(now), recoveredFromInvalid: true, invalidBackupPath: backupPath };
+    return { path, runtime: createEmptyRuntimeState(now), recoveredFromInvalid: true, invalidBackupPath: backupPath, healedContextBudget: false };
   }
 }
 

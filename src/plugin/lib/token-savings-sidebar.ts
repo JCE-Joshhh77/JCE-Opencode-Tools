@@ -3,6 +3,12 @@ import { loadSessionState } from "./session-store.js";
 
 export const TOKEN_SAVINGS_REFRESH_INTERVAL_MS = 2_000;
 
+function formatCompactInteger(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0";
+  const safe = Math.min(Math.trunc(value), Number.MAX_SAFE_INTEGER);
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(safe);
+}
+
 export interface TokenSavingsStateApi {
   state: {
     path: {
@@ -22,7 +28,7 @@ export function renderContextBudgetLine(api: TokenSavingsStateApi): string {
   const topTool = Object.entries(summary.byTool ?? {})
     .sort((left, right) => (right[1]?.estimatedTokensSaved ?? 0) - (left[1]?.estimatedTokensSaved ?? 0))[0];
   const source = topTool ? ` · top: ${topTool[0]}` : "";
-  return `~${summary.estimatedTokensSaved ?? 0} token(s) saved · ${summary.tasks} event(s)${source}`;
+  return `~${formatCompactInteger(summary.estimatedTokensSaved ?? 0)} token(s) saved · ${formatCompactInteger(summary.tasks)} event(s)${source}`;
 }
 
 export function createContextBudgetLineSignal(api: TokenSavingsStateApi, refreshIntervalMs = TOKEN_SAVINGS_REFRESH_INTERVAL_MS) {

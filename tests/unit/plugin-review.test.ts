@@ -38,4 +38,21 @@ describe("plugin review", () => {
     expect(review.status).toBe("retryable_failure");
     expect(review.retryable).toBe(true);
   });
+
+  test("marks weak delegated output as needs followup from contract score", () => {
+    const review = classifyDelegatedReview("## Summary\nDone\n\n## Files\n- src/a.ts");
+    expect(review.status).toBe("needs_followup");
+    expect(review.retryable).toBe(false);
+  });
+
+  test("suggests alternate agent when delegated output quality is very low", () => {
+    const review = classifyDelegatedReview("tiny", { agent: "explorer" });
+    expect(review.status).toBe("needs_followup");
+    expect(review.suggestedAgent).toBe("oracle");
+  });
+
+  test("marks medium-quality delegated output as retryable follow-up with richer context", () => {
+    const review = classifyDelegatedReview("## Summary\nDone\n\n## Files\n- src/a.ts\n\n## Verification\n- not run yet\n\n## Risks\n- low confidence");
+    expect(["accepted", "needs_followup"]).toContain(review.status);
+  });
 });

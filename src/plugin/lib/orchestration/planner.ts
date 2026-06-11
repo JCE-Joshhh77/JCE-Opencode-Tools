@@ -19,6 +19,162 @@ import { addNode, removeNode, addEdge, type CreateNodeInput } from "./task-graph
 import type { OrchestrationMemory } from "./shared-memory.js";
 import { getTopFacts, getActiveConstraints } from "./shared-memory.js";
 
+const IMPLEMENTATION_SPLIT_VERBS = /\b(?:add|implement|create|build|update|refactor|extract|wire|support|improve)\b/i;
+const SEQUENCE_SIGNALS = /\b(?:first|then|after|before|finally|depends on|dependency|wire into|followed by)\b/i;
+
+function normalizeUnitLabel(text: string): string {
+  return text.replace(/^[-*•\d.)\s]+/, "").replace(/\s+/g, " ").trim().replace(/[.;:,]+$/, "");
+}
+
+function detectIndependentUnits(goal: string): { units: string[]; reason: string } {
+  if (SEQUENCE_SIGNALS.test(goal)) return { units: [], reason: "Sequential dependency signals detected; keep linear plan." };
+
+  const bulletLines = goal
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^[-*•]\s+|^\d+[.)]\s+/.test(line))
+    .map(normalizeUnitLabel)
+    .filter((line) => line.length > 3);
+  if (bulletLines.length >= 2) return { units: Array.from(new Set(bulletLines)), reason: "Explicit list-like units detected." };
+
+  if (!IMPLEMENTATION_SPLIT_VERBS.test(goal)) return { units: [], reason: "No strong implementation split verb detected." };
+  const match = goal.match(/\b(?:add|implement|create|build|update|refactor|extract|wire|support|improve)\b\s+(.+)/i);
+  const tail = match?.[1]?.trim() ?? "";
+  if (!tail) return { units: [], reason: "No tail segment found after implementation verb." };
+  if (SEQUENCE_SIGNALS.test(tail)) return { units: [], reason: "Tail contains sequential dependency signals; keep linear plan." };
+  const parts = tail
+    .split(/,|\band\b|\&/i)
+    .map(normalizeUnitLabel)
+    .filter((part) => part.length >= 4)
+    .filter((part) => !/^(?:tests?|verification|docs?|documentation|review|cleanup)$/i.test(part));
+  return parts.length >= 2
+    ? { units: Array.from(new Set(parts)), reason: "Multiple explicit implementation units detected in prose." }
+    : { units: [], reason: "Not enough clearly independent implementation units detected." };
+}
+
+function buildParallelImplementationPlan(args: {
+  intent: ScoredIntent;
+  goal: string;
+  facts: ReturnType<typeof getTopFacts>;
+  constraints: ReturnType<typeof getActiveConstraints>;
+  objective: { mode: "fast" | "balanced" | "careful"; reason: string };
+  units: string[];
+}): { nodes: CreateNodeInput[]; edges: Array<{ from: string; to: string }> } {
+  const { intent, goal, facts, constraints, objective, units } = args;
+  const ids = {
+    research: `node-${intent.intent}-research-${Math.random().toString(36).slice(2, 6)}`,
+    plan: `node-${intent.intent}-plan-${Math.random().toString(36).slice(2, 6)}`,
+    integration: `node-${intent.intent}-integrate-${Math.random().toString(36).slice(2, 6)}`,
+    tests: `node-${intent.intent}-tests-${Math.random().toString(36).slice(2, 6)}`,
+    verify: `node-${intent.intent}-verify-${Math.random().toString(36).slice(2, 6)}`,
+  };
+  const sharedMeta = { plannerMode: objective.mode, plannerReason: objective.reason, parallelization: "explicit-independent-units", parallelUnits: units };
+  const nodes: CreateNodeInput[] = [
+    {
+      id: ids.research,
+      type: "research",
+      title: "Understand requirements and codebase",
+      description: `Understand implementation surface for: ${goal}`,
+      agent: "explorer",
+      dependencies: [],
+      prompt: `Explore the codebase to understand where ${goal} should be implemented. Identify relevant files, patterns, and integration points. Also identify whether these explicit units look independent: ${units.join("; ")}.`,
+      context: facts,
+      constraints,
+      skills: ["codebase-intelligence"],
+      priority: 10,
+      metadata: sharedMeta,
+    },
+    {
+      id: ids.plan,
+      type: "plan",
+      title: "Design implementation approach",
+      description: `Design implementation plan for: ${goal}`,
+      agent: "self",
+      dependencies: [ids.research],
+      prompt: `Design the implementation for: ${goal}. Confirm these units are independent enough for parallel execution: ${units.join("; ")}. Note shared files, contracts, and integration risks.`,
+      context: facts,
+      constraints,
+      skills: intent.skills,
+      priority: 9,
+      metadata: sharedMeta,
+    },
+  ];
+
+  const unitIds = units.map((unit, index) => {
+    const id = `node-${intent.intent}-unit-${index + 1}-${Math.random().toString(36).slice(2, 6)}`;
+    nodes.push({
+      id,
+      type: "code",
+      title: `Implement unit: ${unit}`,
+      description: `Implement explicit independent unit: ${unit}`,
+      agent: "self",
+      dependencies: [ids.plan],
+      prompt: `Implement this independent unit for the broader goal "${goal}": ${unit}. Stay scoped to this unit, avoid touching unrelated units except for necessary shared contracts, and note any overlap risks.`,
+      context: facts,
+      constraints,
+      skills: ["software-engineering", ...intent.skills.filter((skill) => skill !== "software-engineering")],
+      priority: 8,
+      metadata: { ...sharedMeta, parallelUnit: unit, parallelUnitIndex: index + 1 },
+    });
+    return id;
+  });
+
+  nodes.push(
+    {
+      id: ids.integration,
+      type: "review",
+      title: "Integrate parallel implementation units",
+      description: `Review and integrate parallel units for: ${goal}`,
+      agent: "self",
+      dependencies: unitIds,
+      prompt: `Review outputs from these parallel units for ${goal}: ${units.join("; ")}. Confirm they integrate cleanly, identify conflicts, and ensure no unit was skipped.`,
+      context: facts,
+      constraints,
+      skills: ["software-engineering"],
+      priority: 7,
+      metadata: sharedMeta,
+    },
+    {
+      id: ids.tests,
+      type: "code",
+      title: "Write tests",
+      description: `Write or update tests for: ${goal}`,
+      agent: "self",
+      dependencies: [ids.integration],
+      prompt: `Write comprehensive tests for: ${goal}. Cover all implemented units (${units.join("; ")}), integration edges, and error scenarios.`,
+      context: facts,
+      constraints,
+      skills: ["software-engineering"],
+      priority: 6,
+      metadata: sharedMeta,
+    },
+    {
+      id: ids.verify,
+      type: "verify",
+      title: "Verify implementation",
+      description: `Verify final implementation for: ${goal}`,
+      agent: "self",
+      dependencies: [ids.tests],
+      prompt: `Run tests, type checker, and relevant verification for: ${goal}. Confirm all explicit units (${units.join("; ")}) are complete and integrated.`,
+      context: facts,
+      constraints,
+      skills: intent.skills,
+      priority: 5,
+      metadata: sharedMeta,
+    },
+  );
+
+  const edges = [
+    { from: ids.research, to: ids.plan },
+    ...unitIds.map((unitId) => ({ from: ids.plan, to: unitId })),
+    ...unitIds.map((unitId) => ({ from: unitId, to: ids.integration })),
+    { from: ids.integration, to: ids.tests },
+    { from: ids.tests, to: ids.verify },
+  ];
+
+  return { nodes, edges };
+}
+
 // ─── Plan Templates ───────────────────────────────────────────────────────────
 
 export interface PlanTemplate {
@@ -132,11 +288,25 @@ const PLAN_TEMPLATES: PlanTemplate[] = [
 
 export class AdaptivePlanner {
   private templates: PlanTemplate[];
-  private now: () => string;
 
-  constructor(templates?: PlanTemplate[], now?: () => string) {
+  constructor(templates?: PlanTemplate[], _now?: () => string) {
     this.templates = templates ?? PLAN_TEMPLATES;
-    this.now = now ?? (() => new Date().toISOString());
+  }
+
+  scoreTradeoffs(input: { speedWeight?: number; certaintyWeight?: number; tokenCostWeight?: number; interruptionWeight?: number; blastRadiusWeight?: number; reversibilityWeight?: number }, intent: IntentType): { mode: "fast" | "balanced" | "careful"; reason: string } {
+    const weights = {
+      speed: input.speedWeight ?? 0.5,
+      certainty: input.certaintyWeight ?? 0.5,
+      tokenCost: input.tokenCostWeight ?? 0.3,
+      interruption: input.interruptionWeight ?? 0.3,
+      blastRadius: input.blastRadiusWeight ?? 0.5,
+      reversibility: input.reversibilityWeight ?? 0.5,
+    };
+    const carefulScore = weights.certainty + weights.blastRadius + weights.reversibility;
+    const fastScore = weights.speed + (1 - weights.interruption);
+    if (intent === "release" || carefulScore >= 1.8) return { mode: "careful", reason: "High certainty/blast-radius/reversibility weighting" };
+    if (fastScore >= 1.2) return { mode: "fast", reason: "Speed-weighted objective dominates" };
+    return { mode: "balanced", reason: "Mixed trade-off profile" };
   }
 
   /**
@@ -147,6 +317,14 @@ export class AdaptivePlanner {
     const template = this.templates.find((t) => t.intent === intent.intent) ?? this.templates.find((t) => t.intent === "general")!;
     const facts = getTopFacts(memory, 10);
     const constraints = getActiveConstraints(memory);
+    const objective = this.scoreTradeoffs({}, intent.intent);
+
+    if (intent.intent === "feature" || intent.intent === "general" || intent.intent === "refactor") {
+      const detection = detectIndependentUnits(goal);
+      if (detection.units.length >= 2) {
+        return buildParallelImplementationPlan({ intent, goal, facts, constraints, objective, units: detection.units });
+      }
+    }
 
     const nodeIds: string[] = [];
     const nodes: CreateNodeInput[] = [];
@@ -171,6 +349,12 @@ export class AdaptivePlanner {
         constraints,
         skills: tNode.skills ?? intent.skills,
         priority: tNode.priority,
+        metadata: {
+          plannerMode: objective.mode,
+          plannerReason: objective.reason,
+          parallelization: "linear-fallback",
+          parallelFallbackReason: (intent.intent === "feature" || intent.intent === "general" || intent.intent === "refactor") ? detectIndependentUnits(goal).reason : "Intent not eligible for parallel fan-out.",
+        },
       });
     }
 
@@ -182,7 +366,7 @@ export class AdaptivePlanner {
    * Re-evaluate the plan after a node completes.
    * Returns a PlanDelta describing changes to make.
    */
-  replan(graph: TaskGraph, completedNode: TaskNode, memory: OrchestrationMemory): PlanDelta | null {
+  replan(graph: TaskGraph, completedNode: TaskNode, _memory: OrchestrationMemory): PlanDelta | null {
     const output = completedNode.output;
     if (!output) return null;
 
@@ -309,7 +493,7 @@ export class AdaptivePlanner {
   /**
    * Assess the current plan's health and progress.
    */
-  assess(graph: TaskGraph, memory: OrchestrationMemory): PlanAssessment {
+  assess(graph: TaskGraph, _memory: OrchestrationMemory): PlanAssessment {
     const nodes = Array.from(graph.nodes.values());
     const total = nodes.length;
     if (total === 0) return { confidence: 0, completionEstimate: 0, risks: ["No nodes in graph"], suggestions: ["Create a plan first"] };

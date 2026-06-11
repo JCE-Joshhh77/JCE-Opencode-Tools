@@ -6,6 +6,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.7.1] - 2026-06-11
+
+### Added
+- **Planner explainability CLI**: Added `jce-worker planner-explain` plus `status/report/trace --json` planner summaries so operator tooling can inspect why JCE-Worker chose fan-out or linear fallback.
+- **Safe commit planning support**: `jce-worker commit-check` now supports `--plan` and `--json` to show machine-readable path discipline results and a safe staging summary before release commits.
+
+### Changed
+- **Final completion discipline**: JCE-Worker final-text completion claims now escalate to `FINAL REVIEW GATE` during active workflows when verification or workflow evidence is missing.
+- **Planner decomposition**: Adaptive planner now fans out explicit independent implementation units into parallel code nodes, records linear fallback reasons when fan-out is skipped, and exposes planner rationale in status/report output.
+- **Planner analytics and doctor**: Local analytics and JCE-Worker doctor now summarize planner fan-out vs linear fallback counts, recent planner trend entries, and warn when linear fallback dominates.
+- Release version synced to `3.7.1` across package metadata, installers, constants, MCP version, README badge, and version tests.
+
+### Fixed
+- Reduced prompt/runtime mismatch by softening absolute parallel-delegation wording and exposing policy-vs-enforcement summaries through `jce-worker doctor --policy`.
+- Improved operator auditability by recording planner explainability trace events during auto-plan creation.
+
+### Difference from previous release
+- `3.7.0` introduced broader orchestration upgrades, release policy gates, and autonomy/failure-memory improvements.
+- `3.7.1` focuses on JCE-Worker explainability, safer release support, and stronger completion/decomposition transparency on top of the `3.7.0` orchestration base.
+
+### Verified
+- `bun test`
+- `bunx tsc --noEmit`
+- `bun ./src/index.ts validate`
+- `bun ./src/index.ts --version`
+
+---
+
 ## [3.7.0] - 2026-06-11
 
 ### Added

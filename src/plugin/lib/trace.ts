@@ -6,6 +6,7 @@ export type TraceEventType =
   | "task.retry_scheduled"
   | "task.stale_detected"
   | "task.blocked"
+  | "planner.explain"
   | "verification.recorded"
   | "summary.generated";
 

@@ -12,7 +12,6 @@ import type {
   AgentRole,
   SchedulerConfig,
   TaskNodeOutput,
-  Evidence,
 } from "./types.js";
 import {
   getDispatchableNodes,
@@ -25,6 +24,7 @@ import {
   updateGraphStatus,
   getReadyNodes,
 } from "./task-graph.js";
+import { classifyBlocker, recoveryActionToRetryStrategy } from "./blocker-classifier.js";
 
 // ─── Scheduler Configuration ──────────────────────────────────────────────────
 
@@ -182,14 +182,27 @@ export class Scheduler {
     if (!node) throw new Error(`Node not found: ${nodeId}`);
 
     const retryPolicy = node.retryPolicy;
+    const blocker = classifyBlocker(reason);
     let next: TaskGraph;
+
+    if (blocker.askUser) {
+      next = blockNode(graph, nodeId, reason, this.now(), blocker.classification);
+      this.emit({ type: "node.blocked", nodeId, timestamp: this.now(), detail: `classified: ${blocker.classification}` });
+      next = updateGraphStatus(next, this.now());
+      return { graph: next, action: "escalate" };
+    }
 
     if (retryPolicy.currentRetry < retryPolicy.maxRetries) {
       // Retry: reset to pending with incremented retry counter
       next = failNode(graph, nodeId, reason, this.now());
       const failedNode = next.nodes.get(nodeId)!;
       failedNode.status = "pending";
-      failedNode.retryPolicy = { ...failedNode.retryPolicy, currentRetry: failedNode.retryPolicy.currentRetry + 1 };
+       failedNode.blockerClass = blocker.classification;
+       failedNode.retryPolicy = {
+         ...failedNode.retryPolicy,
+         strategy: [recoveryActionToRetryStrategy(blocker.action), ...failedNode.retryPolicy.strategy.slice(1)],
+         currentRetry: failedNode.retryPolicy.currentRetry + 1,
+       };
       failedNode.completedAt = undefined;
 
       const strategy = retryPolicy.strategy[retryPolicy.currentRetry] ?? "same";
@@ -207,7 +220,7 @@ export class Scheduler {
     // Check if we should escalate to user
     const lastStrategy = retryPolicy.strategy[retryPolicy.strategy.length - 1];
     if (lastStrategy === "escalate_user") {
-      next = blockNode(graph, nodeId, `Exhausted retries (${retryPolicy.maxRetries}): ${reason}`, this.now());
+      next = blockNode(graph, nodeId, `Exhausted retries (${retryPolicy.maxRetries}): ${reason}`, this.now(), blocker.classification);
       this.emit({ type: "node.blocked", nodeId, timestamp: this.now(), detail: "escalating to user" });
       next = updateGraphStatus(next, this.now());
       return { graph: next, action: "escalate" };

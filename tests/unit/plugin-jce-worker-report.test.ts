@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { addFailureMemory, createEmptyRuntimeState, createFailureMemoryEntry } from "../../src/plugin/lib/runtime-state.ts";
 import { addWorkflowStep, attachStepEvidence, createWorkflowRun, updateWorkflowStepStatus } from "../../src/plugin/lib/workflow.ts";
-import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace, getJceWorkerNextAction } from "../../src/plugin/lib/jce-worker-report.ts";
+import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace, formatPlannerExplain, getJceWorkerNextAction } from "../../src/plugin/lib/jce-worker-report.ts";
 
 describe("JCE-Worker CLI report helpers", () => {
   test("formats status from active workflow memory", () => {
@@ -206,6 +206,66 @@ describe("JCE-Worker CLI report helpers", () => {
     expect(output).toContain("Annotated tag SHA compared as commit SHA");
     expect(output).toContain("Resolve peeled tag commit or use lightweight tag");
     expect(output).toContain("opencode-jce update");
+  });
+
+  test("formats planner rationale from orchestration graph metadata", () => {
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
+    const orchestration = {
+      graph: {
+        id: "graph-1",
+        goal: "Implement login flow, settings page, and admin audit log",
+        status: "executing",
+        nodes: [
+          { id: "n1", metadata: { plannerMode: "balanced", plannerReason: "Mixed trade-off profile", parallelization: "explicit-independent-units", parallelUnits: ["login flow", "settings page", "admin audit log"] } },
+          { id: "n2", metadata: { plannerMode: "balanced", plannerReason: "Mixed trade-off profile", parallelUnits: ["login flow", "settings page", "admin audit log"] } },
+        ],
+      },
+    } as any;
+
+    const status = formatJceWorkerStatus(memory, undefined, orchestration);
+    const report = formatJceWorkerReport(memory, undefined, orchestration);
+
+    expect(status).toContain("Parallel fan-out: yes");
+    expect(status).toContain("Detected units: login flow, settings page, admin audit log");
+    expect(report).toContain("Planner Rationale");
+    expect(report).toContain("Planner mode: balanced");
+    expect(report).toContain("Planner reason: Mixed trade-off profile");
+  });
+
+  test("formats linear fallback reason when planner keeps linear plan", () => {
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
+    const orchestration = {
+      graph: {
+        id: "graph-2",
+        goal: "First update schema, then wire API, then verify migration",
+        status: "planning",
+        nodes: [
+          { id: "n1", metadata: { plannerMode: "careful", plannerReason: "High certainty/blast-radius/reversibility weighting", parallelization: "linear-fallback", parallelFallbackReason: "Sequential dependency signals detected; keep linear plan." } },
+        ],
+      },
+    } as any;
+
+    const report = formatJceWorkerReport(memory, undefined, orchestration);
+    expect(report).toContain("Parallel fan-out: no");
+    expect(report).toContain("Linear fallback reason: Sequential dependency signals detected; keep linear plan.");
+  });
+
+  test("formats standalone planner explain output", () => {
+    const orchestration = {
+      graph: {
+        id: "graph-3",
+        goal: "Planner explain",
+        status: "planning",
+        nodes: [
+          { id: "n1", metadata: { plannerMode: "balanced", plannerReason: "Mixed trade-off profile", parallelization: "linear-fallback", parallelFallbackReason: "Not enough clearly independent implementation units detected." } },
+        ],
+      },
+    } as any;
+
+    const text = formatPlannerExplain(orchestration);
+    expect(text).toContain("JCE-Worker Planner Explain");
+    expect(text).toContain("Parallel fan-out: no");
+    expect(text).toContain("Linear fallback reasons: Not enough clearly independent implementation units detected.");
   });
 
   test("returns conservative next actions for all workflow states", () => {

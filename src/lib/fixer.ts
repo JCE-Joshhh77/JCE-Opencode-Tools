@@ -1,7 +1,6 @@
 import { existsSync } from "fs";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
-import { platform } from "os";
 import { createInterface } from "readline";
 import chalk from "chalk";
 import { getConfigDir, loadConfigFile } from "./config.js";
@@ -255,7 +254,6 @@ export async function fixMissingLsp(): Promise<FixResult[]> {
 
 export async function fixMissingTools(allowGlobalInstall = false): Promise<FixResult[]> {
   const results: FixResult[] = [];
-  const isWindows = platform() === "win32";
 
   // Check OpenCode CLI
   const hasOpencode = await commandExistsAsync("opencode");

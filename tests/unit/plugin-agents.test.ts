@@ -99,6 +99,17 @@ describe("plugin agents", () => {
     expect(prompt).toContain("Stop when blocked, unsafe, or explicitly instructed.");
   });
 
+  test("jce-worker prompt aligns strong routing claims with runtime-qualified wording", () => {
+    const agents = buildAgentConfigs();
+    const prompt = agents["jce-worker"].systemPrompt;
+
+    expect(prompt).toContain("Before acting on each user message");
+    expect(prompt).toContain("prefer parallel delegation when runtime/tools allow");
+    expect(prompt).toContain("if runtime constraints or approval boundaries prevent this");
+    expect(prompt).not.toContain("Before acting on ANY user message");
+    expect(prompt).not.toContain("dispatch ALL units in parallel — never sequentially");
+  });
+
   test("jce-worker prompt defines coding brain upgrades without superpowers dependency", () => {
     const agents = buildAgentConfigs();
     const prompt = agents["jce-worker"].systemPrompt;

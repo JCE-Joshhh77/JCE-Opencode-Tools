@@ -10,7 +10,6 @@ import type {
   Fact,
   FactSource,
   Decision,
-  DecisionStatus,
   Constraint,
   ConstraintOrigin,
   Artifact,

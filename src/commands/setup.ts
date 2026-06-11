@@ -7,7 +7,6 @@ import chalk from "chalk";
 import {
   getConfigDir,
   getOpenCodeConfigPath,
-  loadOpenCodeConfig,
   buildOpenCodeLspConfig,
   mergeLspToOpenCodeConfig,
 } from "../lib/config.js";
@@ -17,11 +16,6 @@ import { banner, heading, info, success, warn, error } from "../lib/ui.js";
 import { logCommandStart, logCommandSuccess, logCommandError } from "../lib/logger.js";
 import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
 import type { LspConfig } from "../types.js";
-
-interface SetupPreferences {
-  defaultProfile: string | null;
-  enabledLsp: string[];
-}
 
 /**
  * Create a readline interface for interactive prompts.

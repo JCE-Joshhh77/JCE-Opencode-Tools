@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { Scheduler, DEFAULT_SCHEDULER_CONFIG } from "../../src/plugin/lib/orchestration/scheduler.js";
-import { createTaskGraph, addNode, transitionNode } from "../../src/plugin/lib/orchestration/task-graph.js";
+import { createTaskGraph, addNode, transitionNode, promoteReadyNodes } from "../../src/plugin/lib/orchestration/task-graph.js";
 import type { CreateNodeInput, TaskNodeOutput, SchedulerEvent } from "../../src/plugin/lib/orchestration/index.js";
 
 const NOW = "2026-01-01T00:00:00.000Z";
@@ -41,6 +41,7 @@ describe("Scheduler", () => {
       let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
       graph = addNode(graph, makeNode({ id: "n1", agent: "explorer" }), NOW);
       graph = addNode(graph, makeNode({ id: "n2", agent: "explorer" }), NOW);
+      graph = promoteReadyNodes(graph, NOW);
 
       const result = scheduler.tick(graph);
       expect(result.toDispatch).toHaveLength(2);
@@ -54,6 +55,7 @@ describe("Scheduler", () => {
       let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
       graph = addNode(graph, makeNode({ id: "n1" }), NOW);
       graph = addNode(graph, makeNode({ id: "n2", dependencies: ["n1"] }), NOW);
+      graph = promoteReadyNodes(graph, NOW);
 
       const result = scheduler.tick(graph);
       // Only n1 should be dispatched (n2 depends on n1)
@@ -64,11 +66,12 @@ describe("Scheduler", () => {
 
     test("respects global concurrency limit", () => {
       timeCounter = 0;
-      const scheduler = new Scheduler({ maxConcurrency: 2, maxConcurrencyPerAgent: { self: 5, oracle: 5, "jce-researcher": 5, explorer: 5, frontend: 5 } }, mockNow);
+      const scheduler = new Scheduler({ maxConcurrency: 2, maxConcurrencyPerAgent: { self: 5, oracle: 5, "jce-researcher": 5, explorer: 5, frontend: 5, android: 5 } }, mockNow);
       let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
       graph = addNode(graph, makeNode({ id: "n1" }), NOW);
       graph = addNode(graph, makeNode({ id: "n2" }), NOW);
       graph = addNode(graph, makeNode({ id: "n3" }), NOW);
+      graph = promoteReadyNodes(graph, NOW);
 
       const result = scheduler.tick(graph);
       expect(result.toDispatch).toHaveLength(2);
@@ -81,6 +84,7 @@ describe("Scheduler", () => {
       graph = addNode(graph, makeNode({ id: "n1", agent: "self" }), NOW);
       graph = addNode(graph, makeNode({ id: "n2", agent: "self" }), NOW);
       graph = addNode(graph, makeNode({ id: "n3", agent: "explorer" }), NOW);
+      graph = promoteReadyNodes(graph, NOW);
 
       const result = scheduler.tick(graph);
       // Only 1 self agent + 1 explorer
@@ -94,6 +98,7 @@ describe("Scheduler", () => {
       let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
       graph = addNode(graph, makeNode({ id: "low", priority: 1 }), NOW);
       graph = addNode(graph, makeNode({ id: "high", priority: 10 }), NOW);
+      graph = promoteReadyNodes(graph, NOW);
 
       const result = scheduler.tick(graph);
       expect(result.toDispatch).toHaveLength(1);
@@ -175,6 +180,7 @@ describe("Scheduler", () => {
 
       let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
       graph = addNode(graph, makeNode({ id: "n1" }), NOW);
+      graph = promoteReadyNodes(graph, NOW);
 
       const tickResult = scheduler.tick(graph);
       graph = tickResult.graph;
@@ -182,7 +188,6 @@ describe("Scheduler", () => {
       scheduler.onNodeComplete(graph, "n1", makeOutput());
 
       const types = events.map((e) => e.type);
-      expect(types).toContain("node.promoted");
       expect(types).toContain("node.dispatched");
       expect(types).toContain("node.completed");
     });

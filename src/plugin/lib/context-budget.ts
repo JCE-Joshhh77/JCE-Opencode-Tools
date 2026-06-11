@@ -31,7 +31,9 @@ const APPROX_CHARS_PER_TOKEN = 4;
 const PROTECTED_BLOCK_PLACEHOLDER = "__JCE_CONTEXT_BUDGET_PROTECTED_BLOCK__";
 
 export function estimateTokensFromChars(chars: number): number {
-  return Math.max(0, Math.ceil(chars / APPROX_CHARS_PER_TOKEN));
+  if (!Number.isFinite(chars) || chars <= 0) return 0;
+  const safeChars = Math.min(chars, Number.MAX_SAFE_INTEGER);
+  return Math.max(0, Math.ceil(safeChars / APPROX_CHARS_PER_TOKEN));
 }
 
 // ─── Protection Rules ────────────────────────────────────────

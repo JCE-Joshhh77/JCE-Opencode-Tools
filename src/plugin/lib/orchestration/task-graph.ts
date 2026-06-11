@@ -21,6 +21,8 @@ import type {
   Compensation,
   OutputExpectation,
   TaskNodeOutput,
+  TaskNodeTransition,
+  BlockerClass,
 } from "./types.js";
 
 // ─── Creation ─────────────────────────────────────────────────────────────────
@@ -55,10 +57,6 @@ function timestamp(now?: string): string {
   return now ?? new Date().toISOString();
 }
 
-function generateId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 const DEFAULT_RETRY_POLICY: RetryPolicy = {
   maxRetries: 2,
   strategy: ["same", "different_approach", "escalate_user"],
@@ -86,7 +84,7 @@ export function createTaskNode(input: CreateNodeInput, now?: string): TaskNode {
     title: input.title,
     description: input.description,
     agent: input.agent,
-    status: "pending",
+    status: "intake",
     dependencies: input.dependencies ?? [],
     input: {
       prompt: input.prompt,
@@ -106,6 +104,7 @@ export function createTaskNode(input: CreateNodeInput, now?: string): TaskNode {
     },
     priority: input.priority ?? 0,
     createdAt: timestamp(now),
+    transitionHistory: [],
     metadata: input.metadata,
   };
 }
@@ -115,7 +114,7 @@ export function createTaskNode(input: CreateNodeInput, now?: string): TaskNode {
 function cloneGraph(graph: TaskGraph, now?: string): TaskGraph {
   return {
     ...graph,
-    nodes: new Map(Array.from(graph.nodes.entries()).map(([k, v]) => [k, { ...v, dependencies: [...v.dependencies], evidence: [...v.evidence] }])),
+    nodes: new Map(Array.from(graph.nodes.entries()).map(([k, v]) => [k, { ...v, dependencies: [...v.dependencies], evidence: [...v.evidence], transitionHistory: [...(v.transitionHistory ?? [])] }])),
     edges: graph.edges.map((e) => ({ ...e })),
     updatedAt: timestamp(now),
   };
@@ -175,17 +174,24 @@ export function addEdge(graph: TaskGraph, edge: DependencyEdge, now?: string): T
 // ─── Status Transitions ───────────────────────────────────────────────────────
 
 const VALID_TRANSITIONS: Record<TaskNodeStatus, TaskNodeStatus[]> = {
-  pending: ["ready", "cancelled", "blocked"],
-  ready: ["running", "cancelled", "blocked"],
-  running: ["verifying", "done", "failed", "blocked", "cancelled"],
+  intake: ["pending", "ready", "cancelled", "blocked", "abandoned"],
+  pending: ["ready", "cancelled", "blocked", "awaiting_approval", "abandoned"],
+  ready: ["running", "failed", "cancelled", "blocked", "awaiting_approval", "abandoned"],
+  running: ["verifying", "done", "failed", "blocked", "cancelled", "awaiting_approval"],
   verifying: ["done", "failed", "blocked"],
+  awaiting_approval: ["pending", "ready", "cancelled", "abandoned"],
   done: [],
-  failed: ["pending", "cancelled"],  // Can retry (back to pending)
-  blocked: ["pending", "ready", "cancelled"],
+  failed: ["pending", "cancelled", "abandoned"],  // Can retry (back to pending)
+  blocked: ["pending", "ready", "cancelled", "abandoned"],
   cancelled: [],
+  abandoned: [],
 };
 
 export function transitionNode(graph: TaskGraph, nodeId: string, newStatus: TaskNodeStatus, now?: string): TaskGraph {
+  return transitionNodeWithReason(graph, nodeId, newStatus, `transition ${graph.nodes.get(nodeId)?.status ?? "unknown"} -> ${newStatus}`, now);
+}
+
+export function transitionNodeWithReason(graph: TaskGraph, nodeId: string, newStatus: TaskNodeStatus, reason: string, now?: string): TaskGraph {
   const node = graph.nodes.get(nodeId);
   if (!node) throw new Error(`Node not found: ${nodeId}`);
   const allowed = VALID_TRANSITIONS[node.status];
@@ -194,31 +200,41 @@ export function transitionNode(graph: TaskGraph, nodeId: string, newStatus: Task
   }
   const next = cloneGraph(graph, now);
   const target = next.nodes.get(nodeId)!;
+  const historyEntry: TaskNodeTransition = {
+    from: target.status,
+    to: newStatus,
+    reason,
+    at: timestamp(now),
+  };
   target.status = newStatus;
+  target.transitionHistory = [...(target.transitionHistory ?? []), historyEntry];
   if (newStatus === "running" && !target.startedAt) target.startedAt = timestamp(now);
   if (newStatus === "done" || newStatus === "failed" || newStatus === "cancelled") target.completedAt = timestamp(now);
   return next;
 }
 
 export function failNode(graph: TaskGraph, nodeId: string, reason: string, now?: string): TaskGraph {
-  const next = transitionNode(graph, nodeId, "failed", now);
+  const next = transitionNodeWithReason(graph, nodeId, "failed", reason, now);
   const node = next.nodes.get(nodeId)!;
   node.failureReason = reason;
   return next;
 }
 
 export function completeNode(graph: TaskGraph, nodeId: string, output: TaskNodeOutput, now?: string): TaskGraph {
-  const next = transitionNode(graph, nodeId, "done", now);
+  const next = transitionNodeWithReason(graph, nodeId, "done", output.summary || "completed successfully", now);
   const node = next.nodes.get(nodeId)!;
   node.output = output;
   node.evidence = [...node.evidence, ...output.evidence];
   return next;
 }
 
-export function blockNode(graph: TaskGraph, nodeId: string, reason: string, now?: string): TaskGraph {
-  const next = transitionNode(graph, nodeId, "blocked", now);
+export function blockNode(graph: TaskGraph, nodeId: string, reason: string, now?: string, blockerClass?: BlockerClass): TaskGraph {
+  const next = transitionNodeWithReason(graph, nodeId, "blocked", reason, now);
   const node = next.nodes.get(nodeId)!;
   node.failureReason = reason;
+  node.blockerClass = blockerClass;
+  const last = node.transitionHistory?.[node.transitionHistory.length - 1];
+  if (last) last.reason = reason;
   return next;
 }
 
@@ -380,6 +396,9 @@ export function updateGraphStatus(graph: TaskGraph, now?: string): TaskGraph {
  */
 export function promoteReadyNodes(graph: TaskGraph, now?: string): TaskGraph {
   let next = cloneGraph(graph, now);
+  for (const node of next.nodes.values()) {
+    if (node.status === "intake") node.status = "pending";
+  }
   const ready = getReadyNodes(next);
   for (const node of ready) {
     const target = next.nodes.get(node.id)!;
@@ -409,7 +428,7 @@ export function restoreGraph(snapshot: TaskGraphSnapshot): TaskGraph {
     id: snapshot.id,
     goal: snapshot.goal,
     status: snapshot.status,
-    nodes: new Map(snapshot.nodes.map((n) => [n.id, { ...n, dependencies: [...n.dependencies], evidence: [...n.evidence] }])),
+    nodes: new Map(snapshot.nodes.map((n) => [n.id, { ...n, dependencies: [...n.dependencies], evidence: [...n.evidence], transitionHistory: [...(n.transitionHistory ?? [])] }])),
     edges: snapshot.edges.map((e) => ({ ...e })),
     createdAt: snapshot.createdAt,
     updatedAt: snapshot.updatedAt,

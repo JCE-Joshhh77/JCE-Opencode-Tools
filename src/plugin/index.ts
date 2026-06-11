@@ -8,6 +8,7 @@ import { buildAgentConfigs } from "./config.js";
 import { analyzeCommentDensity, COMMENT_WARNING } from "./hooks/comment-checker.js";
 import { looksLikeCompletionClaim, looksLikeStopEarlyOrConfirmation, shouldWarnForMissingVerification, VERIFICATION_WARNING } from "./hooks/jce-worker-guard.js";
 import { shouldEnforceContinuation, detectPrematureStop, CONTINUATION_PROMPT } from "./hooks/todo-enforcer.js";
+import { evaluateSelfCritique } from "./lib/self-critique.js";
 import { evaluateOpenWork, extractTodoState, type TodoState } from "./hooks/open-work-enforcer.js";
 import { loadSessionState, mergeRuntimeStateSnapshot, saveSessionState } from "./lib/session-store.js";
 import type { RuntimeState } from "./lib/session-store.js";
@@ -256,22 +257,23 @@ const jcePlugin: Plugin = async (input) => {
 
   const recordDirectContextBudget = (tool: string, originalText: string, compressedText: string, budget: ReturnType<typeof applyContextBudget>) => {
     if (!budget.changed && budget.estimatedTokensSaved === 0) return;
+    const safe = (value: number) => !Number.isFinite(value) || value <= 0 ? 0 : Math.min(Math.trunc(value), Number.MAX_SAFE_INTEGER);
     const previous = currentMemory.contextBudgetSummary;
-    const originalChars = (previous?.originalChars ?? 0) + budget.originalChars;
-    const compressedChars = (previous?.compressedChars ?? 0) + budget.compressedChars;
+    const originalChars = safe((previous?.originalChars ?? 0) + safe(budget.originalChars));
+    const compressedChars = safe((previous?.compressedChars ?? 0) + safe(budget.compressedChars));
     currentMemory.contextBudgetSummary = {
       originalChars,
       compressedChars,
-      estimatedTokensSaved: (previous?.estimatedTokensSaved ?? 0) + budget.estimatedTokensSaved,
+      estimatedTokensSaved: safe((previous?.estimatedTokensSaved ?? 0) + safe(budget.estimatedTokensSaved)),
       estimatedSavingsPercent: originalChars === 0 ? 0 : Math.max(0, Math.round((1 - compressedChars / originalChars) * 100)),
-      tasks: (previous?.tasks ?? 0) + 1,
+      tasks: safe((previous?.tasks ?? 0) + 1),
       byTool: {
         ...(previous?.byTool ?? {}),
         [tool]: {
-          originalChars: (previous?.byTool?.[tool]?.originalChars ?? 0) + budget.originalChars,
-          compressedChars: (previous?.byTool?.[tool]?.compressedChars ?? 0) + budget.compressedChars,
-          estimatedTokensSaved: (previous?.byTool?.[tool]?.estimatedTokensSaved ?? 0) + budget.estimatedTokensSaved,
-          tasks: (previous?.byTool?.[tool]?.tasks ?? 0) + 1,
+          originalChars: safe((previous?.byTool?.[tool]?.originalChars ?? 0) + safe(budget.originalChars)),
+          compressedChars: safe((previous?.byTool?.[tool]?.compressedChars ?? 0) + safe(budget.compressedChars)),
+          estimatedTokensSaved: safe((previous?.byTool?.[tool]?.estimatedTokensSaved ?? 0) + safe(budget.estimatedTokensSaved)),
+          tasks: safe((previous?.byTool?.[tool]?.tasks ?? 0) + 1),
         },
       },
     };
@@ -499,6 +501,19 @@ const jcePlugin: Plugin = async (input) => {
             appendTelemetry(projectRoot, { kind: "skill_selected", name: skill, metadata: { skill, intent: routing.intent } });
           }
         }, undefined, orchestrationLogger);
+
+        const appendPlannerTelemetry = (mode: "fanout" | "linear-fallback", detectedUnits: string[], fallbackReason?: string) => {
+          withErrorBoundary(() => appendTelemetry(projectRoot, {
+            kind: "routing_decision",
+            name: "planner",
+            metadata: {
+              plannerMode: mode,
+              detectedUnits,
+              fallbackReason,
+            },
+          }), undefined, orchestrationLogger);
+        };
+
         // Route intent through orchestration controller (v2) — with error boundary
         withErrorBoundary(() => orchestrator.routeIntent(text), undefined, orchestrationLogger);
 
@@ -531,6 +546,28 @@ const jcePlugin: Plugin = async (input) => {
           const graph = withErrorBoundary(() => orchestrator.createPlan(goal), null, orchestrationLogger);
 
           if (graph) {
+            const plannerNode = Array.from(graph.nodes.values()).find((node) => node.metadata?.parallelization === "explicit-independent-units" || node.metadata?.parallelization === "linear-fallback");
+            const plannerMode = plannerNode?.metadata?.parallelization === "explicit-independent-units" ? "fanout" : "linear-fallback";
+            const detectedUnits = Array.isArray(plannerNode?.metadata?.parallelUnits) ? plannerNode.metadata.parallelUnits : [];
+            const fallbackReason = typeof plannerNode?.metadata?.parallelFallbackReason === "string" ? plannerNode.metadata.parallelFallbackReason : undefined;
+            currentMemory.traceEvents = [...(currentMemory.traceEvents ?? []), {
+              type: "planner.explain" as const,
+              message: plannerMode === "fanout"
+                ? `Planner fan-out created ${detectedUnits.length} explicit unit(s).`
+                : `Planner kept linear plan.${fallbackReason ? ` ${fallbackReason}` : ""}`,
+              at: new Date().toISOString(),
+              metadata: {
+                workflowId: graph.id,
+                plannerMode,
+                detectedUnits,
+                fallbackReason,
+              },
+            }].slice(-200);
+            appendPlannerTelemetry(plannerMode, detectedUnits, fallbackReason);
+            currentMemory = saveSessionState(projectRoot, {
+              runtime: currentMemory,
+              orchestration: loadedMemory.state.orchestration,
+            }, undefined, { runtime: { preserveWorkflowRuntime: true }, saveOrchestration: false }).runtime;
             // Check approval gate
             const complexity = orchestrator.assessComplexity(text);
             const approval = evaluateApprovalGate(graph, complexity.score);
@@ -586,11 +623,44 @@ const jcePlugin: Plugin = async (input) => {
       const text = output.text;
       if (text.includes("VERIFICATION CHECK") || text.includes("FINAL REVIEW GATE")) return;
       withErrorBoundary(() => {
-        if (!shouldWarnForMissingVerification(text)) return;
-        // Only enforce when a real workflow is in progress this session, mirroring
-        // the tool.execute.after gate conditions (avoids noise in plain chat).
-        if (!currentMemory.activeWorkflow || !workflowRuntimeActive) return;
-        output.text = `${text}${VERIFICATION_WARNING}`;
+        const activeWorkflow = currentMemory.activeWorkflow;
+        if (!activeWorkflow || !workflowRuntimeActive) return;
+
+        const missingVerification = shouldWarnForMissingVerification(text);
+        const executionPolicy = looksLikeCompletionClaim(text)
+          ? evaluateExecutionPolicy({
+            action: "completion_claim",
+            profile: currentPolicyProfile(),
+            route: activeWorkflow.route,
+            workflow: activeWorkflow,
+            activeBlockers: currentMemory.blockers,
+            retryHistory: currentMemory.retryHistory,
+          })
+          : undefined;
+
+        const finalGate = looksLikeCompletionClaim(text)
+          ? evaluateFinalReviewGate(activeWorkflow, {
+            profile: currentPolicyProfile(),
+            changedFiles: [],
+            delegatedReviews: delegatedReviewStrings(currentMemory),
+            residualRisks: [],
+            activeBlockers: currentMemory.blockers,
+            retryHistory: currentMemory.retryHistory,
+            delegatedWorkRequired: hasDelegatedWork(currentMemory),
+            policyReasons: executionPolicy?.status === "block" ? executionPolicy.reasons : [],
+          })
+          : undefined;
+
+        const reasons = finalGate?.status === "block" ? finalGate.reasons : [];
+        if (reasons.length > 0) {
+          const policyText = executionPolicy?.status === "block" ? `${formatExecutionPolicyDecision(executionPolicy)}\n\n` : "";
+          output.text = `${text}\n\n${policyText}FINAL REVIEW GATE: Completion is blocked.\n${Array.from(new Set(reasons)).map((reason) => `- ${reason}`).join("\n")}`;
+          return;
+        }
+
+        if (missingVerification) {
+          output.text = `${text}${VERIFICATION_WARNING}`;
+        }
       }, undefined, orchestrationLogger);
     },
 
@@ -735,6 +805,13 @@ const jcePlugin: Plugin = async (input) => {
         const messages = [{ role: "assistant", content: output.output }];
         if (shouldEnforceContinuation(messages)) {
           output.output = `${output.output}\n\n${CONTINUATION_PROMPT}`;
+        }
+      }
+
+      if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && looksLikeCompletionClaim(output.output)) {
+        const critique = evaluateSelfCritique(currentMemory);
+        if (!critique.canStop) {
+          output.output = `${output.output}\n\nSELF-CRITIQUE STOP CHECK: Do not stop yet.\n${critique.reasons.map((reason) => `- ${reason}`).join("\n")}`;
         }
       }
 

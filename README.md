@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions/workflows/ci.yml/badge.svg)](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.7.0-green)]()
+[![Version](https://img.shields.io/badge/Version-3.7.1-green)]()
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen)]()
 
 **Install once. Get structured agents, workflows, orchestration, MCP tools, LSP config, and safer updates.**
@@ -202,12 +202,38 @@ opencode-jce validate
 opencode-jce setup
 opencode-jce plugin configure
 opencode-jce jce-worker status
+opencode-jce jce-worker status --json
 opencode-jce jce-worker report
+opencode-jce jce-worker report --json
 opencode-jce jce-worker trace
+opencode-jce jce-worker trace --json
+opencode-jce jce-worker planner-explain
+opencode-jce jce-worker planner-explain --json
+opencode-jce jce-worker commit-check src/commands/jce-worker.ts README.md --plan
+opencode-jce jce-worker commit-check src/commands/jce-worker.ts README.md --json
 opencode-jce skills explain "<prompt>"
 opencode-jce skills doctor
 opencode-jce analytics --json
 ```
+
+### JCE-Worker Explainability Commands
+
+Use these when you need to inspect why JCE-Worker planned work in a certain way:
+
+```bash
+opencode-jce jce-worker status --json
+opencode-jce jce-worker report --json
+opencode-jce jce-worker trace --json
+opencode-jce jce-worker planner-explain
+opencode-jce jce-worker planner-explain --json
+opencode-jce analytics --json
+```
+
+- `status/report --json` include planner rationale summary.
+- `trace --json` includes recent runtime trace events plus planner snapshot.
+- `planner-explain` focuses on fan-out vs linear fallback reasoning.
+- `analytics` now summarizes planner fan-out vs linear fallback counts and recent planner trend events.
+- `commit-check --plan` prints safe staging guidance; `commit-check --json` returns machine-readable issues plus safe commit plan text.
 
 Useful checks:
 

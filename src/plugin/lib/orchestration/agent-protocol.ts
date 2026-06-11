@@ -157,7 +157,6 @@ export function formatAgentRequestAsPrompt(request: AgentRequest): string {
 
 // ─── Result Parser ────────────────────────────────────────────────────────────
 
-const SECTION_REGEX = /^## (.+)$/gm;
 const EXIT_CODE_REGEX = /exit\s*(?:code|status)?\s*[:=]?\s*(\d+)/gi;
 const COMMAND_REGEX = /(?:^|\n)\s*(?:\$|>|#)\s*(.+)/g;
 const TEST_RESULT_REGEX = /(\d+)\s*(?:tests?|specs?|cases?)\s*(?:passed|✓|✔)/i;
@@ -327,7 +326,7 @@ function extractArtifacts(text: string, nodeId: string): Artifact[] {
   return artifacts;
 }
 
-function extractFacts(fullText: string, factsSection: string): Fact[] {
+function extractFacts(_fullText: string, factsSection: string): Fact[] {
   const facts: Fact[] = [];
   const text = factsSection || "";
   const lines = text.split("\n").filter((l) => l.trim().startsWith("-"));

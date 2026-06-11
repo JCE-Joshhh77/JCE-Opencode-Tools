@@ -8,22 +8,21 @@
 
 import type {
   TaskGraph,
-  TaskNode,
-  TaskNodeOutput,
   AgentRole,
   ScoredIntent,
   Evidence,
   Fact,
-  IntentType,
   PlanDelta,
+  AutonomyLevel,
+  OperatorPreferences,
 } from "./types.js";
 import {
   createTaskGraph,
   addNode,
   promoteReadyNodes,
   updateGraphStatus,
-  snapshotGraph,
   getGraphStats,
+  transitionNodeWithReason,
   type CreateNodeInput,
 } from "./task-graph.js";
 import { Scheduler, type SchedulerEvent } from "./scheduler.js";
@@ -35,9 +34,7 @@ import {
   addDecision,
   addConstraint,
   addArtifacts,
-  sendSignal,
   pruneMemory,
-  snapshotMemory,
   getTopFacts,
   getActiveConstraints,
   type OrchestrationMemory,
@@ -47,7 +44,6 @@ import {
   formatAgentRequestAsPrompt,
   parseAgentResult,
   resultToNodeOutput,
-  type AgentResult,
 } from "./agent-protocol.js";
 import { aggregateEvidence, createEvidence, type AggregateEvidenceScore } from "./evidence-system.js";
 import { scoreIntent, toLegacyRoute, type RouterContext } from "./intent-router.js";
@@ -60,6 +56,7 @@ import {
   endSession,
 } from "./execution-memory-v2.js";
 import type { ExecutionMemoryV2 } from "./types.js";
+import { buildFailureSignature } from "../failure-signature.js";
 import {
   assessTaskComplexity,
   shouldAutoActivate,
@@ -77,6 +74,7 @@ import {
   buildOrchestrationStatusReport,
   formatOrchestrationStatus,
   identifyParallelGroups,
+  computeNextBestAction,
   type ComplexityAssessment,
   type CompletionGateResult,
   type EscalationDecision,
@@ -120,6 +118,14 @@ export interface OrchestrationStatus {
   events: SchedulerEvent[];
 }
 
+const DEFAULT_OPERATOR_PREFERENCES: OperatorPreferences = {
+  preferAutonomousCompletion: false,
+  askBeforeArchitectureChange: true,
+  preferBroadVerification: true,
+  preferTerseReports: false,
+  defaultReleaseStrictness: "medium",
+};
+
 // ─── Controller ───────────────────────────────────────────────────────────────
 
 export class OrchestrationController {
@@ -133,6 +139,8 @@ export class OrchestrationController {
   private projectRoot: string;
   private now: () => string;
   private nodeToTaskMap: Map<string, string> = new Map(); // nodeId → background taskId
+  private autonomyLevel: AutonomyLevel;
+  private operatorPreferences: OperatorPreferences;
 
   constructor(config: OrchestrationControllerConfig) {
     this.projectRoot = config.projectRoot;
@@ -153,6 +161,8 @@ export class OrchestrationController {
     // Load persisted state
     const loaded = loadMemoryV2(this.projectRoot, this.now());
     this.execMemory = startSession(loaded.memory, undefined, this.now());
+    this.autonomyLevel = loaded.memory.autonomyLevel ?? "balanced";
+    this.operatorPreferences = { ...DEFAULT_OPERATOR_PREFERENCES, ...(loaded.memory.operatorPreferences ?? {}) };
 
     // Restore orchestration memory and graph from persisted state.
     // Stale/terminal graphs are dropped to prevent cross-session leakage (C1).
@@ -204,6 +214,69 @@ export class OrchestrationController {
       reasoning: `Intent: ${resolvedIntent.intent} (confidence: ${resolvedIntent.confidence}), ${plan.nodes.length} nodes`,
     }, this.now());
 
+    const plannerNodes = plan.nodes.filter((node) => node.metadata?.plannerMode || node.metadata?.parallelization);
+    const fanOutNode = plannerNodes.find((node) => node.metadata?.parallelization === "explicit-independent-units");
+    const fallbackNode = plannerNodes.find((node) => node.metadata?.parallelization === "linear-fallback");
+    this.events.push({
+      type: "graph.replanning",
+      timestamp: this.now(),
+      detail: fanOutNode
+        ? `Planner fan-out created ${Array.isArray(fanOutNode.metadata?.parallelUnits) ? fanOutNode.metadata?.parallelUnits.length : 0} explicit unit(s).`
+        : `Planner kept linear plan.${typeof fallbackNode?.metadata?.parallelFallbackReason === "string" ? ` ${fallbackNode.metadata.parallelFallbackReason}` : ""}`,
+      metadata: {
+        workflowId: this.graph.id,
+        plannerMode: fanOutNode ? "fanout" : "linear-fallback",
+        detectedUnits: Array.isArray(fanOutNode?.metadata?.parallelUnits) ? fanOutNode?.metadata?.parallelUnits : [],
+        fallbackReason: typeof fallbackNode?.metadata?.parallelFallbackReason === "string" ? fallbackNode.metadata.parallelFallbackReason : undefined,
+      },
+    });
+    if (this.events.length > 100) this.events = this.events.slice(-100);
+
+    return this.graph;
+  }
+
+  createReleaseCommanderPlan(goal: string, targetVersion: string): TaskGraph {
+    this.currentIntent = scoreIntent(`release ${goal}`);
+    this.graph = createTaskGraph({
+      id: `graph-release-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      goal,
+      now: this.now(),
+      metadata: { mode: "release-commander", targetVersion },
+    });
+
+    const releaseStrictness = this.operatorPreferences.defaultReleaseStrictness ?? "medium";
+    const includeApprovalNode = releaseStrictness === "high" || this.autonomyLevel === "release-lock";
+    const nodes: CreateNodeInput[] = [
+      { id: `release-verify-${targetVersion}`, type: "verify", title: "Run pre-release verification", description: `Verify release readiness for ${targetVersion}`, agent: "self", prompt: `Run release verification for ${targetVersion}`, priority: 10, metadata: { releaseCommander: true } },
+      { id: `release-sync-${targetVersion}`, type: "config", title: "Check version sync and changelog", description: `Check version/changelog sync for ${targetVersion}`, agent: "self", prompt: `Confirm version sync and changelog truth for ${targetVersion}`, dependencies: [`release-verify-${targetVersion}`], priority: 9, metadata: { releaseCommander: true } },
+      { id: `release-compat-${targetVersion}`, type: "review", title: "Check updater compatibility", description: `Check updater/tag compatibility for ${targetVersion}`, agent: "oracle", prompt: `Check updater compatibility and release tag sanity for ${targetVersion}`, dependencies: [`release-sync-${targetVersion}`], priority: 8, metadata: { releaseCommander: true } },
+      { id: `release-stage-${targetVersion}`, type: "review", title: "Prepare safe staging plan", description: `Prepare safe staging plan for ${targetVersion}`, agent: "self", prompt: `Build safe staging plan for ${targetVersion} release files and exclude local/context artifacts`, dependencies: [`release-compat-${targetVersion}`], priority: 7, metadata: { releaseCommander: true } },
+      { id: `release-notes-${targetVersion}`, type: "plan", title: "Prepare release notes", description: `Prepare release notes for ${targetVersion}`, agent: "self", prompt: `Prepare final release notes and delta summary for ${targetVersion}`, dependencies: [`release-stage-${targetVersion}`], priority: 6, metadata: { releaseCommander: true } },
+    ];
+    if (includeApprovalNode) {
+      nodes.push({ id: `release-approval-${targetVersion}`, type: "review", title: "Approval boundary review", description: `Review approval boundaries for ${targetVersion}`, agent: "self", prompt: `Check commit/push/tag/release approval boundaries for ${targetVersion} before final release execution`, dependencies: [`release-notes-${targetVersion}`], priority: 5, metadata: { releaseCommander: true, approvalBoundary: true } });
+    }
+
+    for (const node of nodes) {
+      this.graph = addNode(this.graph, node, this.now());
+    }
+    this.graph = promoteReadyNodes(this.graph, this.now());
+    this.graph = updateGraphStatus(this.graph, this.now());
+    return this.graph;
+  }
+
+  advanceReleaseCommanderLifecycle(): TaskGraph | null {
+    if (!this.graph || this.graph.metadata?.mode !== "release-commander") return this.graph;
+    for (const node of this.graph.nodes.values()) {
+      if (node.status === "ready") {
+        this.graph = transitionNodeWithReason(this.graph, node.id, "running", `release commander executing ${node.title}`, this.now());
+        if (node.type === "verify") {
+          this.graph = transitionNodeWithReason(this.graph, node.id, "verifying", `verification started for ${node.title}`, this.now());
+        }
+        break;
+      }
+    }
+    this.graph = updateGraphStatus(this.graph, this.now());
     return this.graph;
   }
 
@@ -355,6 +428,28 @@ export class OrchestrationController {
 
     const node = this.graph.nodes.get(nodeId);
     const retryStrategy = node ? this.scheduler.getRetryStrategy(node) : undefined;
+    if (node) {
+      const signature = buildFailureSignature({
+        command: node.input.prompt,
+        errorClass: node.blockerClass,
+        file: typeof node.metadata?.file === "string" ? node.metadata.file : undefined,
+        rootPhrase: reason,
+        stackMarker: node.title,
+      });
+      this.execMemory.memoryTiers = {
+        ...(this.execMemory.memoryTiers ?? {
+          session: { blockers: [] },
+          project: { conventions: [], releaseFiles: [], standardVerification: [], dangerousAreas: [] },
+          failure: { knownErrors: [], badFixes: [], successfulFixes: [] },
+          operator: { preferTerseReports: false, preferAutonomousCompletion: false, preferBroadVerification: true },
+        }),
+        failure: {
+          knownErrors: [...new Set([...(this.execMemory.memoryTiers?.failure.knownErrors ?? []), signature])],
+          badFixes: this.execMemory.memoryTiers?.failure.badFixes ?? [],
+          successfulFixes: this.execMemory.memoryTiers?.failure.successfulFixes ?? [],
+        },
+      };
+    }
 
     return { action: result.action, retryStrategy };
   }
@@ -399,6 +494,24 @@ export class OrchestrationController {
     };
   }
 
+  setAutonomyLevel(level: AutonomyLevel): void {
+    this.autonomyLevel = level;
+    this.execMemory.autonomyLevel = level;
+  }
+
+  getAutonomyLevel(): AutonomyLevel {
+    return this.autonomyLevel;
+  }
+
+  setOperatorPreferences(input: Partial<OperatorPreferences>): void {
+    this.operatorPreferences = { ...this.operatorPreferences, ...input };
+    this.execMemory.operatorPreferences = this.operatorPreferences;
+  }
+
+  getOperatorPreferences(): OperatorPreferences {
+    return { ...this.operatorPreferences };
+  }
+
   /**
    * Check if the orchestration is complete.
    */
@@ -427,6 +540,8 @@ export class OrchestrationController {
       this.now(),
     );
     this.execMemory = mergeOrchestrationIntoMemory(this.execMemory, this.memory, this.graph ?? undefined, this.now());
+    this.execMemory.autonomyLevel = this.autonomyLevel;
+    this.execMemory.operatorPreferences = this.operatorPreferences;
     saveMemoryV2(this.projectRoot, this.execMemory, this.now());
   }
 
@@ -544,6 +659,18 @@ export class OrchestrationController {
     return formatWisdomContext(wisdom, learnings);
   }
 
+  applyCrossTaskLearning(): void {
+    const recent = this.execMemory.sessionHistory.slice(-3);
+    const repeatedFailures = recent.filter((entry) => entry.nodesFailed > 0).length;
+    if (repeatedFailures >= 2) {
+      this.memory = addConstraint(this.memory, { description: "Prefer safer verification-first approach based on recent failures", origin: "discovered", scope: "orchestration" }, this.now());
+    }
+    const repeatedSuccess = recent.filter((entry) => entry.nodesCompleted >= 2 && entry.nodesFailed === 0).length;
+    if (repeatedSuccess >= 2) {
+      this.memory = addConstraint(this.memory, { description: "Recent successful sessions justify broader autonomous execution", origin: "discovered", scope: "orchestration" }, this.now());
+    }
+  }
+
   /**
    * Get full orchestration status report.
    */
@@ -557,6 +684,25 @@ export class OrchestrationController {
   formatStatusReport(): string {
     const report = this.getStatusReport();
     return formatOrchestrationStatus(report);
+  }
+
+  getNextBestAction(): string {
+    return computeNextBestAction(this.graph, this.memory, {
+      preferBroadVerification: this.operatorPreferences.preferBroadVerification,
+      preferAutonomousCompletion: this.operatorPreferences.preferAutonomousCompletion,
+    });
+  }
+
+  getReleaseCommanderSummary(): string {
+    if (!this.graph || this.graph.metadata?.mode !== "release-commander") return "No release commander plan active.";
+    const nodes = Array.from(this.graph.nodes.values()).map((node) => `- ${node.title}: ${node.status}`);
+    return [
+      `Release Commander (${this.graph.metadata?.targetVersion ?? "unknown"})`,
+      `Autonomy: ${this.autonomyLevel}`,
+      `Release strictness: ${this.operatorPreferences.defaultReleaseStrictness ?? "medium"}`,
+      ...nodes,
+      `Next action: ${this.getNextBestAction()}`,
+    ].join("\n");
   }
 
   /**

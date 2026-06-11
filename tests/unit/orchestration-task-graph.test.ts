@@ -5,6 +5,7 @@ import {
   removeNode,
   addEdge,
   transitionNode,
+  transitionNodeWithReason,
   failNode,
   completeNode,
   blockNode,
@@ -69,7 +70,7 @@ describe("TaskGraph", () => {
       let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
       graph = addNode(graph, makeNode({ id: "n1" }), NOW);
       expect(graph.nodes.size).toBe(1);
-      expect(graph.nodes.get("n1")?.status).toBe("pending");
+      expect(graph.nodes.get("n1")?.status).toBe("intake");
     });
 
     test("throws on duplicate node id", () => {
@@ -144,6 +145,13 @@ describe("TaskGraph", () => {
       expect(() => transitionNode(graph, "n1", "done", NOW)).toThrow("Invalid transition");
     });
 
+    test("transitionNodeWithReason records semantic reason", () => {
+      let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
+      graph = addNode(graph, makeNode({ id: "n1" }), NOW);
+      graph = transitionNodeWithReason(graph, "n1", "ready", "dependencies satisfied", NOW);
+      expect(graph.nodes.get("n1")?.transitionHistory?.at(-1)?.reason).toBe("dependencies satisfied");
+    });
+
     test("failNode sets failure reason", () => {
       let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
       graph = addNode(graph, makeNode({ id: "n1" }), NOW);
@@ -173,8 +181,9 @@ describe("TaskGraph", () => {
       graph = addNode(graph, makeNode({ id: "n3" }), NOW);
 
       // n1 and n3 have no deps, n2 depends on n1
-      const ready = getReadyNodes(graph);
-      expect(ready.map((n) => n.id).sort()).toEqual(["n1", "n3"]);
+      graph = promoteReadyNodes(graph, NOW);
+      expect(graph.nodes.get("n1")?.status).toBe("ready");
+      expect(graph.nodes.get("n3")?.status).toBe("ready");
     });
 
     test("getReadyNodes unlocks after dependency completes", () => {
@@ -187,8 +196,8 @@ describe("TaskGraph", () => {
       graph = transitionNode(graph, "n1", "running", NOW);
       graph = completeNode(graph, "n1", makeOutput(), NOW);
 
-      const ready = getReadyNodes(graph);
-      expect(ready.map((n) => n.id)).toEqual(["n2"]);
+      graph = promoteReadyNodes(graph, NOW);
+      expect(graph.nodes.get("n2")?.status).toBe("ready");
     });
 
     test("promoteReadyNodes moves eligible pending to ready", () => {
@@ -272,7 +281,7 @@ describe("TaskGraph", () => {
       graph = addNode(graph, makeNode({ id: "n1" }), NOW);
       graph = addNode(graph, makeNode({ id: "n2" }), NOW);
       graph = transitionNode(graph, "n1", "ready", NOW);
-      expect(getNodesByStatus(graph, "pending")).toHaveLength(1);
+      expect(getNodesByStatus(graph, "intake")).toHaveLength(1);
       expect(getNodesByStatus(graph, "ready")).toHaveLength(1);
     });
 
@@ -294,7 +303,7 @@ describe("TaskGraph", () => {
 
       const stats = getGraphStats(graph);
       expect(stats.total).toBe(2);
-      expect(stats.pending).toBe(1);
+      expect(stats.pending).toBe(0);
       expect(stats.ready).toBe(1);
     });
   });
