@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { planStaleOpenCodeProcessKills, resolveCliPayloadManifestForInstalledBase, type ProcessSnapshot } from "../../src/commands/update.ts";
+import { assertCliPayloadComplete, planStaleOpenCodeProcessKills, resolveCliPayloadManifestForInstalledBase, type ProcessSnapshot } from "../../src/commands/update.ts";
 
 describe("update stale OpenCode process cleanup", () => {
   test("plans stale OpenCode/plugin processes but excludes the current update process", () => {
@@ -33,6 +33,19 @@ describe("update stale OpenCode process cleanup", () => {
       const manifest = join(root, "cli", "config", "cli-payload.txt");
       writeFileSync(manifest, "src/index.ts\n", "utf8");
       expect(resolveCliPayloadManifestForInstalledBase(root)).toBe(manifest);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("payload completeness validation reads manifest from staged cli source", () => {
+    const root = mkdtempSync(join(tmpdir(), "update-payload-"));
+    try {
+      mkdirSync(join(root, "config"), { recursive: true });
+      mkdirSync(join(root, "src"), { recursive: true });
+      writeFileSync(join(root, "config", "cli-payload.txt"), "src/index.ts\n", "utf8");
+      writeFileSync(join(root, "src", "index.ts"), "console.log('ok');\n", "utf8");
+      expect(() => assertCliPayloadComplete(root)).not.toThrow();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

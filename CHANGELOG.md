@@ -10,16 +10,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ### Fixed
 - **Installed self-update manifest resolution**: `opencode-jce update` now resolves the CLI payload manifest from both repo-style and installed-CLI layouts, fixing the second-stage handoff failure introduced in `3.7.2`.
+- **Staged payload manifest validation**: `opencode-jce update` now validates the downloaded CLI source against the manifest inside the staged CLI payload instead of `process.cwd()`, fixing installed updates launched from directories such as `C:\Users\Joshhh`.
 
 ### Changed
 - Release version synced to `3.7.3` across package metadata, installers, constants, MCP version, README badge, and version tests.
 
 ### Difference from previous release
 - `3.7.2` unified installer/update payload verification on a single manifest.
-- `3.7.3` is immediate hotfix so installed users can complete the second-stage self-update handoff without reinstalling.
+- `3.7.3` is immediate hotfix so installed users can complete self-update without reinstalling, including runs launched outside the repository directory.
 
 ### Verified
 - `bun test`
+- `bun test tests/unit/update-process-cleanup.test.ts tests/unit/install-payload-verification.test.ts`
 - `bunx tsc --noEmit`
 - `bun ./src/index.ts validate`
 - `bun ./src/index.ts --version`
