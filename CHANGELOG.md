@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.7.7] - 2026-06-12
+
+### Added
+- **Auto-compaction visible signal**: when context usage crosses 83%, a TUI toast (`client.tui.showToast`) now surfaces "JCE Auto-Compaction — Context N% full; durable checkpoint written" so the user can see the feature fire instead of it working invisibly. Fire-and-forget and error-guarded.
+
+### Fixed
+- **opencode.json lossless tidy-repair**: a recoverable syntax error (e.g. a trailing comma in an array/object) no longer causes the updater to refuse. The merge now strips structural trailing commas — never touching content inside strings — and, if the result parses, recovers the file with **every user setting preserved**, backs up the original to `opencode.json.invalid-<timestamp>`, and rewrites a clean formatted file. Genuinely malformed files (unrecoverable) still trigger the safe refusal unchanged.
+
+### Changed
+- Release version synced to `3.7.7` across package metadata, installers, constants, MCP version, config version, README badge, and version tests.
+
+### Verification
+- `tsc --noEmit` exit 0; full `bun test` suite green (1233 pass / 0 fail across 107 files).
+
+---
+
 ## [3.7.6] - 2026-06-12
 
 ### Added

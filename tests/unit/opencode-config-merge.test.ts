@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { ensureOpenCodeJsonEntries, ensureTuiJsonEntries } from "../../src/lib/opencode-config-merge.ts";
+import { ensureOpenCodeJsonEntries, ensureTuiJsonEntries, stripTrailingCommas } from "../../src/lib/opencode-config-merge.ts";
+import { readdirSync } from "fs";
 
 function tempConfigDir(): string {
   const root = mkdtempSync(join(tmpdir(), "opencode-config-merge-"));
@@ -77,5 +78,55 @@ describe("opencode config merge", () => {
     expect(merged.plugin).toContain("custom-plugin");
     expect(merged.mcp.customServer).toBeTruthy();
     expect(merged.lsp.custom).toBeTruthy();
+  });
+
+  test("tidies a recoverable trailing comma instead of refusing, preserving all settings", () => {
+    const configDir = tempConfigDir();
+    const configPath = join(configDir, "opencode.json");
+    // Mirrors the real-world failure: a trailing comma inside an array.
+    const malformed = [
+      "{",
+      '  "model": "9router/kr/claude-opus-4.8",',
+      '  "provider": {',
+      '    "9router": {',
+      '      "models": {',
+      '        "codebuddy/claude-opus-4.6": {',
+      '          "name": "codebuddy/claude-opus-4.6",',
+      '          "modalities": { "input": ["text", "image", "pdf",], "output": ["text"] }',
+      "        }",
+      "      }",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    writeFileSync(configPath, malformed, "utf8");
+
+    const result = ensureOpenCodeJsonEntries(configDir);
+    expect(result.tidied).toBe(true);
+    expect(result.backupPath).toBeTruthy();
+
+    // The file is now valid JSON and every user setting is intact.
+    const merged = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(merged.model).toBe("9router/kr/claude-opus-4.8");
+    expect(merged.provider["9router"].models["codebuddy/claude-opus-4.6"].name).toBe("codebuddy/claude-opus-4.6");
+    expect(merged.provider["9router"].models["codebuddy/claude-opus-4.6"].modalities.input).toEqual(["text", "image", "pdf"]);
+    // JCE entries were still merged in.
+    expect(Array.isArray(merged.plugin)).toBe(true);
+
+    // Original malformed content was backed up, not lost.
+    const backups = readdirSync(configDir).filter((f) => f.startsWith("opencode.json.invalid-"));
+    expect(backups.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("stripTrailingCommas removes only structural trailing commas, never inside strings", () => {
+    // Trailing commas before } and ] are removed.
+    expect(stripTrailingCommas('{"a":[1,2,],}')).toBe('{"a":[1,2]}');
+    // A comma that is a legitimate separator is preserved.
+    expect(stripTrailingCommas('{"a":1,"b":2}')).toBe('{"a":1,"b":2}');
+    // A comma inside a string value must NOT be touched.
+    expect(stripTrailingCommas('{"a":"x, y, z",}')).toBe('{"a":"x, y, z"}');
+    // Escaped quotes inside strings handled correctly.
+    expect(stripTrailingCommas('{"a":"say \\"hi\\",",}')).toBe('{"a":"say \\"hi\\","}');
   });
 });

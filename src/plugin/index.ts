@@ -409,6 +409,20 @@ const jcePlugin: Plugin = async (input) => {
           persistCurrentMemory();
           orchestrationLogger.log("warn", "context.autocompaction.checkpoint",
             `${formatUsage(usage)} — crossed ${Math.round(DEFAULT_COMPACTION_THRESHOLD * 100)}% threshold; durable checkpoint written.`);
+          // Visible signal: surface a TUI toast so the user can SEE that
+          // auto-compaction fired (otherwise the feature works invisibly).
+          // Fire-and-forget + guarded — must never break the event hook.
+          withErrorBoundary(() => {
+            const pct = Math.round(usage.usagePercent * 100);
+            void (client as any)?.tui?.showToast?.({
+              body: {
+                title: "JCE Auto-Compaction",
+                message: `Context ${pct}% full — durable checkpoint written; state will be preserved across compaction.`,
+                variant: "warning",
+                duration: 6000,
+              },
+            }).catch?.(() => {});
+          }, undefined, orchestrationLogger);
           withErrorBoundary(() => {
             appendTelemetry(projectRoot, { kind: "context_autocompaction", name: "checkpoint", metadata: { usagePercent: usage.usagePercent, tokensUsed: usage.tokensUsed, contextLimit: usage.contextLimit, knownLimit: usage.knownLimit } });
           }, undefined, orchestrationLogger);

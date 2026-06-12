@@ -841,7 +841,9 @@ async function handleFallback(configDir: string): Promise<FallbackStatus> {
 async function ensureOpenCodeJson(configDir: string): Promise<boolean> {
   try {
     const result = ensureOpenCodeJsonEntries(configDir);
-    if (result.repaired && result.backupPath) {
+    if (result.tidied && result.backupPath) {
+      warn(`Tidied recoverable syntax in opencode.json (e.g. trailing commas). All settings preserved; original backed up to ${result.backupPath}.`);
+    } else if (result.repaired && result.backupPath) {
       warn(`Malformed opencode.json was backed up to ${result.backupPath} and rebuilt.`);
     }
     return result.changed;

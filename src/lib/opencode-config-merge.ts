@@ -8,18 +8,79 @@ export interface EnsureOpenCodeJsonResult {
   changed: boolean;
   repaired: boolean;
   backupPath?: string;
+  /** True when the file was recovered by tidying recoverable syntax (e.g. trailing commas) — all settings preserved. */
+  tidied?: boolean;
 }
 
 export interface EnsureTuiJsonResult {
   changed: boolean;
   repaired: boolean;
   backupPath?: string;
+  tidied?: boolean;
 }
 
 export interface ReadOpenCodeJsonResult {
   config: Record<string, unknown>;
   repaired: boolean;
   backupPath?: string;
+  tidied?: boolean;
+}
+
+/**
+ * Remove trailing commas (a comma immediately followed by `}` or `]`, modulo
+ * whitespace) from a JSON document, WITHOUT touching anything inside strings.
+ *
+ * This is lossless: trailing commas carry no data, so a successful
+ * `JSON.parse` of the tidied text yields the exact same settings the user
+ * intended. It is the single most common reason an otherwise-valid
+ * opencode.json fails strict parsing.
+ */
+export function stripTrailingCommas(raw: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inString) {
+      out += ch;
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === ",") {
+      let j = i + 1;
+      while (j < raw.length && /\s/.test(raw[j]!)) j++;
+      if (j < raw.length && (raw[j] === "}" || raw[j] === "]")) {
+        continue; // drop trailing comma
+      }
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/**
+ * Attempt to recover a malformed JSON object by tidying recoverable syntax.
+ * Returns the parsed object on success, or null when the document is still
+ * unparseable (genuinely malformed — caller should refuse rather than guess).
+ */
+function tryTidyParse(raw: string): Record<string, unknown> | null {
+  try {
+    const tidied = stripTrailingCommas(raw);
+    const parsed = JSON.parse(tidied);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // still malformed
+  }
+  return null;
 }
 
 function timestamp(): string {
@@ -108,6 +169,17 @@ export function readOrRepairOpenCodeJson(configDir: string): ReadOpenCodeJsonRes
   }
 
   if (raw.trim().length > 0) {
+    // Before refusing: attempt a LOSSLESS tidy (e.g. strip trailing commas).
+    // Trailing commas carry no data, so a successful tidy-parse preserves every
+    // user setting exactly. Back up the original, then return the recovered
+    // config so the merge can proceed and rewrite a clean, formatted file.
+    const tidied = tryTidyParse(raw);
+    if (tidied) {
+      const backupPath = `${configPath}.invalid-${timestamp()}`;
+      writeFileSync(backupPath, raw, "utf8");
+      cleanupOldBackups(configDir, "^opencode\\.json\\.invalid-");
+      return { config: tidied, repaired: false, tidied: true, backupPath };
+    }
     throw new Error(`Refusing to rebuild malformed opencode.json automatically. Fix the file or restore from a backup: ${configPath}`);
   }
 
@@ -141,7 +213,7 @@ export function readOrRepairTuiJson(configDir: string): ReadOpenCodeJsonResult {
 export function ensureOpenCodeJsonEntries(configDir: string): EnsureOpenCodeJsonResult {
   const defaults = buildDefaultOpenCodeJson(configDir, buildAgentConfigs()) as Record<string, unknown>;
   const configPath = join(configDir, "opencode.json");
-  const { config: current, repaired, backupPath } = readOrRepairOpenCodeJson(configDir);
+  const { config: current, repaired, backupPath, tidied } = readOrRepairOpenCodeJson(configDir);
 
   const merged: Record<string, unknown> = { ...current };
   if (!("$schema" in merged) && "$schema" in defaults) merged.$schema = defaults.$schema;
@@ -179,12 +251,14 @@ export function ensureOpenCodeJsonEntries(configDir: string): EnsureOpenCodeJson
 
   const before = JSON.stringify(current);
   const after = JSON.stringify(merged);
-  if (!existsSync(configPath) || repaired || before !== after) {
+  // A tidied file must always be rewritten so the recovered/clean JSON replaces
+  // the malformed original on disk.
+  if (!existsSync(configPath) || repaired || tidied || before !== after) {
     writeOpenCodeJsonAtomic(configDir, merged);
-    return { changed: true, repaired, backupPath };
+    return { changed: true, repaired, backupPath, tidied };
   }
 
-  return { changed: false, repaired, backupPath };
+  return { changed: false, repaired, backupPath, tidied };
 }
 
 export function ensureTuiJsonEntries(configDir: string): EnsureTuiJsonResult {
