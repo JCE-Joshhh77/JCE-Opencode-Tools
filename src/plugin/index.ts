@@ -37,6 +37,7 @@ import { detectWorkstreams } from "./lib/orchestration/workstream-detector.js";
 import { decideAutoActivation } from "./lib/auto-activation.js";
 import { extractChangedFilesFromTool } from "./lib/changed-files.js";
 import { buildPreFinalGuard } from "./lib/pre-final-guard.js";
+import { buildProjectMemorySummary } from "./lib/project-memory-summary.js";
 import { appendEvidence, appendTelemetry, loadTelemetry, summarizeCommandEvidence, summarizeRoutingQuality } from "./lib/jce-intelligence.js";
 import {
   withErrorBoundary,
@@ -168,6 +169,10 @@ const jcePlugin: Plugin = async (input) => {
   // model in chat.params/system.transform (the `event` hook has no model).
   let cachedContextLimit = 0;
   let lastUsagePercent = 0;
+  // Inject the restored project-memory block only once per session (first
+  // system.transform), so the AI gets durable context without paying the token
+  // cost on every message.
+  let projectMemoryInjected = false;
   let sessionSkillCorrection: SkillCorrection | null = currentMemory.skillCorrectionSession
     ? {
         forbid: currentMemory.skillCorrectionSession.forbidSkills,
@@ -661,6 +666,42 @@ const jcePlugin: Plugin = async (input) => {
       output.system.push(POST_COMPACTION_NO_TASK_GUARD);
       const preFinalGuard = buildPreFinalGuard(currentMemory);
       if (preFinalGuard) output.system.push(preFinalGuard);
+      // Restored Project Memory (once per session): surface durable facts the
+      // plugin already persisted so the AI doesn't re-scan the project / re-derive
+      // context every session. Compact + line-capped to protect token budget.
+      if (!projectMemoryInjected) {
+        projectMemoryInjected = true;
+        withErrorBoundary(() => {
+          const tiers = (loadedMemory.state.orchestration as any)?.memoryTiers;
+          const summary = buildProjectMemorySummary({
+            projectRoot,
+            changedFiles: currentMemory.changedFiles,
+            activeWorkflow: currentMemory.activeWorkflow,
+            wisdom: currentMemory.wisdom as any,
+            taskLearnings: currentMemory.taskLearnings as any,
+            sessionHistory: (loadedMemory.state.orchestration as any)?.sessionHistory,
+            memoryTiers: tiers,
+          });
+          if (summary) output.system.push("\n\n" + summary);
+        }, undefined, orchestrationLogger);
+      }
+      // Context-pressure signal (hybrid #1): when usage is at/above the
+      // auto-compaction threshold, inject a notice into the system prompt so the
+      // model itself is told to preserve durable state and wrap up proactively.
+      // Unlike the TUI toast, this works in ALL modes (TUI + headless `run`).
+      // Self-clearing: it only injects while lastUsagePercent stays >= threshold.
+      if (lastUsagePercent >= DEFAULT_COMPACTION_THRESHOLD) {
+        const pct = Math.round(lastUsagePercent * 100);
+        output.system.push([
+          "\n\n<!-- JCE Context-Pressure Signal -->",
+          `⚠️ CONTEXT ${pct}% FULL — auto-compaction is imminent.`,
+          "Before the context is compacted, proactively preserve durable state so nothing is lost:",
+          "- Restate the active goal and remaining steps explicitly.",
+          "- List touched files, open blockers, and current verification status.",
+          "- Prefer finishing or checkpointing the current unit of work over starting a large new one.",
+          "Do NOT claim completion unless verification evidence is present.",
+        ].join("\n"));
+      }
       if (!lastUserMessage) return;
       const skillNames = applySkillCorrection(determineSkillsForMessage(lastUserMessage), sessionSkillCorrection);
       if (skillNames.length === 0) return;

@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.7.9] - 2026-06-12
+
+### Added
+- **Restored Project Memory** (`project-memory-summary.ts`): at the start of each new session, JCE-Worker now injects a compact, token-bounded summary of what it already knows about the project — stack/scripts, last session's goal + status, open blockers, recently touched files, conventions, high-risk areas, top learnings, and verification commands. This stops the AI from re-scanning the project and re-deriving context every session (token savings). Injected **once per session** and hard line-capped to stay cheap; skipped entirely for brand-new projects with no durable memory. Works in all modes (TUI + headless).
+- **Context-pressure signal** (auto-compaction hybrid #1): when context usage crosses the 83% threshold, a notice is injected into the system prompt telling the model to proactively preserve durable state (restate goal/files/blockers/verification, wrap up the current unit) before compaction. Complements the existing TUI toast and works in headless mode where toasts do not appear. Self-clearing when usage drops.
+
+### Changed
+- Release version synced to `3.7.9` across package metadata, installers, constants, MCP version, config version, README badge, and version tests.
+
+### Verification
+- `tsc --noEmit` exit 0; full `bun test` suite green (1242 pass / 0 fail across 108 files), including new project-memory and tests for both features.
+
+---
+
 ## [3.7.8] - 2026-06-12
 
 ### Fixed
