@@ -315,6 +315,12 @@ export function pruneMemoryV2(memory: ExecutionMemoryV2, now?: string): Executio
     wisdom,
     taskLearnings,
     sessionHistory,
+    failurePatterns: memory.failurePatterns
+      ? [...memory.failurePatterns].sort((a, b) => Date.parse(b.lastSeenAt) - Date.parse(a.lastSeenAt)).slice(0, 100)
+      : memory.failurePatterns,
+    strategyTelemetry: memory.strategyTelemetry
+      ? memory.strategyTelemetry.slice(0, 200)
+      : memory.strategyTelemetry,
   };
 }
 

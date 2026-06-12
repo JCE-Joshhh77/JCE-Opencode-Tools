@@ -11,6 +11,7 @@
 
 import type {
   TaskGraph,
+  TaskNode,
   IntentType,
   ScoredIntent,
   Fact,
@@ -567,6 +568,7 @@ export interface OrchestrationStatusReport {
   parallelGroups: number;
   escalation: EscalationDecision | null;
   completionGate: CompletionGateResult | null;
+  phaseGate?: PhaseGateReport;
 }
 
 export function computeNextBestAction(graph: TaskGraph | null, memory: OrchestrationMemory, preferences?: { preferBroadVerification?: boolean; preferAutonomousCompletion?: boolean }): string {
@@ -632,6 +634,8 @@ export function buildOrchestrationStatusReport(graph: TaskGraph | null, memory: 
     : 0;
   const confidenceByDimension = buildConfidenceVector(graph, avgConfidence || 0.7);
 
+  const phaseGate = evaluatePhaseGates(graph);
+
   return {
     active: true,
     graphId: graph.id,
@@ -643,6 +647,7 @@ export function buildOrchestrationStatusReport(graph: TaskGraph | null, memory: 
     parallelGroups: parallelGroups.length,
     escalation: escalation.shouldEscalate ? escalation : null,
     completionGate,
+    phaseGate: phaseGate.phases.length > 0 ? phaseGate : undefined,
   };
 }
 
@@ -677,5 +682,217 @@ export function formatOrchestrationStatus(report: OrchestrationStatusReport): st
       : `✗ Completion gate: BLOCKED (${report.completionGate.blockers.join("; ")})`);
   }
 
+  if (report.phaseGate && report.phaseGate.violations.length > 0) {
+    parts.push(`⚠️ Phase-gate violations: ${report.phaseGate.violations.join("; ")}`);
+  }
+
   return parts.join("\n");
+}
+
+// ─── 9. Phase-Gate Completion Guard ───────────────────────────────────────────
+
+/**
+ * Ordered execution phases. A phase may not be considered satisfied until all
+ * earlier phases that have work are satisfied. This enforces "TESTING must pass
+ * before STAGING" rather than only checking flat node completion.
+ */
+export type WorkflowPhase = "PLANNING" | "IMPLEMENTING" | "TESTING" | "STAGING";
+
+const PHASE_ORDER: WorkflowPhase[] = ["PLANNING", "IMPLEMENTING", "TESTING", "STAGING"];
+
+/**
+ * Map a node to its workflow phase. Prefers explicit template phase metadata,
+ * then falls back to node type.
+ */
+export function nodePhase(node: TaskNode): WorkflowPhase {
+  const templatePhase = node.metadata?.["templatePhase"];
+  if (typeof templatePhase === "string") {
+    if (/scan|map|understand|surface|triage|plan/i.test(templatePhase)) return "PLANNING";
+    if (/sync|safety|baseline|execute|refactor|remediate|mitigate|rootcause/i.test(templatePhase)) return "IMPLEMENTING";
+    if (/verify/i.test(templatePhase)) return "TESTING";
+    if (/stage/i.test(templatePhase)) return "STAGING";
+  }
+  switch (node.type) {
+    case "research":
+    case "plan":
+      return "PLANNING";
+    case "code":
+    case "config":
+    case "shell":
+      return "IMPLEMENTING";
+    case "verify":
+      return "TESTING";
+    case "review":
+      return "STAGING";
+    default:
+      return "IMPLEMENTING";
+  }
+}
+
+export interface PhaseGateStatus {
+  phase: WorkflowPhase;
+  total: number;
+  done: number;
+  failed: number;
+  satisfied: boolean;
+}
+
+export interface PhaseGateReport {
+  /** Phase the graph is currently working in (earliest unsatisfied phase with work). */
+  currentPhase: WorkflowPhase | null;
+  phases: PhaseGateStatus[];
+  /** Phases that are blocked because an earlier phase is not satisfied. */
+  blockedPhases: WorkflowPhase[];
+  /** True when every phase with work is satisfied in order. */
+  canAdvanceToComplete: boolean;
+  violations: string[];
+}
+
+/**
+ * Evaluate phase gates across a graph. A phase is "satisfied" when it has at
+ * least one node and all its non-cancelled nodes are done with no failures.
+ * Later phases are "blocked" while any earlier phase with work is unsatisfied.
+ */
+export function evaluatePhaseGates(graph: TaskGraph): PhaseGateReport {
+  const nodes = Array.from(graph.nodes.values());
+  const phases: PhaseGateStatus[] = [];
+
+  for (const phase of PHASE_ORDER) {
+    const phaseNodes = nodes.filter((n) => nodePhase(n) === phase && n.status !== "cancelled");
+    if (phaseNodes.length === 0) continue;
+    const done = phaseNodes.filter((n) => n.status === "done").length;
+    const failed = phaseNodes.filter((n) => n.status === "failed" || n.status === "blocked").length;
+    phases.push({
+      phase,
+      total: phaseNodes.length,
+      done,
+      failed,
+      satisfied: failed === 0 && done === phaseNodes.length,
+    });
+  }
+
+  const violations: string[] = [];
+  const blockedPhases: WorkflowPhase[] = [];
+  let earliestUnsatisfied: WorkflowPhase | null = null;
+
+  for (let i = 0; i < phases.length; i++) {
+    const p = phases[i];
+    if (!p.satisfied && earliestUnsatisfied === null) {
+      earliestUnsatisfied = p.phase;
+    }
+    // A phase with progress while an earlier phase is unsatisfied is a violation.
+    if (earliestUnsatisfied && p.phase !== earliestUnsatisfied && (p.done > 0)) {
+      const earlier = phases[i - 1];
+      if (earlier && !earlier.satisfied) {
+        blockedPhases.push(p.phase);
+        violations.push(`${p.phase} has progress but ${earlier.phase} is not satisfied (${earlier.done}/${earlier.total} done, ${earlier.failed} failed)`);
+      }
+    }
+  }
+
+  return {
+    currentPhase: earliestUnsatisfied ?? (phases.length ? phases[phases.length - 1].phase : null),
+    phases,
+    blockedPhases,
+    canAdvanceToComplete: phases.every((p) => p.satisfied),
+    violations,
+  };
+}
+
+export function formatPhaseGateReport(report: PhaseGateReport): string {
+  if (report.phases.length === 0) return "";
+  const parts: string[] = ["─── Phase Gates ───"];
+  for (const p of report.phases) {
+    const icon = p.satisfied ? "✓" : p.failed > 0 ? "✗" : "○";
+    parts.push(`  ${icon} ${p.phase}: ${p.done}/${p.total} done${p.failed > 0 ? `, ${p.failed} failed` : ""}`);
+  }
+  if (report.currentPhase) parts.push(`Current phase: ${report.currentPhase}`);
+  if (report.violations.length > 0) parts.push(`Gate violations:\n${report.violations.map((v) => `  - ${v}`).join("\n")}`);
+  return parts.join("\n");
+}
+
+// ─── 10. Adaptive Complexity Scorer (file/import aware) ───────────────────────
+
+export type ExecutionStrategy = "direct" | "plan-then-exec" | "multi-phase" | "user-gate";
+
+export interface ComplexitySignals {
+  /** Number of files the task is expected to touch (e.g. from git diff --stat). */
+  changedFiles?: number;
+  /** Number of cross-module/package imports involved. */
+  crossModuleImports?: number;
+  /** Whether the change affects a public contract/API/interface. */
+  touchesPublicContract?: boolean;
+  /** Whether the area has test coverage. */
+  hasTestCoverage?: boolean;
+  /** Whether the action is irreversible (deploy, delete, migration). */
+  irreversible?: boolean;
+}
+
+export interface AdaptiveComplexityResult extends ComplexityAssessment {
+  level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  strategy: ExecutionStrategy;
+  signalReasons: string[];
+}
+
+/**
+ * Extend message-based complexity assessment with concrete file/import signals
+ * and map the result to an execution strategy. Used to auto-select between
+ * direct execution, plan-first, multi-phase orchestration, and user-gated flows.
+ */
+export function assessAdaptiveComplexity(
+  message: string,
+  intent: ScoredIntent,
+  signals: ComplexitySignals = {},
+): AdaptiveComplexityResult {
+  const base = assessTaskComplexity(message, intent);
+  let score = base.score;
+  const signalReasons: string[] = [];
+
+  if (typeof signals.changedFiles === "number") {
+    if (signals.changedFiles >= 6) { score += 3; signalReasons.push(`${signals.changedFiles} files affected`); }
+    else if (signals.changedFiles >= 2) { score += 1.5; signalReasons.push(`${signals.changedFiles} files affected`); }
+  }
+  if (typeof signals.crossModuleImports === "number" && signals.crossModuleImports >= 1) {
+    score += Math.min(2, signals.crossModuleImports * 0.5);
+    signalReasons.push(`${signals.crossModuleImports} cross-module import(s)`);
+  }
+  if (signals.touchesPublicContract) { score += 2; signalReasons.push("changes a public contract"); }
+  if (signals.hasTestCoverage === false) { score += 1; signalReasons.push("no test coverage in area"); }
+
+  // Determine level. Irreversibility forces CRITICAL regardless of size.
+  let level: AdaptiveComplexityResult["level"];
+  if (signals.irreversible) {
+    level = "CRITICAL";
+    signalReasons.push("irreversible action");
+  } else if (score >= 8 || (signals.changedFiles ?? 0) >= 6 || signals.touchesPublicContract) {
+    level = "HIGH";
+  } else if (score >= 4 || (signals.changedFiles ?? 0) >= 2) {
+    level = "MEDIUM";
+  } else {
+    level = "LOW";
+  }
+
+  const strategy: ExecutionStrategy =
+    level === "CRITICAL" ? "user-gate" :
+    level === "HIGH" ? "multi-phase" :
+    level === "MEDIUM" ? "plan-then-exec" :
+    "direct";
+
+  return {
+    ...base,
+    score: Math.round(score * 10) / 10,
+    isComplex: level === "HIGH" || level === "CRITICAL" || base.isComplex,
+    reasons: [...base.reasons, ...signalReasons],
+    level,
+    strategy,
+    signalReasons,
+  };
+}
+
+export function formatAdaptiveComplexity(result: AdaptiveComplexityResult): string {
+  return [
+    `Complexity: ${result.level} (score ${result.score})`,
+    `Strategy: ${result.strategy}`,
+    result.reasons.length ? `Signals: ${result.reasons.join(", ")}` : "",
+  ].filter(Boolean).join("\n");
 }

@@ -6,6 +6,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.7.5] - 2026-06-12
+
+### Added
+- **Advanced Orchestration v2.0 (AGENTS.md)**: four always-on brain modules — Workflow Engine (state machine, checkpoints, cross-session resume, phase gates), Delegation Intelligence (confidence scoring, retry budget, escalation chain, parallel consensus), Adaptive Strategy Selector (risk/complexity → strategy), and Failure Intelligence (pattern memory, anti-pattern detection, rollback, failure budget).
+- **Six meta-orchestration skills** (74 → 80 total): `orchestration-patterns`, `failure-recovery`, `multi-agent-coordination`, `estimation-planning`, `code-archaeology`, `incident-response`. Routed via `manual_or_keyword` mode with keyword detection and five new orchestration skill bundles.
+- **Workflow templates** (`workflow-templates.ts`): pre-built, phase-gated DAG templates for release, migration, security-audit, large-refactor, and incident-response, wired into the planner ahead of generic plans.
+- **Phase-gate guard** and **adaptive complexity scorer** (`intelligence.ts`): ordered PLANNING → IMPLEMENTING → TESTING → STAGING gates with violation detection, and file/import-aware complexity → execution-strategy mapping.
+- **Failure Pattern Store** (`failure-pattern-store.ts`): structured `signature → rootCause → fixCategory + badFixes` memory, wired into the live controller (records on failure, records winning fix on retry-success, injects proactive "do not repeat" warnings on retry dispatch).
+- **Strategy Telemetry** (`strategy-telemetry.ts`): per-intent strategy→outcome tracking that biases future strategy selection only above a confidence threshold; recorded once per terminal graph.
+- **Risk Heatmap** (`risk-heatmap.ts`): aggregates failure history by file and now populates the previously-empty `dangerousAreas` memory tier during persist.
+- **Speculative pre-fetch** (`speculative-prefetch.ts`) and **delegation scenario presets** (`delegation-scenarios.ts`): read-only groundwork planner and six scenario presets that feed the existing delegation-envelope builder.
+- **CI skill-routing health job** (`ci.yml`): startup audit, golden routing corpus, skills doctor JSON, and registry health gate.
+
+### Fixed
+- **Failure-pattern signature consistency**: the failure-record, retry-warning query, and success-after-retry paths now share a single stable key (excluding per-attempt reason), so the proactive retry warning can actually fire and a failure + its later fix update one pattern instead of two.
+- **Persist-path resilience**: strategy-telemetry recording and risk-heatmap population in `persist()` are wrapped in error boundaries so they can never block the core state save.
+- **Migration template false positive**: tightened the trigger so an incidental trailing noun (e.g. "verify migration") no longer hijacks a sequential plan.
+
+### Changed
+- Release version synced to `3.7.5` across package metadata, installers, constants, MCP version, config version, README badge, and version tests. Skill count references updated to 80 (README, CONTRIBUTING, installers, config test).
+
+### Verification
+- `tsc --noEmit` exit 0; full `bun test` suite green (1198 pass / 0 fail across 104 files).
+
+---
+
 ## [3.7.4] - 2026-06-11
 
 ### Added

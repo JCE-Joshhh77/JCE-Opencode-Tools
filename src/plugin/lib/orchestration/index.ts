@@ -176,8 +176,65 @@ export {
   formatWisdomContext,
   buildOrchestrationStatusReport,
   formatOrchestrationStatus,
+  nodePhase,
+  evaluatePhaseGates,
+  formatPhaseGateReport,
+  assessAdaptiveComplexity,
+  formatAdaptiveComplexity,
 } from "./intelligence.js";
-export type { ComplexityAssessment, CompletionGateResult, EscalationDecision, OrchestrationStatusReport, ToolEvidenceInput } from "./intelligence.js";
+export type { ComplexityAssessment, CompletionGateResult, EscalationDecision, OrchestrationStatusReport, ToolEvidenceInput, WorkflowPhase, PhaseGateStatus, PhaseGateReport, ExecutionStrategy, ComplexitySignals, AdaptiveComplexityResult } from "./intelligence.js";
+
+// Workflow Templates
+export {
+  listWorkflowTemplates,
+  getWorkflowTemplate,
+  matchWorkflowTemplate,
+  instantiateWorkflowTemplate,
+} from "./workflow-templates.js";
+export type { WorkflowTemplate, WorkflowTemplateId, InstantiatedTemplate } from "./workflow-templates.js";
+
+// Failure Pattern Store
+export {
+  recordFailurePattern,
+  queryFailurePattern,
+  formatFailureWarning,
+  pruneFailurePatterns,
+} from "./failure-pattern-store.js";
+export type { FailurePattern, RecordFailureInput } from "./failure-pattern-store.js";
+
+// Strategy Telemetry
+export {
+  recordStrategyOutcome,
+  computeStrategyStats,
+  recommendStrategy,
+  selectStrategyWithTelemetry,
+  formatStrategyStats,
+} from "./strategy-telemetry.js";
+export type { StrategyOutcome, StrategyTelemetryEntry, StrategyStats, StrategyRecommendation } from "./strategy-telemetry.js";
+
+// Risk Heatmap
+export {
+  buildRiskHeatmap,
+  getFileRisk,
+  formatRiskWarning,
+} from "./risk-heatmap.js";
+export type { RiskLevel, FileRisk, RiskHeatmap } from "./risk-heatmap.js";
+
+// Speculative Pre-fetch
+export {
+  planSpeculativePrefetch,
+  formatSpeculativePlan,
+} from "./speculative-prefetch.js";
+export type { SpeculativeTask, SpeculativePlan } from "./speculative-prefetch.js";
+
+// Delegation Scenario Presets
+export {
+  listDelegationScenarios,
+  getDelegationScenario,
+  buildScenarioEnvelopeInput,
+  matchDelegationScenario,
+} from "./delegation-scenarios.js";
+export type { DelegationScenario, ScenarioPreset } from "./delegation-scenarios.js";
 
 // Reliability Layer
 export {

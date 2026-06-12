@@ -8,6 +8,7 @@
 
 import type {
   TaskGraph,
+  TaskNode,
   AgentRole,
   ScoredIntent,
   Evidence,
@@ -57,6 +58,11 @@ import {
 } from "./execution-memory-v2.js";
 import type { ExecutionMemoryV2 } from "./types.js";
 import { buildFailureSignature } from "../failure-signature.js";
+import { recordFailurePattern, queryFailurePattern, formatFailureWarning } from "./failure-pattern-store.js";
+import { recordStrategyOutcome, selectStrategyWithTelemetry } from "./strategy-telemetry.js";
+import { buildRiskHeatmap } from "./risk-heatmap.js";
+import { withErrorBoundary } from "./reliability.js";
+import { assessAdaptiveComplexity, type ExecutionStrategy } from "./intelligence.js";
 import { GraphRegistry } from "./graph-registry.js";
 import {
   assessTaskComplexity,
@@ -142,6 +148,7 @@ export class OrchestrationController {
   private now: () => string;
   private nodeToTaskMap: Map<string, string> = new Map(); // nodeId → background taskId
   private nodeToGraphMap: Map<string, string> = new Map(); // nodeId → owning graphId (multi-graph)
+  private strategyOutcomeRecorded: Set<string> = new Set(); // graphIds already recorded in telemetry
   private autonomyLevel: AutonomyLevel;
   private operatorPreferences: OperatorPreferences;
 
@@ -220,11 +227,25 @@ export class OrchestrationController {
 
     this.prepareForNewGraph("createPlan");
 
+    // Determine execution strategy: rule-based assessment, then bias by learned
+    // telemetry (only overrides when historical confidence is high enough).
+    const ruleAssessment = assessAdaptiveComplexity(goal, resolvedIntent);
+    const strategyDecision = selectStrategyWithTelemetry(
+      ruleAssessment.strategy,
+      resolvedIntent.intent,
+      this.execMemory.strategyTelemetry,
+    );
+
     // Create graph
     this.graph = createTaskGraph({
       id: `graph-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       goal,
       now: this.now(),
+      metadata: {
+        executionStrategy: strategyDecision.strategy,
+        strategySource: strategyDecision.source,
+        plannedIntent: resolvedIntent.intent,
+      },
     });
 
     // Generate plan from intent
@@ -344,10 +365,21 @@ export class OrchestrationController {
         skills: node.input.skills ?? [],
       });
 
+      let prompt = formatAgentRequestAsPrompt(request);
+
+      // On a retry, inject a proactive warning if this failure pattern is known
+      // (root cause + fixes that already failed), so the sub-agent avoids them.
+      // Uses the same stable key as handleFailure so the lookup actually matches.
+      if (node.retryPolicy.currentRetry > 0) {
+        const pattern = queryFailurePattern(this.execMemory.failurePatterns, this.failurePatternKey(node));
+        const warning = formatFailureWarning(pattern);
+        if (warning) prompt = `${warning}\n\n${prompt}`;
+      }
+
       return {
         nodeId: node.id,
         agent: node.agent,
-        prompt: formatAgentRequestAsPrompt(request),
+        prompt,
         skills: node.input.skills ?? [],
         modelCategory: node.type === "research" ? "exploration" : node.type === "review" ? "deep" : "default",
       };
@@ -550,6 +582,16 @@ export class OrchestrationController {
     // Update graph based on result status
     if (agentResult.status === "success" || agentResult.status === "partial") {
       this.graph = this.scheduler.onNodeComplete(this.graph, nodeId, output);
+      // If this node had retried before succeeding, the approach worked — record
+      // the winning fix category so future similar failures can reuse it.
+      // Uses the same stable key as handleFailure so it updates the SAME pattern.
+      if (node.retryPolicy.currentRetry > 0 && agentResult.status === "success") {
+        this.execMemory.failurePatterns = recordFailurePattern(
+          this.execMemory.failurePatterns,
+          { ...this.failurePatternKey(node), fixCategory: node.title, fixSucceeded: true },
+          this.now(),
+        );
+      }
     } else if (agentResult.status === "blocked") {
       this.graph = this.scheduler.onNodeBlocked(this.graph, nodeId, agentResult.blockers.join("; "));
     } else {
@@ -607,6 +649,22 @@ export class OrchestrationController {
   }
 
   /**
+   * Stable identity for a node's failure pattern. Intentionally excludes the
+   * per-attempt failure `reason` (rootPhrase) so the SAME node produces the SAME
+   * signature across the failure path, the retry-warning query, and the
+   * success-after-retry path. The varying reason is stored as rootCause data,
+   * not as part of the identity.
+   */
+  private failurePatternKey(node: TaskNode): { command?: string; errorClass?: string; file?: string; stackMarker?: string } {
+    return {
+      command: node.input.prompt,
+      errorClass: node.blockerClass,
+      file: typeof node.metadata?.file === "string" ? node.metadata.file : undefined,
+      stackMarker: node.title,
+    };
+  }
+
+  /**
    * Handle a failed node (called when background task fails).
    */
   handleFailure(nodeId: string, reason: string): { action: "retry" | "blocked" | "escalate"; retryStrategy?: string } {
@@ -617,6 +675,7 @@ export class OrchestrationController {
     const node = this.graph.nodes.get(nodeId);
     const retryStrategy = node ? this.scheduler.getRetryStrategy(node) : undefined;
     if (node) {
+      // Legacy flat signature keeps rootPhrase for backward-compatible knownErrors.
       const signature = buildFailureSignature({
         command: node.input.prompt,
         errorClass: node.blockerClass,
@@ -624,6 +683,14 @@ export class OrchestrationController {
         rootPhrase: reason,
         stackMarker: node.title,
       });
+      // Structured failure pattern uses the STABLE key (no per-attempt reason) so
+      // the failure record, retry-warning query, and success record all resolve
+      // to the same pattern. The varying reason is stored as rootCause data.
+      this.execMemory.failurePatterns = recordFailurePattern(
+        this.execMemory.failurePatterns,
+        { ...this.failurePatternKey(node), rootCause: reason, fixCategory: node.title, fixSucceeded: false },
+        this.now(),
+      );
       this.execMemory.memoryTiers = {
         ...(this.execMemory.memoryTiers ?? {
           session: { blockers: [] },
@@ -718,9 +785,37 @@ export class OrchestrationController {
   }
 
   /**
+   * Record strategy telemetry for terminal graphs (once per graph). Maps the
+   * graph's final status to a strategy outcome so future plans can learn which
+   * strategy works for which intent.
+   */
+  private recordStrategyTelemetryForTerminalGraphs(): void {
+    for (const graph of this.graphRegistry.list()) {
+      const terminal = graph.status === "completed" || graph.status === "failed" || graph.status === "cancelled";
+      if (!terminal || this.strategyOutcomeRecorded.has(graph.id)) continue;
+      const strategy = graph.metadata?.executionStrategy as ExecutionStrategy | undefined;
+      const intent = graph.metadata?.plannedIntent as ScoredIntent["intent"] | undefined;
+      if (!strategy || !intent) { this.strategyOutcomeRecorded.add(graph.id); continue; }
+      const stats = getGraphStats(graph);
+      const outcome = graph.status === "completed"
+        ? (stats.failed > 0 ? "partial" : "success")
+        : graph.status === "cancelled" ? "abandoned" : "failed";
+      this.execMemory.strategyTelemetry = recordStrategyOutcome(
+        this.execMemory.strategyTelemetry,
+        { intent, strategy, outcome, retries: stats.failed },
+        this.now(),
+      );
+      this.strategyOutcomeRecorded.add(graph.id);
+    }
+  }
+
+  /**
    * Persist current state to disk.
    */
   persist(): void {
+    // Telemetry recording must never block the core state save. On failure,
+    // skip it and continue to persistence (degrade gracefully).
+    withErrorBoundary(() => { this.recordStrategyTelemetryForTerminalGraphs(); return null; }, null);
     const stats = this.graph ? getGraphStats(this.graph) : null;
     this.execMemory = endSession(
       this.execMemory,
@@ -731,6 +826,25 @@ export class OrchestrationController {
     this.execMemory = mergeOrchestrationIntoMemory(this.execMemory, this.memory, this.graph ?? undefined, this.now());
     this.execMemory.autonomyLevel = this.autonomyLevel;
     this.execMemory.operatorPreferences = this.operatorPreferences;
+
+    // Populate the dangerousAreas tier from the failure-pattern risk heatmap
+    // (previously this tier was always empty). High-risk files surface as
+    // pre-edit warnings in future sessions. Guarded so a heatmap error cannot
+    // prevent state from being saved.
+    withErrorBoundary(() => {
+      if (this.execMemory.failurePatterns && this.execMemory.failurePatterns.length > 0 && this.execMemory.memoryTiers) {
+        const heatmap = buildRiskHeatmap(this.execMemory.failurePatterns);
+        this.execMemory.memoryTiers = {
+          ...this.execMemory.memoryTiers,
+          project: {
+            ...this.execMemory.memoryTiers.project,
+            dangerousAreas: heatmap.dangerousAreas,
+          },
+        };
+      }
+      return null;
+    }, null);
+
     saveMemoryV2(this.projectRoot, this.execMemory, this.now());
   }
 

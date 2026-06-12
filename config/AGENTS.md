@@ -1,5 +1,5 @@
 # OpenCode JCE — Global AI Instructions
-# Version: 3.7.0 (Modular + Context Preservation)
+# Version: 4.0.0 (Advanced Orchestration + Modular + Context Preservation)
 # This file is always loaded. Skills in ./skills/ are loaded on-demand.
 # Customize freely — the installer will NOT overwrite your changes.
 
@@ -184,7 +184,7 @@ If message doesn't match any → use default Identity (staff engineer). Still lo
 
 **You have access to specialized skill files in the OpenCode config directory (`~/.config/opencode/skills/` on all platforms, including Windows).** Load the relevant ones based on the current task. Read the file content when you need the detailed guidance.
 
-### Available Skills (74 files)
+### Available Skills (80 files)
 
 **Core Engineering:**
 | File | Load When |
@@ -213,6 +213,16 @@ If message doesn't match any → use default Identity (staff engineer). Still lo
 | `prototype.md` | Build throwaway prototypes, spikes, POCs, or UI variants |
 | `write-a-skill.md` | Create or audit JCE/OpenCode skills and SKILL.md frontmatter |
 | `git-guardrails.md` | Safe commit, push, tag, branch, merge, and destructive-git guardrails |
+
+**Advanced Orchestration:**
+| File | Load When |
+|------|-----------|
+| `orchestration-patterns.md` | Multi-phase workflows, state machines, DAG execution, checkpoint/resume, saga patterns |
+| `failure-recovery.md` | Retry strategies, rollback protocols, circuit breakers for delegations, escalation chains |
+| `multi-agent-coordination.md` | Consensus protocols, conflict resolution between sub-agents, evidence merging, parallel evaluation |
+| `estimation-planning.md` | Critical path identification, risk-adjusted effort sizing, complexity detection, strategy selection |
+| `code-archaeology.md` | Legacy code understanding, git blame analysis, dependency archaeology, "why was this written" |
+| `incident-response.md` | Production triage, rollback procedures, blast radius assessment, post-mortem templates |
 
 **Distributed & Platform:**
 | File | Load When |
@@ -315,6 +325,9 @@ If message doesn't match any → use default Identity (staff engineer). Still lo
 | "Spring Boot microservice" | `spring-boot.md` + `architecture.md` + `java-kotlin.md` |
 | "Convert this plan into a PRD and GitHub issues" | `to-prd.md` + `to-issues.md` |
 | "Challenge my ADR before git push" | `git-guardrails.md` + `grill-with-docs.md` |
+| "Complex migration across 10 files" | `orchestration-patterns.md` + `software-engineering.md` |
+| "Why was this code written this way" | `code-archaeology.md` + `software-engineering.md` |
+| "Production is down, rollback needed" | `incident-response.md` + `failure-recovery.md` |
 
 ### Contoh (Bahasa Indonesia)
 
@@ -337,6 +350,66 @@ If message doesn't match any → use default Identity (staff engineer). Still lo
 | "Refactor kode ini" | `software-engineering.md` |
 | "Ubah rencana ini jadi PRD dan GitHub issues" | `to-prd.md` + `to-issues.md` |
 | "Audit ADR ini sebelum git push" | `git-guardrails.md` + `grill-with-docs.md` |
+| "Migrasi kompleks 10+ file" | `orchestration-patterns.md` + `software-engineering.md` |
+| "Kenapa kode ini ditulis begini" | `code-archaeology.md` + `software-engineering.md` |
+| "Production down, perlu rollback" | `incident-response.md` + `failure-recovery.md` |
+
+---
+
+## Advanced Orchestration (v2.0)
+
+### Workflow Engine v1.0
+
+Complex tasks (>5 steps, multi-session, or irreversible) use a state machine:
+
+- **Phases:** `PLANNING → IMPLEMENTING → TESTING → STAGING → DONE`
+- Create named checkpoints before risky steps. Format: `[checkpoint:<name>] <state summary>`
+- If verification fails after a phase, rollback to last checkpoint — do not stack patches forward.
+- Cross-session resume: on session start, detect incomplete workflow from context, reconstruct phase position, continue from last checkpoint.
+- Phase gates: cannot advance to next phase without verification evidence for current phase.
+
+> Detail: load `orchestration-patterns.md` skill.
+
+### Delegation Intelligence v1.0
+
+Sub-agent output is graded, not binary:
+
+- **Confidence scoring:** HIGH (evidence + sources) / MEDIUM (partial evidence) / LOW (opinion only).
+- **Retry budget:** max 2 retries with refined prompt before escalation. Each retry must narrow scope.
+- **Escalation chain:** explorer → oracle → user. Never skip levels unless time-critical.
+- **Parallel consensus:** For irreversible decisions (delete, deploy, schema migration), dispatch 2 agents independently → compare conclusions → proceed only if aligned or user resolves conflict.
+- **Output contract enforcement:** Delegated work MUST return: Summary, Files touched, Verification evidence, Risks. Missing sections = LOW confidence = retry or escalate.
+
+> Detail: load `multi-agent-coordination.md` skill.
+
+### Adaptive Strategy Selector v1.0
+
+Auto-select execution strategy based on risk and complexity:
+
+| Signal | Strategy |
+|--------|----------|
+| 1 file, <20 lines, no side effects | **Direct exec** — edit and verify immediately |
+| 2-5 files, clear scope, reversible | **Plan-then-exec** — state plan, execute, verify |
+| >5 files, cross-module, or breaking change | **Multi-phase** — use Workflow Engine, checkpoint each phase |
+| Irreversible (deploy, delete, schema) | **User gate** — present plan + evidence, wait for explicit approval |
+| Conflicting evidence or unknown territory | **Consensus** — dispatch 2 specialists, compare, then decide |
+
+- Complexity detection: count affected files, cross-module imports, test coverage of area.
+- Risk escalation: if initial assessment was LOW but verification fails, auto-upgrade to next strategy level.
+
+> Detail: load `estimation-planning.md` skill.
+
+### Failure Intelligence v1.0
+
+Learn from failures within and across sessions:
+
+- **Pattern matching:** After fixing an error, record `{error_signature → root_cause → fix_category}` in context.
+- **Anti-pattern detection:** If 3 similar patches fail in sequence → structural problem. Stop patching, rethink design.
+- **Proactive warning:** Before editing, check if the target area has known failure patterns in context. Warn if high-risk.
+- **Rollback protocol:** Before risky edits, generate explicit undo sequence. If fix fails, execute rollback before trying alternative.
+- **Failure budget:** Max 3 focused fix attempts per error. After budget exhausted: summarize all evidence, escalate to oracle or user.
+
+> Detail: load `failure-recovery.md` skill.
 
 ---
 
@@ -354,4 +427,8 @@ Scale:    monolith first → modular → microservices (if must)
 
 When stuck: read error → reproduce → isolate → trace → fix → verify
 After 3 failed fixes: STOP. Rethink architecture.
+
+Orchestration: assess risk → select strategy → checkpoint → execute → verify → advance
+Delegation: grade output → retry if weak → escalate if stuck → never trust blindly
+Failure: record pattern → detect anti-pattern → rollback before retry → budget 3 attempts
 ```

@@ -18,6 +18,7 @@ import type {
 import { addNode, removeNode, addEdge, type CreateNodeInput } from "./task-graph.js";
 import type { OrchestrationMemory } from "./shared-memory.js";
 import { getTopFacts, getActiveConstraints } from "./shared-memory.js";
+import { matchWorkflowTemplate, instantiateWorkflowTemplate } from "./workflow-templates.js";
 
 const IMPLEMENTATION_SPLIT_VERBS = /\b(?:add|implement|create|build|update|refactor|extract|wire|support|improve)\b/i;
 const SEQUENCE_SIGNALS = /\b(?:first|then|after|before|finally|depends on|dependency|wire into|followed by)\b/i;
@@ -318,6 +319,22 @@ export class AdaptivePlanner {
     const facts = getTopFacts(memory, 10);
     const constraints = getActiveConstraints(memory);
     const objective = this.scoreTradeoffs({}, intent.intent);
+
+    // Workflow templates: high-specificity patterns (release, migration, security
+    // audit, large refactor, incident) take precedence over generic plans.
+    const workflowTemplate = matchWorkflowTemplate(goal);
+    if (workflowTemplate) {
+      const instantiated = instantiateWorkflowTemplate(workflowTemplate.id, goal);
+      if (instantiated) {
+        const nodes = instantiated.nodes.map((node) => ({
+          ...node,
+          context: facts,
+          constraints,
+          metadata: { ...node.metadata, plannerMode: objective.mode, plannerReason: `workflow template: ${workflowTemplate.id}` },
+        }));
+        return { nodes, edges: instantiated.edges };
+      }
+    }
 
     if (intent.intent === "feature" || intent.intent === "general" || intent.intent === "refactor") {
       const detection = detectIndependentUnits(goal);

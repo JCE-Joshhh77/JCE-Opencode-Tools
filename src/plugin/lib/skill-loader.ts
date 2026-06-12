@@ -39,6 +39,14 @@ export const SKILL_NAME_TO_FILE: Record<string, string> = {
   "write-a-skill": "write-a-skill.md",
   "git-guardrails": "git-guardrails.md",
 
+  // Advanced Orchestration (meta-orchestration skills)
+  "orchestration-patterns": "orchestration-patterns.md",
+  "failure-recovery": "failure-recovery.md",
+  "multi-agent-coordination": "multi-agent-coordination.md",
+  "estimation-planning": "estimation-planning.md",
+  "code-archaeology": "code-archaeology.md",
+  "incident-response": "incident-response.md",
+
   // Distributed & Platform
   "distributed-systems": "distributed-systems.md",
   "platform-engineering": "platform-engineering.md",
@@ -180,6 +188,7 @@ export const AUTO_ROUTE_CANONICAL_PROMPTS: Record<string, string> = {
   "astro-remix": "Fix Astro islands architecture route loader action issue",
   "auth-identity": "Implement OAuth OIDC JWT RBAC session auth flow",
   "blockchain-web3": "Audit Solidity smart contract gas optimization with Foundry",
+  "code-archaeology": "Understand legacy code and why this code was written this way using git blame",
   "codebase-intelligence": "Map repository structure entry points and impact scan before refactor",
   "compliance-governance": "Review GDPR SOC2 PII audit logging and consent handling",
   "context-preservation": "Update .opencode-context.md handoff and session summary for next session continuity",
@@ -192,7 +201,9 @@ export const AUTO_ROUTE_CANONICAL_PROMPTS: Record<string, string> = {
   "distributed-systems": "Design event-driven saga CQRS flow with Kafka outbox",
   "django-fastapi": "Fix FastAPI Pydantic endpoint bug in Django/FastAPI service",
   "elixir": "Fix Phoenix LiveView OTP Elixir process issue in .ex file",
+  "estimation-planning": "Scope this large task and decide execution strategy with critical path and complexity detection",
   "express-nestjs": "Fix NestJS Express controller route handler auth bug",
+  "failure-recovery": "Verification keeps failing and I am stuck in a fix loop needing rollback and retry strategy",
   "flutter-dart": "Fix Flutter Riverpod widget state bug in Dart app",
   "frontend": "Improve frontend accessibility responsive state management and i18n behavior",
   "game-development": "Design ECS game loop physics rendering architecture",
@@ -200,12 +211,15 @@ export const AUTO_ROUTE_CANONICAL_PROMPTS: Record<string, string> = {
   "go": "Fix goroutine bug in .go module",
   "grill-with-docs": "Challenge ADR plan against domain docs and decision record",
   "human-ui-design": "Create dashboard UI that looks human-crafted and not AI-generated",
+  "incident-response": "Production is down after a deploy and we need to rollback and triage the incident",
   "java-kotlin": "Fix Kotlin JVM service bug in .kt file",
   "jce-worker-operating-system": "Improve JCE-Worker operating loop and completion discipline",
   "laravel": "Fix Laravel Eloquent Blade Artisan bug",
   "monorepo-management": "Fix pnpm workspace Nx monorepo affected build issue",
+  "multi-agent-coordination": "Coordinate multiple sub-agents and resolve conflicting findings with consensus and evidence grading",
   "nextjs": "Fix Next.js App Router Server Actions bug in React app",
   "observability": "Add OpenTelemetry tracing Prometheus metrics and SLO alerting",
+  "orchestration-patterns": "Plan a complex multi-phase migration across many files with checkpoints and resume",
   "php": "Fix PHP Composer service bug in .php file",
   "platform-engineering": "Set up ArgoCD GitOps Helm Terraform platform workflow",
   "prototype": "Build throwaway prototype spike to compare UI variants",
@@ -246,6 +260,12 @@ export type SkillRoutingMode = "auto" | "manual_or_keyword" | "internal_support"
 export const SKILL_ROUTING_MODE: Record<string, SkillRoutingMode> = {
   "jce-worker-operating-system": "internal_support",
   "write-a-skill": "manual_or_keyword",
+  "orchestration-patterns": "manual_or_keyword",
+  "failure-recovery": "manual_or_keyword",
+  "multi-agent-coordination": "manual_or_keyword",
+  "estimation-planning": "manual_or_keyword",
+  "code-archaeology": "manual_or_keyword",
+  "incident-response": "manual_or_keyword",
 };
 
 export const SKILL_FILE_HINTS: Record<string, string[]> = {
@@ -387,6 +407,14 @@ function detectContextSkills(text: string): string[] {
   if (/\b(delegate|delegation|sub-agent|dispatch|parallel\s*agent|review\s*delegated\s*work)\b/i.test(lower)) skills.push("delegation-quality");
   if (/\b(eslint|prettier|lint|formatter|tsconfig|lsp|codegen|language\s*server)\b/i.test(lower)) skills.push("developer-tooling");
 
+  // Advanced orchestration (meta) skills — keyword routed
+  if (/\b(multi-?phase|state\s*machine|checkpoint|saga\s*pattern|\bdag\b|orchestration\s*pattern|resume.*workflow)\b/i.test(lower)) skills.push("orchestration-patterns");
+  if (/\b(rollback\s*protocol|fix\s*loop|stuck\s*in\s*a\s*loop|failure\s*budget|escalation\s*chain|retry\s*strategy)\b/i.test(lower)) skills.push("failure-recovery");
+  if (/\b(consensus|conflicting\s*findings|coordinate\s*(multiple\s*)?sub-?agents|merge\s*evidence|grade.*delegat)\b/i.test(lower)) skills.push("multi-agent-coordination");
+  if (/\b(critical\s*path|effort\s*estimat|complexity\s*detection|risk.?adjusted)\b/i.test(lower)) skills.push("estimation-planning");
+  if (/\b(legacy\s*code|git\s*blame|code\s*archaeolog|why\s*was\s*this\s*(code\s*)?written|chesterton)\b/i.test(lower)) skills.push("code-archaeology");
+  if (/\b(outage|production\s*is\s*down|production\s*down|blast\s*radius|rollback\s*the\s*deploy)\b/i.test(lower)) skills.push("incident-response");
+
   if (skills.some((skill) => skill.startsWith("android-")) && !skills.includes("android-kotlin")) skills.push("android-kotlin");
   return prioritizeSkills([...new Set(skills)]);
 }
@@ -482,6 +510,12 @@ export const SKILL_BUNDLES: SkillBundle[] = [
   { id: "ui-polish", skills: ["human-ui-design", "visual-qa-rubric", "ui-pattern-library"], triggers: /\b(ui polish|design review|visual qa|dashboard polish|make it look|not look(ing)? (ai|generated))\b/i },
   { id: "api-contract", skills: ["api-design-patterns", "security", "architecture"], triggers: /\b(rest api|graphql|openapi|endpoint contract|api versioning|api pagination)\b/i },
   { id: "release-prep", skills: ["release-engineering", "verification-discipline", "git-guardrails"], triggers: /\b(prepare release|version sync|changelog|tag release|release readiness)\b/i },
+  // Advanced orchestration bundles
+  { id: "complex-migration", skills: ["orchestration-patterns", "estimation-planning", "code-archaeology"], triggers: /\b(complex migration|large refactor|multi-?phase|migrate across|10\+? files)\b/i },
+  { id: "failure-loop", skills: ["failure-recovery", "orchestration-patterns", "verification-discipline"], triggers: /\b(stuck in.*(loop|cycle)|keeps? failing|3 (attempts|tries|fixes)|fix loop|repeated failure)\b/i },
+  { id: "multi-agent-task", skills: ["multi-agent-coordination", "orchestration-patterns", "delegation-quality"], triggers: /\b(coordinate.*(agents?|sub-?agents?)|parallel consensus|conflicting (findings|results)|multi-?agent)\b/i },
+  { id: "incident-triage", skills: ["incident-response", "failure-recovery", "verification-discipline"], triggers: /\b(production (is )?down|outage|rollback.*(deploy|release)|blast radius|incident triage)\b/i },
+  { id: "legacy-understanding", skills: ["code-archaeology", "codebase-intelligence", "estimation-planning"], triggers: /\b(legacy (code|system)|why was this (written|built)|understand.*(old|existing)|chesterton|characterization test)\b/i },
 ];
 
 export function matchSkillBundles(text: string): SkillBundle[] {

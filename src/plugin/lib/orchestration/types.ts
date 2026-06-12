@@ -291,11 +291,35 @@ export interface ExecutionMemoryV2 {
   sessionHistory: SessionEntry[];
   operatorPreferences?: OperatorPreferences;
   autonomyLevel?: AutonomyLevel;
+  /** Structured failure patterns: error signature → root cause → fix category. */
+  failurePatterns?: FailurePatternV2[];
+  /** Strategy outcome telemetry: which strategy was chosen per intent and its result. */
+  strategyTelemetry?: StrategyTelemetryV2[];
   /** Persisted orchestration coordination state (constraints/signals) that must survive reloads. */
   orchestration?: {
     constraints: Constraint[];
     signals: Signal[];
   };
+}
+
+export interface FailurePatternV2 {
+  signature: string;
+  errorClass?: string;
+  rootCause?: string;
+  fixCategory?: string;
+  badFixes: string[];
+  successCount: number;
+  failCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+}
+
+export interface StrategyTelemetryV2 {
+  intent: IntentType;
+  strategy: "direct" | "plan-then-exec" | "multi-phase" | "user-gate";
+  outcome: "success" | "partial" | "failed" | "abandoned";
+  retries?: number;
+  recordedAt: string;
 }
 
 export interface MemoryTierSnapshot {
