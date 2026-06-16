@@ -14,7 +14,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 - Release version synced to `3.8.2` across package metadata, installers, constants, MCP version, config version, and version tests.
 
 ### Verification
-- `bun test tests/unit/plugin-agents.test.ts tests/unit/orchestration-intelligence-upgrades.test.ts` exit 0 (31 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `bun test tests/unit/plugin-agents.test.ts tests/unit/orchestration-intelligence-upgrades.test.ts tests/unit/ui.test.ts tests/unit/plugin-workflow-tool.test.ts` exit 0 (55 pass / 0 fail).
 
 ---
 
