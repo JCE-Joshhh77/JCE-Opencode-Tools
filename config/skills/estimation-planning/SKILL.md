@@ -46,7 +46,7 @@ Map complexity → execution strategy (mirrors Adaptive Strategy Selector v1.0).
 | LOW | **Direct exec** | Edit + verify immediately, no ceremony |
 | MEDIUM | **Plan-then-exec** | State plan, execute, verify |
 | HIGH | **Multi-phase** | State machine + checkpoints per phase |
-| CRITICAL | **User gate** | Present plan + evidence, wait for approval |
+| CRITICAL | **User gate** | Present plan + evidence, wait for approval only for irreversible or permission-boundary actions |
 | Unknown territory | **Spike first** | Time-boxed investigation before committing |
 
 **Auto-upgrade rule:** if you start LOW but verification fails or scope grows, upgrade to the next level. Don't stubbornly stay direct on a task that revealed itself as complex.
@@ -92,7 +92,7 @@ Effort isn't just lines of code. Adjust for:
 | Unfamiliar codebase/tech | Add investigation time up front |
 | No existing tests | Add test-writing + higher verification cost |
 | External dependencies | Add integration uncertainty |
-| Irreversible operations | Add review + user-gate overhead |
+| Irreversible operations | Add review + user-gate overhead; reversible code/config work should continue once scope is clear |
 | Legacy/undocumented code | Add archaeology time (see code-archaeology) |
 
 State the riskiest assumption explicitly. The plan should de-risk the unknown first ("verify the API actually returns X before building on it").

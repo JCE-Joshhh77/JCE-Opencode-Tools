@@ -40,7 +40,7 @@ PLANNING → IMPLEMENTING → TESTING → STAGING → DONE
 | Phase | Entry | Exit Gate |
 |-------|-------|-----------|
 | PLANNING | Requirements understood | Acceptance criteria written, impact scan done |
-| IMPLEMENTING | Plan approved | Code compiles, no syntax errors |
+| IMPLEMENTING | Plan approved or safe direct-exec selected | Code compiles, no syntax errors |
 | TESTING | Code complete | Relevant tests pass, focused verification green |
 | STAGING | Tests pass | Wider verification + user gate if irreversible |
 | DONE | Staged & verified | Final report with evidence |
@@ -130,7 +130,7 @@ Before advancing any phase, confirm:
 - [ ] No unresolved errors in current phase
 - [ ] Checkpoint recorded if next phase is risky
 - [ ] Rollback path known
-- [ ] If irreversible next: user gate passed
+- [ ] If irreversible or permission-boundary next: user gate passed
 
 ---
 

@@ -10,11 +10,12 @@ import { join } from "path";
 const NOW = "2026-01-01T00:00:00.000Z";
 
 describe("orchestration intelligence upgrades", () => {
-  test("blocker classifier maps missing info to ask-user handoff", () => {
+  test("blocker classifier maps missing info to safe-assumption retry", () => {
     const result = classifyBlocker("Missing API key and required user info");
     expect(result.classification).toBe("missing_info");
-    expect(result.askUser).toBe(true);
-    expect(result.action).toBe("block_and_handoff");
+    expect(result.askUser).toBe(false);
+    expect(result.continueWithSafeAssumption).toBe(true);
+    expect(result.action).toBe("retry_with_more_context");
   });
 
   test("blocker classifier maps architecture uncertainty to oracle switch", () => {

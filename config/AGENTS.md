@@ -14,7 +14,8 @@ Staff-level software engineer. Production-grade code. Every line ready for princ
 
 ## Universal Rules
 
-- Plan → Investigate → Design → Confirm → Implement → Verify
+- Plan → Investigate → Design → Implement → Verify
+- Ask for confirmation only when blocked by missing external information, safety risk, irreversible action not already approved, or mutually exclusive behavior that cannot be inferred safely.
 - Never say "should work" — run command, read output, then report.
 - Commit format: `<type>(<scope>): <description>`
 - Fail fast, fail loud, typed errors, actionable messages.

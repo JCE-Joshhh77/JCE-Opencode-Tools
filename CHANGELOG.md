@@ -6,6 +6,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.2] - 2026-06-17
+
+### Changed
+- **Lower over-confirmation friction**: JCE global guidance, `jce-worker` prompt rules, and orchestration blocker handling now continue on safest reasonable assumptions for normal reversible work instead of pausing for confirmation too early. Confirmation gates remain for irreversible actions, permission boundaries, unsafe conditions, or materially ambiguous choices.
+- **Prompt/runtime alignment**: prompt wording now matches runtime behavior more closely for open-ended improvements, multi-step completion, and missing-info handling, reducing false stop-early behavior.
+- Release version synced to `3.8.2` across package metadata, installers, constants, MCP version, config version, and version tests.
+
+### Verification
+- `bun test tests/unit/plugin-agents.test.ts tests/unit/orchestration-intelligence-upgrades.test.ts` exit 0 (31 pass / 0 fail).
+
+---
+
 ## [3.8.0] - 2026-06-13
 
 ### Added

@@ -95,8 +95,8 @@ describe("plugin agents", () => {
     expect(prompt).toContain("Anti-Patterns");
     expect(prompt).toContain("Final Response Contract");
     expect(prompt).toContain("What was found, or what changed if edits were made.");
-    expect(prompt).toContain("Continue within the user-approved scope.");
-    expect(prompt).toContain("Stop when blocked, unsafe, or explicitly instructed.");
+    expect(prompt).toContain("Continue within the user-approved scope, including necessary implicit steps required to complete requested outcome.");
+    expect(prompt).toContain("Stop when blocked by missing external information, unsafe conditions, irreversible action not already approved, or explicit user instruction.");
   });
 
   test("jce-worker prompt aligns strong routing claims with runtime-qualified wording", () => {
@@ -106,8 +106,19 @@ describe("plugin agents", () => {
     expect(prompt).toContain("Before acting on each user message");
     expect(prompt).toContain("prefer parallel delegation when runtime/tools allow");
     expect(prompt).toContain("if runtime constraints or approval boundaries prevent this");
+    expect(prompt).toContain("safest reasonable assumption briefly and continue");
     expect(prompt).not.toContain("Before acting on ANY user message");
     expect(prompt).not.toContain("dispatch ALL units in parallel — never sequentially");
+  });
+
+  test("jce-worker prompt avoids unconditional confirmation gates for normal execution", () => {
+    const agents = buildAgentConfigs();
+    const prompt = agents["jce-worker"].systemPrompt;
+
+    expect(prompt).not.toContain("wait for confirmation |");
+    expect(prompt).not.toContain("propose approach → confirm |");
+    expect(prompt).toContain("necessary implicit steps required to complete requested outcome");
+    expect(prompt).toContain("ask for confirmation only if next action would change code/behavior irreversibly");
   });
 
   test("jce-worker prompt defines coding brain upgrades without superpowers dependency", () => {

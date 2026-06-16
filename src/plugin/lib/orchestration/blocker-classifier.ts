@@ -14,7 +14,7 @@ function classify(reason: string): BlockerClass {
 
 function mapping(kind: BlockerClass): Omit<BlockerDecision, "classification" | "reason"> {
   const map: Record<BlockerClass, Omit<BlockerDecision, "classification" | "reason">> = {
-    missing_info: { action: "block_and_handoff", askUser: true, delegateToOracle: false, continueWithSafeAssumption: false },
+    missing_info: { action: "retry_with_more_context", askUser: false, delegateToOracle: false, continueWithSafeAssumption: true },
     permission_boundary: { action: "block_and_handoff", askUser: true, delegateToOracle: false, continueWithSafeAssumption: false },
     verification_failure: { action: "run_narrower_verification", askUser: false, delegateToOracle: false, continueWithSafeAssumption: false },
     architecture_uncertainty: { action: "switch_agent", askUser: false, delegateToOracle: true, continueWithSafeAssumption: false },
