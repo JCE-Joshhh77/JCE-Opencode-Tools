@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.3] - 2026-06-17
+
+### Fixed
+- **Ubuntu/Linux `doctor --fix` npm LSP installs**: when `npm install -g` fails with `EACCES` on VPS or non-root shells, the fixer now retries automatically into user space under `~/.opencode-jce/npm-global`, prepends that `bin` directory to the current process `PATH`, and lets the follow-up LSP merge detect newly installed servers without requiring `sudo`.
+- **Clearer auto-fix failures**: npm-based LSP install failures now distinguish global permission problems from Node/npm engine mismatches, so `doctor --fix` reports actionable root causes instead of clipped ambiguous output.
+- **Generated asset edit guardrail**: workflow/tool-discipline now flags paths like `public/assets/*`, `dist/*`, `build/*`, minified files, and hashed assets as brittle for line-based patching, steering edits toward source files or exact string replacement after a fresh read.
+
+### Changed
+- Release version synced to `3.8.3` across package metadata, installers, constants, MCP version, config version, and version tests.
+
+### Verification
+- `bun test tests/unit/audit-fixes.test.ts` exit 0 (55 pass / 0 fail).
+- `bun test tests/unit/plugin-tool-discipline.test.ts tests/unit/plugin-workflow-tool.test.ts` exit 0 (12 pass / 0 fail).
+- `bun run typecheck` exit 0.
+
+---
+
 ## [3.8.2] - 2026-06-17
 
 ### Changed

@@ -48,7 +48,7 @@ describe("jce workflow tool", () => {
 
     expect(result).toContain("Summary");
     expect(result).toContain("Scope: Task 5");
-      expect(result).toContain("Current version: 3.8.2");
+      expect(result).toContain("Current version: 3.8.3");
     expect(result).toContain("Changed Files");
     expect(result).toContain("M src/plugin/tools/workflow.ts");
     expect(result).toContain("Detected Areas");
@@ -110,6 +110,20 @@ describe("jce workflow tool", () => {
     expect(result).toContain("Safe Edit Engine v3.4");
     expect(result).toContain("Autonomous Debug Loop v3.5");
     expect(result).toContain("src/commands/update.ts");
+  });
+
+  test("returns generated artifact guardrail for brittle asset edits", async () => {
+    const tool = buildWorkflowTool();
+    const result = await tool.execute({
+      action: "code_task_plan",
+      taskType: "bugfix",
+      scope: "fix admin asset directly on vps",
+      gitStatus: " M public/assets/admin.js\n",
+    } as any, context());
+
+    expect(result).toContain("Generated Artifact Guardrail");
+    expect(result).toContain("public/assets/admin.js looks like generated/build output");
+    expect(result).toContain("avoid line-based Edit patches on generated/minified assets");
   });
 
   test("returns project learning report", async () => {

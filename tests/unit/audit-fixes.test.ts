@@ -11,7 +11,7 @@ import { loadPromptTemplate } from "../../src/lib/prompts.js";
 import { MemoryStore } from "../../src/lib/memory.js";
 import { TokenTracker } from "../../src/lib/tokens.js";
 import { applyPluginConfig, loadPluginsRegistry, parseGitHubPluginUrl, removePlugin, savePluginsRegistry } from "../../src/lib/plugins.js";
-import { getSafeNpmInstallArgs } from "../../src/lib/fixer.js";
+import { getSafeNpmInstallArgs, npmUserPrefixPaths } from "../../src/lib/fixer.js";
 import { validateTeamRepoUrl } from "../../src/lib/team.js";
 import { pruneAndArchiveContext } from "../../src/mcp/context-keeper.js";
 import { smartPrune } from "../../src/lib/context-similarity.js";
@@ -479,6 +479,13 @@ describe("audit fixes", () => {
     expect(getSafeNpmInstallArgs("npm install pyright")).toBeNull();
   });
 
+  test("doctor LSP fixer computes user-prefix npm fallback under opencode-jce home", () => {
+    const paths = npmUserPrefixPaths("/home/ubuntu");
+
+    expect(paths.prefix.replace(/\\/g, "/")).toBe("/home/ubuntu/.opencode-jce/npm-global");
+    expect(paths.bin.replace(/\\/g, "/")).toBe("/home/ubuntu/.opencode-jce/npm-global/bin");
+  });
+
   test("doctor fix requires explicit opt-in before global tool installs", () => {
     const doctorSource = readFileSync(join(process.cwd(), "src", "commands", "doctor.ts"), "utf-8");
     const fixerSource = readFileSync(join(process.cwd(), "src", "lib", "fixer.ts"), "utf-8");
@@ -487,6 +494,8 @@ describe("audit fixes", () => {
     expect(doctorSource).toContain("installTools: opts.installTools === true");
     expect(fixerSource).toContain("allowGlobalInstall = false");
     expect(fixerSource).toContain("Global install skipped");
+    expect(fixerSource).toContain("Installed via npm user prefix (~/.opencode-jce/npm-global)");
+    expect(fixerSource).toContain("permission denied writing global npm directory; user-space fallback also failed");
   });
 
   test("team repo URL policy rejects unauthenticated or credentialed transports", () => {

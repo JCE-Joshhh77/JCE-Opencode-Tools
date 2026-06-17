@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
+import { homedir } from "os";
 import { createInterface } from "readline";
 import chalk from "chalk";
 import { getConfigDir, loadConfigFile } from "./config.js";
@@ -34,6 +35,57 @@ async function runCommand(command: string, args: string[]): Promise<{ success: b
   } catch (err: any) {
     return { success: false, output: err.message };
   }
+}
+
+function preferredOutput(stdout: string, stderr: string): string {
+  return [stderr.trim(), stdout.trim()].find(Boolean) ?? "";
+}
+
+function summarizeInstallFailure(output: string): string {
+  const trimmed = output.trim();
+  if (!trimmed) return "Install failed";
+  if (/EACCES/i.test(trimmed)) return "Install failed: permission denied writing global npm directory; user-space fallback also failed";
+  if (/EBADENGINE|Unsupported engine/i.test(trimmed)) return "Install failed: package requires newer Node.js/npm engine";
+  return `Install failed: ${trimmed.slice(0, 140)}`;
+}
+
+export function npmUserPrefixPaths(home = homedir()): { prefix: string; bin: string } {
+  const prefix = join(home, ".opencode-jce", "npm-global");
+  return { prefix, bin: join(prefix, "bin") };
+}
+
+async function runNpmInstallWithFallback(args: string[]): Promise<{ success: boolean; output: string; mode: "global" | "user-prefix" }> {
+  const globalProc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+  const [globalStdout, globalStderr] = await Promise.all([
+    new Response(globalProc.stdout).text(),
+    new Response(globalProc.stderr).text(),
+  ]);
+  const globalExit = await globalProc.exited;
+  if (globalExit === 0) return { success: true, output: preferredOutput(globalStdout, globalStderr), mode: "global" };
+
+  const globalOutput = preferredOutput(globalStdout, globalStderr);
+  if (!/EACCES|permission denied/i.test(globalOutput)) {
+    return { success: false, output: globalOutput, mode: "global" };
+  }
+
+  const { prefix, bin } = npmUserPrefixPaths();
+  await mkdir(bin, { recursive: true });
+  const userArgs = [...args.slice(0, 3), "--prefix", prefix, ...args.slice(3)];
+  const userProc = Bun.spawn(userArgs, { stdout: "pipe", stderr: "pipe" });
+  const [userStdout, userStderr] = await Promise.all([
+    new Response(userProc.stdout).text(),
+    new Response(userProc.stderr).text(),
+  ]);
+  const userExit = await userProc.exited;
+  const userOutput = preferredOutput(userStdout, userStderr);
+  if (userExit === 0) {
+    const delimiter = process.platform === "win32" ? ";" : ":";
+    const current = process.env.PATH ?? "";
+    if (!current.split(delimiter).includes(bin)) process.env.PATH = `${bin}${delimiter}${current}`;
+    return { success: true, output: userOutput, mode: "user-prefix" };
+  }
+
+  return { success: false, output: `${globalOutput}\n${userOutput}`.trim(), mode: "user-prefix" };
 }
 
 export function getSafeNpmInstallArgs(command: string): string[] | null {
@@ -230,20 +282,13 @@ export async function fixMissingLsp(): Promise<FixResult[]> {
       continue;
     }
 
-    const [command, ...args] = installArgs;
-    const proc = Bun.spawn([command, ...args], { stdout: "pipe", stderr: "pipe" });
-    const [output, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
-    const exitCode = await proc.exited;
-    const result = { success: exitCode === 0, output: output || stderr };
+    const result = await runNpmInstallWithFallback(installArgs);
     if (result.success) {
       console.log(chalk.green("[OK]"));
-      results.push({ name: `LSP: ${server.name}`, fixed: true, message: "Installed via npm" });
+      results.push({ name: `LSP: ${server.name}`, fixed: true, message: result.mode === "user-prefix" ? "Installed via npm user prefix (~/.opencode-jce/npm-global)" : "Installed via npm" });
     } else {
       console.log(chalk.red("[FAIL]"));
-      results.push({ name: `LSP: ${server.name}`, fixed: false, message: `Install failed: ${result.output.slice(0, 100)}` });
+      results.push({ name: `LSP: ${server.name}`, fixed: false, message: summarizeInstallFailure(result.output) });
     }
   }
 

@@ -1,4 +1,5 @@
 import { buildAndroidVerificationRecipe, classifyAndroidFailure } from "./android/index.js";
+import { isGeneratedBuildArtifactPath } from "./tool-discipline.js";
 
 export type WorkflowRecipeTaskType = "agent_prompt" | "config" | "installer" | "release" | "docs" | "tests" | "unknown";
 export type CodeTaskType = "bugfix" | "feature" | "refactor" | "tests" | "docs" | "config" | "installer" | "release" | "unknown";
@@ -151,6 +152,19 @@ export function buildCodeTaskPlan(input: CodeTaskPlanInput = {}): string {
         : ["General Protocol", "- classify task", "- inspect code", "- plan safe change", "- verify relevant behavior"];
 
   const androidRecipe = buildAndroidVerificationRecipe({ prompt: input.scope, files: changedFiles });
+  const generatedArtifacts = changedFiles.filter(isGeneratedBuildArtifactPath);
+  const artifactWarnings = generatedArtifacts.length
+    ? [
+      "Generated Artifact Guardrail",
+      ...bulletList([
+        ...generatedArtifacts.map((file) => `${file} looks like generated/build output`),
+        "avoid line-based Edit patches on generated/minified assets",
+        "prefer editing source files, then rebuild affected artifacts",
+        "if source is unavailable, use exact string replacement after a fresh read instead of stale line offsets",
+      ]),
+      "",
+    ]
+    : [];
 
   return [
     "Coding Brain v3.1",
@@ -168,6 +182,7 @@ export function buildCodeTaskPlan(input: CodeTaskPlanInput = {}): string {
     "Safe Edit Engine v3.4",
     ...bulletList(["keep patch narrow", "preserve user work", "avoid unrelated cleanup", "review imports/exports", "review error paths"]),
     "",
+    ...artifactWarnings,
     "Verification Brain v3.2",
     ...bulletList(verificationCommandsForFiles(changedFiles)),
     ...(androidRecipe.detected ? ["- Android-specific verification:", ...androidRecipe.commands.map((item) => `  - ${item.command} (${item.reason})`)] : []),

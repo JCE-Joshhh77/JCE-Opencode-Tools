@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateStagedPath, summarizeToolDiscipline } from "../../src/plugin/lib/tool-discipline.ts";
+import { evaluateStagedPath, isGeneratedBuildArtifactPath, summarizeToolDiscipline } from "../../src/plugin/lib/tool-discipline.ts";
 
 describe("tool discipline", () => {
   test("warns for generated runtime paths", () => {
@@ -16,5 +16,12 @@ describe("tool discipline", () => {
     const issues = summarizeToolDiscipline(["src/index.ts", ".env", ".opencode-context.md"]);
 
     expect(issues).toHaveLength(2);
+  });
+
+  test("warns for generated build artifacts and detects brittle asset paths", () => {
+    expect(isGeneratedBuildArtifactPath("public/assets/admin.js")).toBe(true);
+    expect(isGeneratedBuildArtifactPath("dist/app.min.js")).toBe(true);
+    expect(evaluateStagedPath("public/assets/admin.js")).toMatchObject({ severity: "warn" });
+    expect(evaluateStagedPath("public/assets/admin.js")?.reason).toContain("line-based edits");
   });
 });
