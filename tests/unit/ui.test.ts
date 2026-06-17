@@ -77,7 +77,7 @@ describe("banner", () => {
     console.log = originalLog;
 
     const output = logs.join("\n");
-    expect(output).toContain("v3.8.3");
+    expect(output).toContain("v3.8.4");
   });
 });
 

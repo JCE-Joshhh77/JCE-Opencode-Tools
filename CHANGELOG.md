@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.4] - 2026-06-17
+
+### Fixed
+- **Cross-platform `doctor --fix` LSP auto-installs expanded**: auto-fix now goes beyond npm-only installs and can bootstrap or install additional language servers across Ubuntu/Linux and Windows, including Rust, Go, Java/jdtls, clangd, csharp-ls, Kotlin language server, Dart SDK, Lua language server, Marksman, Taplo, Solargraph, Elixir LS, and Metals where safe package-manager or user-space installer paths exist.
+- **Safer strategy routing per platform**: the doctor fixer now classifies each missing LSP into explicit install strategies instead of treating all non-npm commands as manual-only, improving Ubuntu VPS and Windows first-run experience while preserving fail-safe handling for truly manual cases.
+
+### Changed
+- Release version synced to `3.8.4` across package metadata, installers, constants, MCP version, config version, and version tests.
+
+### Verification
+- `bun test tests/unit/audit-fixes.test.ts` exit 0 (56 pass / 0 fail).
+- `bun run typecheck` exit 0.
+
+---
+
 ## [3.8.3] - 2026-06-17
 
 ### Fixed
