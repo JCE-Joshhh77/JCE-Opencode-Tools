@@ -48,14 +48,15 @@ describe("plugin integration", () => {
     expect(hooks["tool.execute.after"]).toBeDefined();
   });
 
-  test("tool.execute.after applies Token Savings to verbose direct tool output", async () => {
+  test("tool.execute.after skips direct context-budget compression for read output", async () => {
     const root = tempRoot();
     const mod = await import("../../src/plugin/index.ts");
     const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
     const repeated = "same verbose low value output line for token savings";
+    const original = [repeated, repeated, repeated, "final important line"].join("\n");
     const output = {
       title: "Read",
-      output: [repeated, repeated, repeated, "final important line"].join("\n"),
+      output: original,
       metadata: {},
     };
 
@@ -63,12 +64,9 @@ describe("plugin integration", () => {
     await hooks["tool.execute.after"]!({ tool: "read", sessionID: "s", callID: "c", args: {} }, output);
 
     const persisted = loadRuntimeState(root).runtime;
-    expect(output.output).toContain("[context-budget: removed 2 duplicate low-value lines]");
-    expect(persisted.contextBudgetSummary?.estimatedTokensSaved).toBeGreaterThan(0);
-    expect(persisted.contextBudgetSummary?.tasks).toBe(1);
-    expect(persisted.contextBudgetSummary?.byTool?.read?.tasks).toBe(1);
-    expect(persisted.contextBudgetSummary?.byTool?.read?.estimatedTokensSaved).toBeGreaterThan(0);
-    expect(persisted.traceEvents.some((event) => event.message === "Context budget applied to read output")).toBe(true);
+    expect(output.output).toBe(original);
+    expect(persisted.contextBudgetSummary).toBeUndefined();
+    expect(persisted.traceEvents.some((event) => event.message === "Context budget applied to read output")).toBe(false);
   });
 
   test("plugin runtime persistence writes orchestration memory v2", async () => {

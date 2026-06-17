@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.4"
+VERSION="3.8.5"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()

@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.5] - 2026-06-17
+
+### Fixed
+- **VPS `read` stability**: direct `read` tool output is no longer passed through aggressive post-tool context-budget compression in the plugin hook. Large file-content payloads now flow through unchanged, reducing CPU/string-churn pressure that could terminate the worker on low-memory VPS environments with errors like "Failed to send prompt" and "Worker has been terminated".
+
+### Changed
+- Release version synced to `3.8.5` across package metadata, installers, constants, MCP version, config version, and version tests.
+
+### Verification
+- `bun test tests/unit/plugin-integration.test.ts` exit 0 (55 pass / 0 fail).
+- `bun run typecheck` exit 0.
+
+---
+
 ## [3.8.4] - 2026-06-17
 
 ### Fixed

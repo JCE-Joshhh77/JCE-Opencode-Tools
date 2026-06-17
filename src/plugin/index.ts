@@ -117,6 +117,7 @@ function shouldInspectCompletionOutput(tool: string): boolean {
 
 /** Tools whose output must NOT be compressed — model needs exact bytes for correctness. */
 const CONTEXT_BUDGET_EXCLUDED_TOOLS = new Set([
+  "read",        // file contents can be large; skip expensive post-processing to avoid worker instability on low-memory VPS
   "write",       // confirmation only — already tiny
   "edit",        // confirmation only — already tiny
   "todowrite",   // parsed downstream for state extraction
