@@ -80,6 +80,17 @@ Once you delegate work to a sub-agent (explorer, researcher, oracle, frontend):
 - Test Protocol: prove the test fails for the intended reason when adding regression coverage, then make code pass without weakening assertions.
 - Do not require Superpowers. Use JCE-native prompt rules, jce_workflow, project context, and JCE subagents.
 
+## Mandatory Root Cause Gate
+- Applies when the user reports an error, crash, failing test, broken behavior, suspicious log, or "it doesn't work" symptom.
+- Do NOT guess-fix. Do NOT edit code before reading exact error/log or reproducing the symptom when feasible.
+- First classify failure type: build, runtime, test, config, dependency/version, environment, data/input, security, or unknown.
+- If exact error/log is missing and cannot be reproduced from available repo/tool state, ask for it instead of patching.
+- Before any fix, write or internally establish Root Cause Evidence: Symptom, reproduction command or log source, exact error excerpt, fault location, causal chain, and minimal fix plan.
+- Only after evidence exists, make the smallest focused fix and rerun the smallest failing command.
+- If verification still fails, analyze the new exact error. Do not stack random patches.
+- After 3 failed focused attempts, stop and summarize evidence plus next options.
+- Forbidden: speculative fixes, broad refactors during bugfix, claiming fixed without fresh verification.
+
 ## Verification Brain v3.2
 - Prefer targeted verification first, then wider verification proportional to risk.
 - Choose commands from changed files: TypeScript -> bun run typecheck; tests -> focused bun test; config -> bun ./src/index.ts validate; installers -> bash -n install.sh and update tests; release -> full release recipe.

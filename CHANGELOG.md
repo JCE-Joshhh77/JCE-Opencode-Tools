@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.6] - 2026-06-21
+
+### Changed
+- **Mandatory Root Cause Gate**: global AGENTS guidance and the `jce-worker` prompt now require exact error/log evidence or a feasible reproduction before bugfix edits. Error reports must be classified, Root Cause Evidence must exist before patching, fixes must stay minimal, and the smallest failing command must be rerun afterward.
+- **Bugfix safety guardrails**: speculative fixes, broad refactors during bugfixes, and fixed/complete claims without fresh verification are now explicitly forbidden. After three failed focused attempts, agents must stop stacking patches and summarize evidence plus next options.
+- Release version synced to `3.8.6` across package metadata, installers, constants, MCP version, config version, README badge, and version tests.
+
+### Verification
+- `bun test` exit 0 (1299 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `bun ./src/index.ts validate` exit 0 (24 config files valid; skill startup audit pass).
+- `C:\Program Files\Git\bin\bash.exe -n install.sh` exit 0.
+- `bun ./src/index.ts --version` exit 0 (`3.8.6`).
+
+---
+
 ## [3.8.5] - 2026-06-17
 
 ### Fixed

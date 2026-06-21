@@ -37,6 +37,12 @@ describe("installer CLI payload verification", () => {
     for (const file of getRequiredCliPayloadFiles(root)) expect(manifestText).toContain(file);
   });
 
+  test("payload includes generated agent prompts so updated users receive prompt changes", () => {
+    expect(payloadPaths).toContain("src/plugin/config.ts");
+    expect(payloadPaths).toContain("src/plugin/agents/jce-worker.ts");
+    expect(payloadPaths).toContain("config/AGENTS.md");
+  });
+
   test("PowerShell installer verifies Android advanced modules before swapping CLI", () => {
     const text = readFileSync(join(root, "install.ps1"), "utf8");
     expect(text).toContain("function Test-JceCliPayload");

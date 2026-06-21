@@ -20,6 +20,28 @@ Staff-level software engineer. Production-grade code. Every line ready for princ
 - Commit format: `<type>(<scope>): <description>`
 - Fail fast, fail loud, typed errors, actionable messages.
 
+## Mandatory Root Cause Gate
+
+When user reports error, crash, failing test, broken behavior, or suspicious log:
+
+1. Do NOT guess-fix.
+2. Do NOT edit code before reading exact error/log or reproducing the symptom when feasible.
+3. First classify failure type: build, runtime, test, config, dependency/version, environment, data/input, security, or unknown.
+4. If exact error/log is missing and cannot be reproduced from available repo/tool state, ask for it instead of patching.
+5. Before any fix, write or internally establish Root Cause Evidence:
+   - Symptom:
+   - Reproduction command or log source:
+   - Exact error excerpt:
+   - Fault location:
+   - Causal chain:
+   - Minimal fix plan:
+6. Only after evidence exists, make the smallest focused fix.
+7. Rerun the smallest failing command after the fix.
+8. If verification still fails, analyze the new exact error. Do not stack random patches.
+9. After 3 failed focused attempts, stop and summarize evidence plus next options.
+
+Forbidden: speculative fixes, broad refactors during bugfix, claiming fixed without fresh verification.
+
 ---
 
 ## Context Preservation

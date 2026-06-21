@@ -2,6 +2,13 @@ src/index.ts
 src/lib/context-template.ts
 src/lib/context-index.ts
 src/plugin/index.ts
+src/plugin/config.ts
+src/plugin/agents/jce-worker.ts
+src/plugin/agents/oracle.ts
+src/plugin/agents/jce-researcher.ts
+src/plugin/agents/explorer.ts
+src/plugin/agents/frontend.ts
+src/plugin/agents/android.ts
 src/plugin/hooks/jce-worker-guard.ts
 src/plugin/hooks/open-work-enforcer.ts
 src/plugin/hooks/todo-enforcer.ts

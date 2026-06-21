@@ -127,6 +127,11 @@ describe("plugin agents", () => {
 
     expect(prompt).toContain("Coding Brain v3.1");
     expect(prompt).toContain("Bugfix Protocol");
+    expect(prompt).toContain("Mandatory Root Cause Gate");
+    expect(prompt).toContain("Do NOT guess-fix");
+    expect(prompt).toContain("Root Cause Evidence");
+    expect(prompt).toContain("exact error excerpt");
+    expect(prompt).toContain("Do NOT edit code before reading exact error/log");
     expect(prompt).toContain("reproduce the symptom");
     expect(prompt).toContain("Feature Protocol");
     expect(prompt).toContain("Verification Brain v3.2");
