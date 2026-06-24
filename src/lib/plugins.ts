@@ -39,6 +39,7 @@ export interface InstalledPlugin {
 
 export interface InstallPluginOptions {
   trusted?: boolean;
+  allowLocalMcp?: boolean;
 }
 
 const PLUGIN_TYPES = ["mcp", "agent", "prompt"] as const;
@@ -46,6 +47,7 @@ const MCP_TYPES = ["local", "remote"] as const;
 
 const SHELL_EXPANSION_PATTERN = /\$\{|\$[A-Z_]|[`;$|&<>(){}]|\\[nt]/i;
 const BLOCKED_HOSTNAMES = ["localhost", "127.0.0.1", "::1", "0.0.0.0"];
+const SAFE_LOCAL_MCP_COMMANDS = new Set(["bun", "node", "npx"]);
 
 function isValidMcpRemoteUrl(url: string): boolean {
   try {
@@ -112,6 +114,23 @@ function validatePluginMcpConfig(pluginMcp: Record<string, unknown> | null): voi
   }
 }
 
+function hasLocalMcpCommand(pluginMcp: Record<string, unknown> | null): boolean {
+  if (!pluginMcp) return false;
+  return Object.values(pluginMcp).some((entry) => isRecord(entry) && entry.type === "local");
+}
+
+export function summarizeMcpTrustRisk(pluginMcp: Record<string, unknown>): string[] {
+  return Object.entries(pluginMcp).map(([name, entry]) => {
+    if (!isRecord(entry)) return `${name}: invalid entry`;
+    if (entry.type === "remote") return `${name}: remote ${typeof entry.url === "string" ? entry.url : "unknown-url"}`;
+    const command = Array.isArray(entry.command) ? entry.command.filter((item): item is string => typeof item === "string") : [];
+    const binary = command[0] ?? "unknown";
+    const envKeys = isRecord(entry.env) ? Object.keys(entry.env).sort().join(",") || "none" : "none";
+    const allowlisted = SAFE_LOCAL_MCP_COMMANDS.has(binary) ? "known-runner" : "custom-runner";
+    return `${name}: local ${command.join(" ")} (${allowlisted}); env keys: ${envKeys}; persists to opencode.json`;
+  });
+}
+
 export interface PluginsRegistry {
   plugins: InstalledPlugin[];
 }
@@ -151,7 +170,14 @@ export async function loadPluginsRegistry(): Promise<InstalledPlugin[]> {
   } catch {
     throw new Error(`Failed to parse ${registryPath}: invalid JSON`);
   }
-  return Array.isArray(registry.plugins) ? registry.plugins : [];
+  if (!isRecord(registry) || !Array.isArray(registry.plugins)) return [];
+  return registry.plugins.filter((plugin): plugin is InstalledPlugin => isRecord(plugin)
+    && typeof plugin.name === "string"
+    && typeof plugin.version === "string"
+    && isPluginType(plugin.type)
+    && typeof plugin.description === "string"
+    && typeof plugin.source === "string"
+    && typeof plugin.installedAt === "string");
 }
 
 /**
@@ -253,6 +279,15 @@ export async function installPlugin(githubUrl: string, options: InstallPluginOpt
     return {
       success: false,
       error: "Plugin declares MCP commands. Re-run with --yes after reviewing the MCP preview.",
+      requiresTrust: true,
+      mcpPreview: appliedMcp,
+    };
+  }
+  if (appliedMcp && hasLocalMcpCommand(appliedMcp) && !options.allowLocalMcp) {
+    removeDir(pluginDir);
+    return {
+      success: false,
+      error: `Plugin declares local MCP commands. Re-run with --yes --allow-local-mcp after reviewing: ${summarizeMcpTrustRisk(appliedMcp).join(" | ")}`,
       requiresTrust: true,
       mcpPreview: appliedMcp,
     };

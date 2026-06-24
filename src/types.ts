@@ -7,6 +7,7 @@ export interface Agent {
   systemPrompt: string;
   preferredProfile: string;
   maxTokens: number;
+  model?: string;
   tools: string[];
   workflow?: string[];
   outputFormat?: string;

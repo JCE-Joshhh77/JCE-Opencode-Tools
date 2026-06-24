@@ -7,7 +7,7 @@ import { heading, info, success, error } from "../lib/ui.js";
 import { logCommandStart, logCommandSuccess, logCommandError } from "../lib/logger.js";
 import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
 import {
-  AGENT_IDS,
+  getConfigurableAgentIds,
   getJcePluginSettingsPath,
   listAvailableModels,
   loadJcePluginSettings,
@@ -21,20 +21,21 @@ const installCommand = new Command("install")
   .description("Install a plugin from a GitHub repository")
   .argument("<github-url>", "GitHub repository URL (e.g. https://github.com/user/repo)")
   .option("--yes", "Apply plugin MCP config after review without interactive confirmation")
-  .action(async (githubUrl: string, opts: { yes?: boolean }) => {
+  .option("--allow-local-mcp", "Allow plugin to persist local MCP commands after --yes review")
+  .action(async (githubUrl: string, opts: { yes?: boolean; allowLocalMcp?: boolean }) => {
     logCommandStart("plugin install", { url: sanitizeGitUrl(githubUrl) });
 
     info(`Installing plugin from: ${sanitizeGitUrl(githubUrl)}`);
     console.log();
 
-    const result = await installPlugin(githubUrl, { trusted: opts.yes === true });
+    const result = await installPlugin(githubUrl, { trusted: opts.yes === true, allowLocalMcp: opts.allowLocalMcp === true });
 
     if (!result.success) {
       if (result.requiresTrust && result.mcpPreview) {
         error(result.error!);
         info("MCP config preview:");
         console.log(JSON.stringify(result.mcpPreview, null, 2));
-        info("Review commands/env above, then re-run with --yes if trusted.");
+        info("Review commands/env above, then re-run with --yes for remote MCP or --yes --allow-local-mcp for local commands if trusted.");
         logCommandError("plugin install", "MCP trust confirmation required");
         process.exit(EXIT_ERROR);
       }
@@ -105,7 +106,7 @@ const removeCommand = new Command("remove")
 function printAgentModelSettings(settings: JcePluginSettings, models: string[]): void {
   heading("JCE Plugin Agent Models");
   console.log();
-  for (const agent of AGENT_IDS) {
+  for (const agent of getConfigurableAgentIds()) {
     const value = settings.agents[agent];
     const label = typeof value === "string" && models.includes(value)
       ? value
@@ -156,7 +157,7 @@ const configureCommand = new Command("configure")
       choices.forEach((choice, index) => console.log(`  ${index + 1}. ${choice}`));
       console.log();
 
-      for (const agent of AGENT_IDS) {
+      for (const agent of getConfigurableAgentIds()) {
         const current = settings.agents[agent];
         const currentIndex = typeof current === "string" ? models.indexOf(current) + 2 : 1;
         const fallbackIndex = currentIndex > 1 ? currentIndex : 1;

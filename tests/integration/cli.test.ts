@@ -54,7 +54,7 @@ describe("CLI Commands", () => {
     const proc = await runCli(["validate"], 15000);
     // May exit 1 if no config deployed, but shouldn't crash
     expect([0, 1]).toContain(proc.exitCode as number);
-  });
+  }, 20000);
 
   test("use --list runs without crash", async () => {
     const proc = await runCli(["use", "--list"]);

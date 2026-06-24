@@ -3,9 +3,11 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "fs"
 import { join } from "path";
 import { tmpdir } from "os";
 import { getConfigDir } from "../../src/lib/config.ts";
+import { loadAgents } from "../../src/lib/agents.ts";
 import {
   AGENT_IDS,
   getJcePluginSettingsPath,
+  getConfigurableAgentIds,
   loadJcePluginSettings,
   saveJcePluginSettings,
   listAvailableModels,
@@ -48,10 +50,29 @@ describe("plugin settings", () => {
 
   test("saves nullable per-agent model settings", async () => {
     const configDir = tempConfigDir("save-settings");
-    await saveJcePluginSettings({ agents: { "jce-worker": null, frontend: "enowxlabs/gpt-5.5" } });
+    await saveJcePluginSettings({ agents: { "jce-worker": null, frontend: "enowxlabs/gpt-5.5", backend: "openai/gpt-5.5-fast" } });
     const saved = JSON.parse(readFileSync(join(configDir, "jce-plugin.json"), "utf-8"));
     expect(saved.agents["jce-worker"]).toBeNull();
     expect(saved.agents.frontend).toBe("enowxlabs/gpt-5.5");
+    expect(saved.agents.backend).toBe("openai/gpt-5.5-fast");
+  });
+
+  test("loads configurable agent IDs from bundled agents.json plus native JCE agents", () => {
+    const configDir = tempConfigDir("agent-ids");
+    writeFileSync(join(configDir, "agents.json"), JSON.stringify({ agents: [{ id: "backend" }, { id: "oracle" }, { id: "bad id" }] }), "utf-8");
+    const ids = getConfigurableAgentIds(configDir);
+    expect(ids).toContain("backend");
+    expect(ids).toContain("oracle");
+    expect(ids).toContain("jce-worker");
+    expect(ids).not.toContain("bad id");
+  });
+
+  test("applies per-agent model settings to agents.json agents", async () => {
+    const configDir = tempConfigDir("agents-model");
+    writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ provider: { openai: { models: { "gpt-5.5-fast": {} } } } }), "utf-8");
+    writeFileSync(join(configDir, "agents.json"), JSON.stringify({ agents: [{ id: "debugger", name: "Debugger", role: "Debug", systemPrompt: "debug", preferredProfile: "quality", maxTokens: 1000, tools: ["read"] }] }), "utf-8");
+    writeFileSync(join(configDir, "jce-plugin.json"), JSON.stringify({ agents: { debugger: "openai/gpt-5.5-fast" } }), "utf-8");
+    expect((await loadAgents())[0]?.model).toBe("openai/gpt-5.5-fast");
   });
 
   test("lists provider/model strings from opencode.json", () => {
@@ -124,7 +145,7 @@ describe("plugin settings", () => {
     expect(isModelAvailable("openai/gpt-4o-mini")).toBe(false);
   });
 
-  test("exports the six JCE agent IDs", () => {
+  test("exports the native JCE agent IDs", () => {
     expect(AGENT_IDS).toEqual(["jce-worker", "oracle", "jce-researcher", "explorer", "frontend", "android"]);
     expect(getJcePluginSettingsPath()).toContain("jce-plugin.json");
   });

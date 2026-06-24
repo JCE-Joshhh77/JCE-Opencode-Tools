@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.6"
+VERSION="3.8.7"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -259,8 +259,14 @@ install_bun() {
         return
     fi
 
+    if [ "${OPENCODE_JCE_ALLOW_UNVERIFIED_DOWNLOAD:-}" != "1" ]; then
+        error "Bun auto-install is disabled because bun.sh/install has no pinned checksum. Install Bun manually from https://bun.sh/docs/installation or rerun with OPENCODE_JCE_ALLOW_UNVERIFIED_DOWNLOAD=1."
+    fi
+
     info "Installing Bun..."
-    curl -fsSL https://bun.sh/install | bash || true
+    local bun_installer="${TEMP_DIR}.bun-install.sh"
+    curl -fsSL https://bun.sh/install -o "$bun_installer"
+    bash "$bun_installer"
 
     # Source the updated profile to get bun in PATH
     export BUN_INSTALL="${HOME}/.bun"
@@ -308,6 +314,10 @@ download_repo_tarball() {
 
     rm -rf "$archive" "$extract_dir"
     mkdir -p "$extract_dir"
+    if [ "${OPENCODE_JCE_ALLOW_UNVERIFIED_TARBALL:-}" != "1" ]; then
+        return 1
+    fi
+    warn "Using unverified release tarball fallback because OPENCODE_JCE_ALLOW_UNVERIFIED_TARBALL=1. Prefer git clone/tag verification."
     curl -fsSL "https://github.com/JCETools-Petra/JCE-Opencode-Tools/archive/refs/tags/v${VERSION}.tar.gz" -o "$archive" || return 1
     tar -xzf "$archive" -C "$extract_dir" || return 1
 
@@ -667,7 +677,12 @@ ensure_cargo() {
         brew)   install_system_packages rust; return 0;;
         *)      return 1;;
     esac
-    curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y
+    if [ "${OPENCODE_JCE_ALLOW_UNVERIFIED_DOWNLOAD:-}" != "1" ]; then
+        error "Rustup auto-install is disabled because sh.rustup.rs has no pinned checksum. Install Rust manually from https://rustup.rs or rerun with OPENCODE_JCE_ALLOW_UNVERIFIED_DOWNLOAD=1."
+    fi
+    local rustup_installer="${TEMP_DIR}.rustup-init.sh"
+    curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o "$rustup_installer"
+    sh "$rustup_installer" -y
     export PATH="${HOME}/.cargo/bin:${PATH}"
     command -v cargo &>/dev/null
 }

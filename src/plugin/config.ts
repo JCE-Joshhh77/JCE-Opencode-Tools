@@ -12,12 +12,13 @@ export interface PluginAgentConfig {
 }
 
 export function buildAgentConfigs(): Record<string, PluginAgentConfig> {
-  return applyJcePluginSettings({
+  const agents: Record<string, PluginAgentConfig> = {
     "jce-worker": buildJceWorkerAgent(),
     oracle: buildOracleAgent(),
     "jce-researcher": buildJceResearcherAgent(),
     explorer: buildExplorerAgent(),
     frontend: buildFrontendAgent(),
     android: buildAndroidAgent(),
-  });
+  };
+  return applyJcePluginSettings(agents);
 }

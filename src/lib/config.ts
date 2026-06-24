@@ -105,7 +105,9 @@ export async function loadOpenCodeConfig(): Promise<Record<string, any>> {
     if (content.charCodeAt(0) === 0xFEFF) {
       content = content.slice(1);
     }
-    return JSON.parse(content) ?? {};
+    const parsed = JSON.parse(content) ?? {};
+    if (typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("opencode.json must be an object");
+    return parsed;
   } catch (err: any) {
     if (err.code === "ENOENT") {
       // Auto-create with full template

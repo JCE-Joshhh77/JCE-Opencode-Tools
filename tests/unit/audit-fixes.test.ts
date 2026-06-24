@@ -241,9 +241,9 @@ describe("audit fixes", () => {
   test("CLI folder rollback runs immediately if staging promotion fails", () => {
     const source = readFileSync(join(process.cwd(), "src", "commands", "update.ts"), "utf-8");
 
-    expect(source).toContain("await rename(stagingDir, cliDir);");
+    expect(source).toContain("activate staged CLI directory");
     expect(source).toContain("if (!existsSync(cliDir) && existsSync(backupDir))");
-    expect(source).toContain("await rename(backupDir, cliDir);");
+    expect(source).toContain("restore previous CLI directory");
   });
 
   test("install merge refuses to rebuild non-empty malformed opencode.json", () => {

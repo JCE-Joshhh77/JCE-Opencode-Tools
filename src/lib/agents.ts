@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "fs";
 import { readFile, writeFile } from "fs/promises";
 import { getConfigDir } from "./config.js";
 import type { Agent, AgentsConfig } from "../types.js";
+import { applyJcePluginSettings } from "../plugin/lib/settings.js";
 
 /**
  * Get the path to the agents.json config file.
@@ -31,7 +32,7 @@ export async function loadAgents(): Promise<Agent[]> {
   } catch {
     throw new Error(`Failed to parse ${agentsPath}: invalid JSON`);
   }
-  return config.agents || [];
+  return Object.values(applyJcePluginSettings(Object.fromEntries((config.agents || []).map((agent) => [agent.id, agent]))));
 }
 
 /**

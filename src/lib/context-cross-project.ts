@@ -65,13 +65,15 @@ export async function readRelatedContext(
   related: RelatedProject[]
 ): Promise<RelatedContext[]> {
   const results: RelatedContext[] = [];
-  const allowedRoot = resolve(dirname(projectRoot));
+  const allowExternal = process.env.OPENCODE_JCE_ALLOW_RELATED_PROJECTS === "1";
+  const allowedRoot = allowExternal ? resolve(dirname(projectRoot)) : resolve(projectRoot);
 
   for (const project of related) {
     if (isAbsolute(project.path)) continue;
     const contextPath = resolve(projectRoot, project.path, CONTEXT_FILENAME);
     const rel = relative(allowedRoot, contextPath);
     if (rel.startsWith("..") || isAbsolute(rel)) continue;
+    if (!allowExternal && project.path.split(/[\\/]/).includes("..")) continue;
 
     try {
       const content = await readFile(contextPath, "utf-8");

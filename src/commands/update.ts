@@ -23,6 +23,22 @@ import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
 import { GITHUB_RAW_BASE, GITHUB_REPO, VERSION } from "../lib/constants.js";
 import { getRequiredCliPayloadFiles, resolveCliPayloadManifestPath } from "../lib/cli-payload.js";
 
+async function retryFs<T>(label: string, action: () => Promise<T>, attempts = 5): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await action();
+    } catch (err) {
+      last = err;
+      const code = (err as { code?: string })?.code;
+      if (!(["EBUSY", "EPERM", "ENOTEMPTY"].includes(code ?? "")) || i === attempts - 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 100 * (i + 1)));
+    }
+  }
+  const detail = last instanceof Error ? last.message : String(last);
+  throw new Error(`${label} failed after ${attempts} attempt(s): ${detail}`);
+}
+
 export function assertCliPayloadComplete(dir: string): void {
   const REQUIRED_CLI_PAYLOAD_FILES = getRequiredCliPayloadFiles(dir);
   const missing = REQUIRED_CLI_PAYLOAD_FILES.filter((file) => !existsSync(join(dir, file)));
@@ -415,13 +431,13 @@ async function updateLocalCliFolder(latestVersion: string): Promise<void> {
 
     try {
       if (existsSync(cliDir)) {
-        await rename(cliDir, backupDir);
+        await retryFs("backup existing CLI directory", () => rename(cliDir, backupDir));
       }
       try {
-        await rename(stagingDir, cliDir);
+        await retryFs("activate staged CLI directory", () => rename(stagingDir, cliDir));
       } catch (err) {
         if (!existsSync(cliDir) && existsSync(backupDir)) {
-          await rename(backupDir, cliDir);
+          await retryFs("restore previous CLI directory", () => rename(backupDir, cliDir));
         }
         throw err;
       }
@@ -430,7 +446,10 @@ async function updateLocalCliFolder(latestVersion: string): Promise<void> {
       }
     } catch (err) {
       if (!existsSync(cliDir) && existsSync(backupDir)) {
-        await rename(backupDir, cliDir);
+        await retryFs("restore previous CLI directory", () => rename(backupDir, cliDir));
+      }
+      if (!existsSync(join(cliDir, "src", "index.ts"))) {
+        throw new Error(`CLI update rollback left install incomplete. Restore manually from ${backupDir}. Cause: ${err instanceof Error ? err.message : String(err)}`);
       }
       throw err;
     }

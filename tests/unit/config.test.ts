@@ -307,5 +307,5 @@ describe("config/skills/", () => {
       expect(content).toContain("name:");
       expect(content).toContain("description:");
     }
-  });
+  }, 15000);
 });

@@ -198,6 +198,14 @@ async function runShell(command: string): Promise<{ success: boolean; output: st
   return runCommand("bash", ["-lc", command]);
 }
 
+function allowUnverifiedDownload(): boolean {
+  return process.env.OPENCODE_JCE_ALLOW_UNVERIFIED_DOWNLOAD === "1";
+}
+
+function blockedUnverifiedDownload(name: string): { success: false; output: string } {
+  return { success: false, output: `${name} auto-download disabled because no pinned checksum is available. Install it manually or rerun with OPENCODE_JCE_ALLOW_UNVERIFIED_DOWNLOAD=1.` };
+}
+
 async function ensureWingetPackage(id: string): Promise<{ success: boolean; output: string }> {
   return runCommand("winget", ["install", "-e", "--id", id, "--accept-package-agreements", "--accept-source-agreements"]);
 }
@@ -212,6 +220,7 @@ async function installSystemPackages(packages: string[]): Promise<{ success: boo
 }
 
 async function downloadGithubReleaseAsset(repo: string, pattern: RegExp, destination: string): Promise<{ success: boolean; output: string }> {
+  if (!allowUnverifiedDownload()) return blockedUnverifiedDownload(`${repo} release asset`);
   try {
     const response = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { "User-Agent": "opencode-jce" }, signal: AbortSignal.timeout(15000) });
     if (!response.ok) return { success: false, output: `GitHub API returned ${response.status}` };
@@ -337,6 +346,7 @@ async function ensureCoursier(): Promise<{ success: boolean; output: string }> {
     const unzip = await runShell(`powershell -NoProfile -Command "Expand-Archive -Path '${join(binDir, "cs.zip")}' -DestinationPath '${binDir}' -Force"`);
     if (!unzip.success) return unzip;
   } else {
+    if (!allowUnverifiedDownload()) return blockedUnverifiedDownload("coursier launcher");
     const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
     const url = `https://github.com/coursier/launchers/raw/master/cs-${arch}-pc-linux.gz`;
     const result = await runShell(`curl -fsSL '${url}' -o '${destination}.gz' && gunzip -f '${destination}.gz' && chmod 755 '${destination}'`);
@@ -386,6 +396,7 @@ async function installJdtls(): Promise<{ success: boolean; output: string }> {
       : await installSystemPackages(["openjdk-21-jre-headless"]);
     if (!dep.success) return dep;
   }
+  if (!allowUnverifiedDownload()) return blockedUnverifiedDownload("JDTLS latest snapshot");
   const archive = join(lspDir, currentPlatform() === "windows" ? "jdtls-latest.tar.gz" : "jdtls-latest.tar.gz");
   const downloaded = await runShell(`curl -fsSL 'https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz' -o '${archive}'`);
   if (!downloaded.success) return downloaded;

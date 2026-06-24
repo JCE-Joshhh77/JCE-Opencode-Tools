@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "fs";
 import { rm, cp, mkdir } from "fs/promises";
-import { join } from "path";
+import { join, resolve, relative, isAbsolute } from "path";
 import { platform } from "os";
 import { createInterface } from "readline";
 import { getConfigDir } from "../lib/config.js";
@@ -518,6 +518,26 @@ async function removeOpenCodeJceCli(_force: boolean): Promise<boolean> {
     if (result.ok) {
       success(`  opencode-jce dihapus via ${s.label}.`);
       removed = true;
+    }
+  }
+
+  const home = process.env.USERPROFILE || process.env.HOME || "";
+  const shimDirs = platform() === "win32"
+    ? [join(home, ".bun", "bin"), join(process.env.APPDATA || "", "npm")]
+    : [join(home, ".bun", "bin"), join(home, ".opencode-jce", "npm-global", "bin")];
+  const shimNames = platform() === "win32"
+    ? ["opencode-jce", "opencode-jce.cmd", "opencode-jce.ps1", "opencode-jce.exe", "opencode-jce.bunx"]
+    : ["opencode-jce", "opencode-jce.cmd", "opencode-jce.exe", "opencode-jce.bunx"];
+  for (const dir of shimDirs) {
+    const root = resolve(dir);
+    for (const name of shimNames) {
+      const target = resolve(join(root, name));
+      const rel = relative(root, target);
+      if (rel.startsWith("..") || isAbsolute(rel) || !existsSync(target)) continue;
+      try {
+        await rm(target, { force: true });
+        removed = true;
+      } catch {}
     }
   }
 

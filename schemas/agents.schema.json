@@ -37,6 +37,11 @@
             "type": "integer",
             "exclusiveMinimum": 0
           },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional OpenCode provider/model override for this agent"
+          },
           "tools": {
             "type": "array",
             "items": {

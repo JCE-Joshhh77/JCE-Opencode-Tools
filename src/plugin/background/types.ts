@@ -114,12 +114,12 @@ export type TaskCategory = "architecture" | "frontend" | "research" | "explorati
  * Models are hints — if the provider/model is unavailable, OpenCode falls back gracefully.
  */
 export const CATEGORY_MODEL_MAP: Record<TaskCategory, ModelHint | undefined> = {
-  architecture: { providerID: "anthropic", modelID: "claude-sonnet-4" },
-  frontend: { providerID: "anthropic", modelID: "claude-sonnet-4" },
-  research: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+  architecture: undefined,
+  frontend: undefined,
+  research: undefined,
   exploration: undefined, // use default (fast/cheap)
   quick: undefined, // use default
-  deep: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+  deep: undefined,
   default: undefined, // use session default
 };
 

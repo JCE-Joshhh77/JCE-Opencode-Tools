@@ -10,6 +10,25 @@ export interface TeamConfig {
   branch: string;
 }
 
+function parseTeamConfig(content: string, path: string): TeamConfig {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new Error(`Failed to parse team config: invalid JSON in ${path}`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`Failed to parse team config: expected object in ${path}`);
+  const config = parsed as Partial<TeamConfig>;
+  if (typeof config.repoUrl !== "string" || typeof config.branch !== "string" || typeof config.lastSync !== "string") {
+    throw new Error(`Failed to parse team config: missing repoUrl, branch, or lastSync in ${path}`);
+  }
+  const repoValidation = validateTeamRepoUrl(config.repoUrl);
+  if (!repoValidation.valid) throw new Error(repoValidation.error);
+  const branchError = validateTeamBranch(config.branch);
+  if (branchError) throw new Error(branchError);
+  return { repoUrl: sanitizeGitUrl(config.repoUrl), branch: config.branch, lastSync: config.lastSync };
+}
+
 const TEAM_CONFIG_FILE = "team.json";
 
 export function validateTeamRepoUrl(repoUrl: string): { valid: boolean; error?: string } {
@@ -63,11 +82,7 @@ export async function loadTeamConfig(configDir = getConfigDir()): Promise<TeamCo
   const content = await readFile(configPath, "utf-8").catch((err) => {
     throw new Error(`Failed to read team config: ${err.code ?? err.message} (${configPath})`);
   });
-  try {
-    return JSON.parse(content) as TeamConfig;
-  } catch {
-    throw new Error(`Failed to parse team config: invalid JSON in ${configPath}`);
-  }
+  return parseTeamConfig(content, configPath);
 }
 
 /**

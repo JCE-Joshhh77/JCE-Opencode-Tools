@@ -27,6 +27,8 @@ import { buildWorkflowTool } from "./tools/workflow.js";
 import { buildAndroidLogcatTool } from "./tools/android-logcat.js";
 import { createWorkflowRun } from "./lib/workflow.js";
 import { isRecord } from "./lib/shared-predicates.js";
+import { getConfigurableAgentIds, isModelAvailable, listAvailableModels, loadJcePluginSettings, saveJcePluginSettings } from "./lib/settings.js";
+import { loadAgents } from "../lib/agents.js";
 import { determineSkillsForMessage, shouldSkipSkillInjection, explainSkillRouting, parseSkillCorrection, applySkillCorrection, applySkillHistoryAdjustments, applySubAgentTelemetryQuality, resolveSkills, getLastBlockedSkills, type SkillCorrection } from "./lib/skill-loader.js";
 import { applyContextBudget } from "./lib/context-budget.js";
 import { POST_COMPACTION_NO_TASK_GUARD, shouldSuppressCompactionAutocontinue } from "./lib/compaction-loop-guard.js";
@@ -140,6 +142,75 @@ function ensureProjectContextFile(projectRoot: string): boolean {
   if (existsSync(contextPath)) return false;
   writeFileSync(contextPath, getContextTemplate(), "utf-8");
   return true;
+}
+
+function textPart(text: string) {
+  return { type: "text" as const, text } as any;
+}
+
+function customAgentConfig(agent: { id: string; name: string; role: string; systemPrompt: string; tools?: string[]; model?: string }) {
+  return {
+    ...(agent.model ? { model: agent.model } : {}),
+    description: agent.role || agent.name || agent.id,
+    mode: "all" as const,
+    prompt: agent.systemPrompt,
+    tools: Object.fromEntries((agent.tools ?? []).map((tool) => [tool, true])),
+  };
+}
+
+async function syncLiveAgentModel(client: unknown, projectRoot: string, agent: string, model: string | null, liveAgents?: Record<string, { model?: string }>): Promise<boolean> {
+  const api = client as { config?: { get?: (options?: unknown) => Promise<{ data?: any; error?: unknown }>; update?: (options?: unknown) => Promise<{ data?: any; error?: unknown }> } };
+  if (!api.config?.get || !api.config?.update) return false;
+  const current = await api.config.get({ query: { directory: projectRoot } });
+  if (current.error || !current.data || typeof current.data !== "object") return false;
+  const config = current.data;
+  if (!config.agent || typeof config.agent !== "object") config.agent = {};
+  let entry = config.agent[agent];
+  if (!entry || typeof entry !== "object") {
+    const custom = liveAgents?.[agent] ? undefined : (await loadAgents().catch(() => [])).find((item) => item.id === agent);
+    entry = liveAgents?.[agent] ?? (custom ? customAgentConfig(custom) : undefined);
+    if (!entry) return false;
+    config.agent[agent] = entry;
+  }
+  if (model) entry.model = model;
+  else delete entry.model;
+  const updated = await api.config.update({ query: { directory: projectRoot }, body: config });
+  return !updated.error;
+}
+
+async function handleJceModelCommand(command: string, args: string, projectRoot: string, client?: unknown, liveAgents?: Record<string, { model?: string }>): Promise<string | undefined> {
+  if (command === "jce-models") {
+    const settings = loadJcePluginSettings();
+    const models = listAvailableModels();
+    const lines = ["JCE Agent Models", "", "Agents:"];
+    for (const agent of getConfigurableAgentIds()) {
+      const value = settings.agents[agent];
+      lines.push(`- ${agent}: ${typeof value === "string" && models.includes(value) ? value : "active OpenCode model"}`);
+    }
+    lines.push("", "Available models:", ...(models.length ? models.map((model) => `- ${model}`) : ["- none found"]));
+    lines.push("", "Set: /jce-agent-model <agent> <provider/model|default>");
+    return lines.join("\n");
+  }
+
+  if (command !== "jce-agent-model") return undefined;
+  const [agent, model, ...extra] = args.trim().split(/\s+/).filter(Boolean);
+  if (!agent || !model || extra.length > 0) return "Usage: /jce-agent-model <agent> <provider/model|default>";
+  const agents = getConfigurableAgentIds();
+  if (!agents.includes(agent)) return `Unknown agent: ${agent}\nKnown agents: ${agents.join(", ")}`;
+  const settings = loadJcePluginSettings();
+  if (model === "default") {
+    settings.agents[agent] = null;
+    if (liveAgents?.[agent]) delete liveAgents[agent].model;
+    await saveJcePluginSettings(settings);
+    await syncLiveAgentModel(client, projectRoot, agent, null, liveAgents);
+    return `${agent} now uses active OpenCode model.`;
+  }
+  if (!isModelAvailable(model)) return `Model not found: ${model}\nRun /jce-models to list available models.`;
+  settings.agents[agent] = model;
+  if (liveAgents?.[agent]) liveAgents[agent].model = model;
+  await saveJcePluginSettings(settings);
+  await syncLiveAgentModel(client, projectRoot, agent, model, liveAgents);
+  return `${agent} now uses ${model}.`;
 }
 
 /**
@@ -435,6 +506,11 @@ const jcePlugin: Plugin = async (input) => {
           (config as any).agent[id] = agentConfig;
         }
       }
+      for (const agent of await loadAgents().catch(() => [])) {
+        if (!(config as any).agent[agent.id]) {
+          (config as any).agent[agent.id] = customAgentConfig(agent);
+        }
+      }
     },
 
     event: async ({ event }) => {
@@ -584,6 +660,15 @@ const jcePlugin: Plugin = async (input) => {
       }, chineseTranslator),
       jce_workflow: buildWorkflowTool(),
       android_logcat: buildAndroidLogcatTool(),
+    },
+
+    "command.execute.before": async (input, output) => {
+      const result = await withAsyncErrorBoundary(
+        () => handleJceModelCommand(input.command, input.arguments ?? "", projectRoot, client, agents),
+        undefined,
+        orchestrationLogger,
+      );
+      if (result) output.parts = [textPart(result)];
     },
 
     "chat.message": async (_input, output) => {

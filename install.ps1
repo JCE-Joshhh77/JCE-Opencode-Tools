@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.6"
+$Version = "3.8.7"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -165,6 +165,9 @@ function Install-Jdtls {
     if (-not $launcher) {
         if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
         New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        if ($env:OPENCODE_JCE_ALLOW_UNVERIFIED_DOWNLOAD -ne "1") {
+            throw "JDTLS auto-download disabled because latest snapshot has no pinned checksum. Install jdtls manually or rerun with OPENCODE_JCE_ALLOW_UNVERIFIED_DOWNLOAD=1."
+        }
         $archive = Join-Path $env:TEMP "jdtls-latest.tar.gz"
         Invoke-WebRequest -Uri "https://download.eclipse.org/jdtls/snapshots/jdt-language-server-latest.tar.gz" -OutFile $archive -UseBasicParsing
         tar -xzf $archive -C $dest

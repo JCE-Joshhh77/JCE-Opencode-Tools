@@ -6,6 +6,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.7] - 2026-06-25
+
+### Added
+- **Per-agent model controls inside OpenCode**: added `/jce-models` and `/jce-agent-model <agent> <provider/model|default>` slash commands. Users can list available OpenCode models, set model overrides per native or custom agent, and reset an agent back to the active OpenCode model without leaving OpenCode.
+- **Live custom-agent activation**: custom agents from `agents.json` are now injected into OpenCode `config.agent` and can be called immediately. Slash-command model changes update live OpenCode config via `client.config.get/update`, so native and custom agent overrides take effect without restarting OpenCode.
+
+### Fixed
+- **Agent reachability gap**: the plugin config hook now registers every valid `agents.json` custom agent, and the `dispatch` tool now accepts all known agent IDs instead of a hardcoded native-only list.
+- **Model-routing safety**: removed hardcoded category model hints so agents use the active OpenCode model by default unless a validated per-agent override is configured.
+- **Audit hardening**: blocked unsafe unverified download paths by default, tightened local MCP trust gates, scoped cross-project context reads, hardened update rollback/shim cleanup, and validated JSON trust boundaries.
+
+### Changed
+- Release version synced to `3.8.7` across package metadata, installers, constants, config version, README badge, and changelog.
+
+### Verification
+- `bun run typecheck` exit 0.
+- `bun audit` exit 0 (no vulnerabilities).
+- `bun ./src/index.ts validate` exit 0 (24 config files valid; skill startup audit pass).
+- `bun test` exit 0 (1306 pass / 0 fail).
+
+---
+
 ## [3.8.6] - 2026-06-21
 
 ### Changed

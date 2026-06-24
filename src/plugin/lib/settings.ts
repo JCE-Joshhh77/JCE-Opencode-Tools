@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
@@ -9,7 +9,7 @@ export type JceAgentId = typeof AGENT_IDS[number];
 export type AgentModelPreference = string | null;
 
 export interface JcePluginSettings {
-  agents: Partial<Record<JceAgentId, AgentModelPreference>>;
+  agents: Record<string, AgentModelPreference | undefined>;
 }
 
 interface OpenCodeConfig {
@@ -37,11 +37,21 @@ export function loadJcePluginSettings(): JcePluginSettings {
   }
 
   const agents: JcePluginSettings["agents"] = {};
-  for (const agent of AGENT_IDS) {
-    const value = settings.agents[agent];
-    if (value === null || typeof value === "string") agents[agent] = value;
+  for (const [agent, value] of Object.entries(settings.agents)) {
+    if (/^[A-Za-z0-9][A-Za-z0-9._-]{0,98}$/.test(agent) && (value === null || typeof value === "string")) agents[agent] = value;
   }
   return { agents };
+}
+
+export function getConfigurableAgentIds(configDir = getConfigDir()): string[] {
+  const ids = new Set<string>(AGENT_IDS);
+  const path = join(configDir, "agents.json");
+  if (!existsSync(path)) return [...ids];
+  const data = readJsonFile<{ agents?: Array<{ id?: unknown }> }>(path);
+  for (const agent of data?.agents ?? []) {
+    if (typeof agent.id === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,98}$/.test(agent.id)) ids.add(agent.id);
+  }
+  return [...ids].sort();
 }
 
 export async function saveJcePluginSettings(settings: JcePluginSettings): Promise<void> {
@@ -79,11 +89,11 @@ export function isModelAvailable(model: string): boolean {
   return listAvailableModels().includes(model);
 }
 
-export function applyJcePluginSettings<T extends { model?: string; [key: string]: unknown }>(
-  agents: Record<JceAgentId, T>,
+export function applyJcePluginSettings<T extends { model?: string }>(
+  agents: Record<string, T>,
   settings = loadJcePluginSettings(),
-): Record<JceAgentId, T> {
-  for (const agent of AGENT_IDS) {
+): Record<string, T> {
+  for (const agent of Object.keys(agents)) {
     const preference = settings.agents[agent];
     if (typeof preference === "string" && isModelAvailable(preference)) {
       agents[agent].model = preference;
