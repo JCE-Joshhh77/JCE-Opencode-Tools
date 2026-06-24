@@ -20,7 +20,6 @@ import type { SkillRoute } from "../lib/skill-router.js";
 import { scoreIntent, toLegacyRoute } from "../lib/orchestration/intent-router.js";
 import { resolveSubAgentSkills } from "../lib/skill-loader.js";
 import { createWorkflowRun } from "../lib/workflow.js";
-import { getConfigurableAgentIds } from "../lib/settings.js";
 
 const z = tool.schema;
 
@@ -213,8 +212,8 @@ export function buildDispatchTool(
         .string()
         .describe("The full prompt/instructions for the background agent"),
       agent: z
-        .string()
-        .describe("Agent ID to use. Native JCE agents and agents.json custom agents are supported."),
+        .enum(["oracle", "jce-researcher", "explorer", "frontend", "android"])
+        .describe("Which JCE plugin sub-agent to use"),
       category: z
         .enum(["architecture", "frontend", "research", "exploration", "quick", "deep", "default"])
         .optional()
@@ -224,8 +223,6 @@ export function buildDispatchTool(
       const routeText = `${args.description}\n${args.prompt}`;
       const override = resolveAgentOverride?.(args.agent as string, routeText);
       const effectiveAgent = override?.agent ?? (args.agent as string);
-      const knownAgents = getConfigurableAgentIds();
-      if (!knownAgents.includes(effectiveAgent)) return `Unknown agent: ${effectiveAgent}\nKnown agents: ${knownAgents.join(", ")}`;
       const route = toLegacyRoute(scoreIntent(routeText)) as unknown as SkillRoute;
       const policy = afterRoute?.(routeText, route, effectiveAgent);
       if (policy?.status === "block") return policy.message ?? "EXECUTION POLICY: blocked";

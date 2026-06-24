@@ -57,13 +57,13 @@ describe("plugin settings", () => {
     expect(saved.agents.backend).toBe("openai/gpt-5.5-fast");
   });
 
-  test("loads configurable agent IDs from bundled agents.json plus native JCE agents", () => {
+  test("loads configurable agent IDs from native JCE plugin agents only", () => {
     const configDir = tempConfigDir("agent-ids");
     writeFileSync(join(configDir, "agents.json"), JSON.stringify({ agents: [{ id: "backend" }, { id: "oracle" }, { id: "bad id" }] }), "utf-8");
     const ids = getConfigurableAgentIds(configDir);
-    expect(ids).toContain("backend");
     expect(ids).toContain("oracle");
     expect(ids).toContain("jce-worker");
+    expect(ids).not.toContain("backend");
     expect(ids).not.toContain("bad id");
   });
 

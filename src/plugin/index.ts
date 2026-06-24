@@ -28,7 +28,6 @@ import { buildAndroidLogcatTool } from "./tools/android-logcat.js";
 import { createWorkflowRun } from "./lib/workflow.js";
 import { isRecord } from "./lib/shared-predicates.js";
 import { getConfigurableAgentIds, isModelAvailable, listAvailableModels, loadJcePluginSettings, saveJcePluginSettings } from "./lib/settings.js";
-import { loadAgents } from "../lib/agents.js";
 import { determineSkillsForMessage, shouldSkipSkillInjection, explainSkillRouting, parseSkillCorrection, applySkillCorrection, applySkillHistoryAdjustments, applySubAgentTelemetryQuality, resolveSkills, getLastBlockedSkills, type SkillCorrection } from "./lib/skill-loader.js";
 import { applyContextBudget } from "./lib/context-budget.js";
 import { POST_COMPACTION_NO_TASK_GUARD, shouldSuppressCompactionAutocontinue } from "./lib/compaction-loop-guard.js";
@@ -148,16 +147,6 @@ function textPart(text: string) {
   return { type: "text" as const, text } as any;
 }
 
-function customAgentConfig(agent: { id: string; name: string; role: string; systemPrompt: string; tools?: string[]; model?: string }) {
-  return {
-    ...(agent.model ? { model: agent.model } : {}),
-    description: agent.role || agent.name || agent.id,
-    mode: "all" as const,
-    prompt: agent.systemPrompt,
-    tools: Object.fromEntries((agent.tools ?? []).map((tool) => [tool, true])),
-  };
-}
-
 async function syncLiveAgentModel(client: unknown, projectRoot: string, agent: string, model: string | null, liveAgents?: Record<string, { model?: string }>): Promise<boolean> {
   const api = client as { config?: { get?: (options?: unknown) => Promise<{ data?: any; error?: unknown }>; update?: (options?: unknown) => Promise<{ data?: any; error?: unknown }> } };
   if (!api.config?.get || !api.config?.update) return false;
@@ -167,8 +156,7 @@ async function syncLiveAgentModel(client: unknown, projectRoot: string, agent: s
   if (!config.agent || typeof config.agent !== "object") config.agent = {};
   let entry = config.agent[agent];
   if (!entry || typeof entry !== "object") {
-    const custom = liveAgents?.[agent] ? undefined : (await loadAgents().catch(() => [])).find((item) => item.id === agent);
-    entry = liveAgents?.[agent] ?? (custom ? customAgentConfig(custom) : undefined);
+    entry = liveAgents?.[agent];
     if (!entry) return false;
     config.agent[agent] = entry;
   }
@@ -504,11 +492,6 @@ const jcePlugin: Plugin = async (input) => {
       for (const [id, agentConfig] of Object.entries(agents)) {
         if (!(config as any).agent[id]) {
           (config as any).agent[id] = agentConfig;
-        }
-      }
-      for (const agent of await loadAgents().catch(() => [])) {
-        if (!(config as any).agent[agent.id]) {
-          (config as any).agent[agent.id] = customAgentConfig(agent);
         }
       }
     },

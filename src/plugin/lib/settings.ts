@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "fs";
+import { mkdirSync, readFileSync } from "fs";
 import { writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
@@ -44,14 +44,8 @@ export function loadJcePluginSettings(): JcePluginSettings {
 }
 
 export function getConfigurableAgentIds(configDir = getConfigDir()): string[] {
-  const ids = new Set<string>(AGENT_IDS);
-  const path = join(configDir, "agents.json");
-  if (!existsSync(path)) return [...ids];
-  const data = readJsonFile<{ agents?: Array<{ id?: unknown }> }>(path);
-  for (const agent of data?.agents ?? []) {
-    if (typeof agent.id === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,98}$/.test(agent.id)) ids.add(agent.id);
-  }
-  return [...ids].sort();
+  void configDir;
+  return [...AGENT_IDS];
 }
 
 export async function saveJcePluginSettings(settings: JcePluginSettings): Promise<void> {

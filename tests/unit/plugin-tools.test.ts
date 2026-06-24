@@ -1,24 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { describe, expect, test } from "bun:test";
 import { buildDispatchTool, buildStatusTool, buildCollectTool } from "../../src/plugin/tools/dispatch.ts";
 import { BackgroundManager } from "../../src/plugin/background/manager.ts";
-
-const roots: string[] = [];
-const originalXdg = process.env.XDG_CONFIG_HOME;
-
-function tempRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "opencode-jce-tools-"));
-  roots.push(root);
-  return root;
-}
-
-afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-  if (originalXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-  else process.env.XDG_CONFIG_HOME = originalXdg;
-});
 
 describe("plugin tools", () => {
   test("dispatch tool has description and args", () => {
@@ -194,30 +176,6 @@ describe("plugin tools", () => {
     expect(result).toContain("Review: blocked");
     expect(result).toContain("## Status");
     expect(result).toContain("## Blocker");
-  });
-
-  test("dispatch tool can launch a custom agents.json agent", async () => {
-    const configRoot = tempRoot();
-    const configDir = join(configRoot, "opencode");
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(join(configDir, "opencode.json"), "{}", "utf-8");
-    writeFileSync(join(configDir, "agents.json"), JSON.stringify({ agents: [{ id: "debugger", name: "Debugger", role: "Debug", systemPrompt: "debug", preferredProfile: "quality", maxTokens: 1000, tools: ["read"] }] }), "utf-8");
-    process.env.XDG_CONFIG_HOME = configRoot;
-    const manager = new BackgroundManager({ maxConcurrency: 3 });
-    const tool = buildDispatchTool(manager, {
-      session: {
-        create: async () => ({ id: "child-session" }),
-        chat: async () => {},
-      },
-    } as any);
-
-    const result = await tool.execute(
-      { description: "Debug issue", prompt: "Find root cause", agent: "debugger" } as any,
-      { sessionID: "s", messageID: "m", agent: "jce-worker", directory: tempRoot(), worktree: tempRoot(), abort: new AbortController().signal, metadata: () => {}, ask: () => { throw new Error("not implemented"); } } as any,
-    );
-
-    expect(String(result)).toContain("Agent: debugger");
-    expect(manager.listTasks()[0]?.agent).toBe("debugger");
   });
 
   test("collect tool suggests richer context retry for medium-quality delegated output", async () => {

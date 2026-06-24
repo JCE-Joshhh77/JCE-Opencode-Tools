@@ -62,44 +62,32 @@ describe("plugin integration", () => {
       const mod = await import("../../src/plugin/index.ts");
       const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
       const output = { parts: [] as any[] };
-      await hooks["command.execute.before"]!({ command: "jce-agent-model", arguments: "debugger openai/gpt-5.5-fast", sessionID: "s" }, output as any);
-      expect(output.parts[0].text).toContain("debugger now uses openai/gpt-5.5-fast");
+      await hooks["command.execute.before"]!({ command: "jce-agent-model", arguments: "oracle openai/gpt-5.5-fast", sessionID: "s" }, output as any);
+      expect(output.parts[0].text).toContain("oracle now uses openai/gpt-5.5-fast");
       const saved = JSON.parse(readFileSync(join(configDir, "jce-plugin.json"), "utf-8"));
-      expect(saved.agents.debugger).toBe("openai/gpt-5.5-fast");
+      expect(saved.agents.oracle).toBe("openai/gpt-5.5-fast");
     } finally {
       if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
       else process.env.XDG_CONFIG_HOME = oldXdg;
     }
   });
 
-  test("slash command updates custom agents.json agent through live OpenCode config", async () => {
+  test("slash command ignores agents.json-only agents", async () => {
     const root = tempRoot();
     const configRoot = tempRoot();
     const configDir = join(configRoot, "opencode");
     mkdirSync(configDir, { recursive: true });
     writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ provider: { openai: { models: { "gpt-5.5-fast": {} } } } }), "utf-8");
     writeFileSync(join(configDir, "agents.json"), JSON.stringify({ agents: [{ id: "debugger", name: "Debugger", role: "Debug", systemPrompt: "debug", preferredProfile: "quality", maxTokens: 1000, tools: ["read", "bash"] }] }), "utf-8");
-    const liveConfig = { agent: {} as Record<string, any> };
-    const client = {
-      config: {
-        get: async () => ({ data: liveConfig }),
-        update: async ({ body }: any) => {
-          Object.assign(liveConfig, body);
-          return { data: liveConfig };
-        },
-      },
-    };
     const oldXdg = process.env.XDG_CONFIG_HOME;
     process.env.XDG_CONFIG_HOME = configRoot;
     try {
       const mod = await import("../../src/plugin/index.ts");
-      const hooks = await mod.default.server({ ...mockInput, client, directory: root, worktree: root });
-      await hooks["command.execute.before"]!({ command: "jce-agent-model", arguments: "debugger openai/gpt-5.5-fast", sessionID: "s" }, { parts: [] } as any);
-      expect(liveConfig.agent.debugger).toMatchObject({ prompt: "debug", model: "openai/gpt-5.5-fast", mode: "all" });
-      expect(liveConfig.agent.debugger.tools).toEqual({ read: true, bash: true });
-
-      await hooks["command.execute.before"]!({ command: "jce-agent-model", arguments: "debugger default", sessionID: "s" }, { parts: [] } as any);
-      expect(liveConfig.agent.debugger.model).toBeUndefined();
+      const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
+      const output = { parts: [] as any[] };
+      await hooks["command.execute.before"]!({ command: "jce-agent-model", arguments: "debugger openai/gpt-5.5-fast", sessionID: "s" }, output as any);
+      expect(output.parts[0].text).toContain("Unknown agent: debugger");
+      expect(output.parts[0].text).toContain("jce-worker");
     } finally {
       if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
       else process.env.XDG_CONFIG_HOME = oldXdg;
@@ -381,7 +369,7 @@ describe("plugin integration", () => {
     }
   });
 
-  test("config hook injects every agents.json custom agent", async () => {
+  test("config hook does not inject agents.json legacy agents", async () => {
     const configRoot = tempRoot();
     const configDir = join(configRoot, "opencode");
     mkdirSync(configDir, { recursive: true });
@@ -397,8 +385,9 @@ describe("plugin integration", () => {
       const hooks = await mod.default.server({ ...mockInput, directory: tempRoot(), worktree: tempRoot() });
       const config: any = { agent: {} };
       await hooks.config!(config);
-      expect(config.agent.debugger).toMatchObject({ prompt: "debug", description: "Debug", mode: "all", tools: { read: true, bash: true } });
-      expect(config.agent.tester).toMatchObject({ prompt: "test", description: "Test", mode: "all", tools: { read: true } });
+      expect(Object.keys(config.agent)).toEqual(["jce-worker", "oracle", "jce-researcher", "explorer", "frontend", "android"]);
+      expect(config.agent.debugger).toBeUndefined();
+      expect(config.agent.tester).toBeUndefined();
     } finally {
       if (oldXdg === undefined) delete process.env.XDG_CONFIG_HOME;
       else process.env.XDG_CONFIG_HOME = oldXdg;

@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.8] - 2026-06-25
+
+### Fixed
+- **Agent list scope regression**: OpenCode agent registration is limited back to the JCE plugin's native agents only (`jce-worker`, `oracle`, `jce-researcher`, `explorer`, `frontend`, `android`). Legacy `agents.json` entries are no longer injected into OpenCode `config.agent`, preventing the UI from being flooded with unrelated agents.
+- **Slash-command model scope**: `/jce-models` and `/jce-agent-model` now target only native JCE plugin agents. `agents.json`-only entries are rejected as unknown agents instead of appearing as configurable OpenCode agents.
+- **Dispatch scope**: the background `dispatch` tool is restricted back to the intended JCE subagents (`oracle`, `jce-researcher`, `explorer`, `frontend`, `android`) instead of accepting legacy `agents.json` IDs.
+
+### Changed
+- Release version synced to `3.8.8` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/plugin-integration.test.ts tests/unit/plugin-settings.test.ts tests/unit/plugin-tools.test.ts` exit 0 (87 pass / 0 fail).
+- `bun run typecheck` exit 0.
+
+---
+
 ## [3.8.7] - 2026-06-25
 
 ### Added
