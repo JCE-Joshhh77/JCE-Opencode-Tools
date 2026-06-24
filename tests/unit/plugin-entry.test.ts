@@ -38,6 +38,18 @@ describe("plugin entry point", () => {
     expect(typeof mod.default.tui).toBe("function");
   });
 
+  test("TUI module registers JCE model slash commands", async () => {
+    const mod = await import("../../src/plugin/tui.tsx");
+    const layers: any[] = [];
+    await mod.default.tui({
+      keymap: { registerLayer: (layer: any) => layers.push(layer) },
+      slots: { register: () => "slot" },
+    } as any, undefined, {} as any);
+    const commands = layers.flatMap((layer) => layer.commands ?? []);
+    expect(commands.map((command) => command.slashName)).toContain("jce-models");
+    expect(commands.map((command) => command.slashName)).toContain("jce-agent-model");
+  });
+
   test("Token Savings line shows diagnostics before budget events", async () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-jce-tui-"));
     try {

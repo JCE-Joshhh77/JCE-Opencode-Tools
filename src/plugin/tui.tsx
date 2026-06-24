@@ -21,6 +21,33 @@ function createTokenSavingsBox(api: TuiPluginApi): any {
 }
 
 export async function tui(api: TuiPluginApi, _options: PluginOptions | undefined, _meta: TuiPluginMeta): Promise<void> {
+  api.keymap.registerLayer({
+    commands: [
+      {
+        name: "jce.models",
+        title: "JCE Models",
+        desc: "List JCE agent model overrides",
+        category: "JCE",
+        namespace: "palette",
+        slashName: "jce-models",
+        run() {
+          api.ui.toast({ message: "Run /jce-models in the prompt to list JCE agent models." });
+        },
+      },
+      {
+        name: "jce.agent-model",
+        title: "JCE Agent Model",
+        desc: "Set JCE agent model override",
+        category: "JCE",
+        namespace: "palette",
+        slashName: "jce-agent-model",
+        run() {
+          api.ui.toast({ message: "Run /jce-agent-model <agent> <provider/model|default> in the prompt." });
+        },
+      },
+    ],
+  });
+
   api.slots.register({
     order: 600,
     slots: {
