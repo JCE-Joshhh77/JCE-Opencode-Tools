@@ -11,7 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 ### Fixed
 - **Agent list scope regression**: OpenCode agent registration is limited back to the JCE plugin's native agents only (`jce-worker`, `oracle`, `jce-researcher`, `explorer`, `frontend`, `android`). Legacy `agents.json` entries are no longer injected into OpenCode `config.agent`, preventing the UI from being flooded with unrelated agents.
 - **Slash-command model scope**: `/jce-models` and `/jce-agent-model` now target only native JCE plugin agents. `agents.json`-only entries are rejected as unknown agents instead of appearing as configurable OpenCode agents.
-- **Slash-command discoverability**: `/jce-models` and `/jce-agent-model` are now registered with the OpenCode TUI command palette, so they appear in slash-command search instead of requiring manual entry.
+- **Slash-command discoverability and output**: `/jce-models` and `/jce-agent-model` are now registered with the OpenCode TUI command palette, and selecting `/jce-models` shows the actual agent/model list instead of a placeholder toast.
 - **Dispatch scope**: the background `dispatch` tool is restricted back to the intended JCE subagents (`oracle`, `jce-researcher`, `explorer`, `frontend`, `android`) instead of accepting legacy `agents.json` IDs.
 
 ### Changed
@@ -19,7 +19,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ### Verification
 - `bun test tests/unit/plugin-integration.test.ts tests/unit/plugin-settings.test.ts tests/unit/plugin-tools.test.ts` exit 0 (87 pass / 0 fail).
-- `bun test tests/unit/plugin-entry.test.ts` exit 0 (8 pass / 0 fail).
+- `bun test tests/unit/plugin-entry.test.ts` exit 0 (9 pass / 0 fail).
 - `bun run typecheck` exit 0.
 
 ---
