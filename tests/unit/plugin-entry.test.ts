@@ -50,22 +50,23 @@ describe("plugin entry point", () => {
     expect(commands.map((command) => command.slashName)).toContain("jce-agent-model");
   });
 
-  test("TUI /jce-models command shows model list instead of placeholder toast", async () => {
+  test("TUI /jce-models command shows scrollable model list instead of placeholder toast", async () => {
     const mod = await import("../../src/plugin/tui.tsx");
     const layers: any[] = [];
-    let alert: any;
+    let select: any;
     await mod.default.tui({
       keymap: { registerLayer: (layer: any) => layers.push(layer) },
       slots: { register: () => "slot" },
       ui: {
-        DialogAlert: (props: any) => props,
-        dialog: { replace: (render: any) => { alert = render(); } },
+        DialogSelect: (props: any) => props,
+        dialog: { replace: (render: any) => { select = render(); } },
       },
     } as any, undefined, {} as any);
     layers.flatMap((layer) => layer.commands ?? []).find((command) => command.slashName === "jce-models")?.run();
-    expect(alert.title).toBe("JCE Agent Models");
-    expect(alert.message).toContain("- jce-worker:");
-    expect(alert.message).toContain("Set: /jce-agent-model <agent> <provider/model|default>");
+    expect(select.title).toBe("JCE Agent Models");
+    expect(select.placeholder).toContain("Search models");
+    expect(select.options.some((option: any) => option.title === "jce-worker" && option.category === "Agents")).toBe(true);
+    expect(select.options.some((option: any) => option.category === "Available models")).toBe(true);
   });
 
   test("Token Savings line shows diagnostics before budget events", async () => {

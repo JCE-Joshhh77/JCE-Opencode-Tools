@@ -11,7 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 ### Fixed
 - **Agent list scope regression**: OpenCode agent registration is limited back to the JCE plugin's native agents only (`jce-worker`, `oracle`, `jce-researcher`, `explorer`, `frontend`, `android`). Legacy `agents.json` entries are no longer injected into OpenCode `config.agent`, preventing the UI from being flooded with unrelated agents.
 - **Slash-command model scope**: `/jce-models` and `/jce-agent-model` now target only native JCE plugin agents. `agents.json`-only entries are rejected as unknown agents instead of appearing as configurable OpenCode agents.
-- **Slash-command discoverability and output**: `/jce-models` and `/jce-agent-model` are now registered with the OpenCode TUI command palette, and selecting `/jce-models` shows the actual agent/model list instead of a placeholder toast.
+- **Slash-command discoverability and output**: `/jce-models` and `/jce-agent-model` are now registered with the OpenCode TUI command palette, and selecting `/jce-models` opens a scrollable/filterable agent-model list instead of a clipped static message.
 - **Dispatch scope**: the background `dispatch` tool is restricted back to the intended JCE subagents (`oracle`, `jce-researcher`, `explorer`, `frontend`, `android`) instead of accepting legacy `agents.json` IDs.
 
 ### Changed

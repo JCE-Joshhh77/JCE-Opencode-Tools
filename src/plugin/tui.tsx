@@ -4,19 +4,35 @@ import type { TuiPluginApi, TuiPluginMeta } from "@opencode-ai/plugin/tui";
 import { getConfigurableAgentIds, listAvailableModels, loadJcePluginSettings } from "./lib/settings.js";
 import { createContextBudgetLineSignal } from "./lib/token-savings-sidebar.js";
 
-export function renderJceModelsText(): string {
+export function buildJceModelOptions() {
   const settings = loadJcePluginSettings();
   const models = listAvailableModels();
-  const lines = ["Agents:"];
-
-  for (const agent of getConfigurableAgentIds()) {
+  const options = getConfigurableAgentIds().map((agent) => {
     const value = settings.agents[agent];
-    lines.push(`- ${agent}: ${typeof value === "string" && models.includes(value) ? value : "active OpenCode model"}`);
-  }
+    return {
+      title: agent,
+      value: `agent:${agent}`,
+      description: typeof value === "string" && models.includes(value) ? value : "active OpenCode model",
+      category: "Agents",
+      disabled: true,
+    };
+  });
 
-  lines.push("", "Available models:", ...(models.length ? models.map((model) => `- ${model}`) : ["- none found"]));
-  lines.push("", "Set: /jce-agent-model <agent> <provider/model|default>");
-  return lines.join("\n");
+  options.push(...(models.length ? models.map((model) => ({
+    title: model,
+    value: `model:${model}`,
+    description: `Use: /jce-agent-model <agent> ${model}`,
+    category: "Available models",
+    disabled: false,
+  })) : [{
+    title: "none found",
+    value: "model:none",
+    description: "Add models to OpenCode provider config first.",
+    category: "Available models",
+    disabled: true,
+  }]));
+
+  return options;
 }
 
 function createTokenSavingsBox(api: TuiPluginApi): any {
@@ -47,7 +63,11 @@ export async function tui(api: TuiPluginApi, _options: PluginOptions | undefined
         namespace: "palette",
         slashName: "jce-models",
         run() {
-          api.ui.dialog.replace(() => api.ui.DialogAlert({ title: "JCE Agent Models", message: renderJceModelsText() }));
+          api.ui.dialog.replace(() => api.ui.DialogSelect({
+            title: "JCE Agent Models",
+            placeholder: "Search models. Use /jce-agent-model <agent> <provider/model|default> to set.",
+            options: buildJceModelOptions(),
+          }));
         },
       },
       {
