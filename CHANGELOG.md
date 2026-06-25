@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.18] - 2026-06-25
+
+### Fixed
+- **Factory Droid slash command source dump**: `/jce-models` and `/jce-agent-model` now export as Markdown prompt commands instead of executable command files, preventing Droid from printing command source into chat.
+- **Factory Droid model command execution**: model command logic remains available through plugin scripts, with slash commands instructing Droid to run the script and show only the result.
+
+### Changed
+- Release version synced to `3.8.18` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/factory-droid.test.ts tests/unit/update-process-cleanup.test.ts tests/unit/plugin-workflow-tool.test.ts tests/unit/ui.test.ts` exit 0 (37 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `bun ./src/index.ts validate` exit 0.
+
+---
+
 ## [3.8.17] - 2026-06-25
 
 ### Fixed

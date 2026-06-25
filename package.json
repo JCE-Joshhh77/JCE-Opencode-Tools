@@ -1,6 +1,6 @@
 {
   "name": "opencode-jce",
-  "version": "3.8.17",
+  "version": "3.8.18",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

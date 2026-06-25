@@ -46,11 +46,11 @@ describe("Factory Droid export", () => {
 
       expect(existsSync(join(pluginRoot, "skills", "typescript", "SKILL.md"))).toBe(true);
       expect(readFileSync(join(pluginRoot, "commands", "jce-android.md"), "utf8")).toContain("$ARGUMENTS");
-      const modelsCommand = readFileSync(join(pluginRoot, "commands", "jce-models"), "utf8");
-      const agentModelCommand = readFileSync(join(pluginRoot, "commands", "jce-agent-model"), "utf8");
-      expect(modelsCommand).toContain("scripts");
-      expect(agentModelCommand).toContain("scripts");
-      expect(modelsCommand).not.toContain("JCE Droid Agent Models");
+      const modelsCommand = readFileSync(join(pluginRoot, "commands", "jce-models.md"), "utf8");
+      const agentModelCommand = readFileSync(join(pluginRoot, "commands", "jce-agent-model.md"), "utf8");
+      expect(modelsCommand).toContain("DROID_PLUGIN_ROOT");
+      expect(agentModelCommand).toContain("$ARGUMENTS");
+      expect(modelsCommand).not.toContain("#!/usr/bin/env bun");
       expect(agentModelCommand).not.toContain("setModel(agent, model)");
       expect(readFileSync(join(pluginRoot, "scripts", "jce-models.js"), "utf8")).toContain("JCE Droid Agent Models");
       expect(readFileSync(join(pluginRoot, "scripts", "jce-agent-model.js"), "utf8")).toContain("setModel(agent, model)");
@@ -123,18 +123,18 @@ describe("Factory Droid export", () => {
       writeFileSync(join(factoryHome, "settings.json"), JSON.stringify({ customModels: [{ model: "9r/cx/gpt-5.5", displayName: "GPT 5.5" }] }), "utf8");
 
       const env = { ...process.env, FACTORY_HOME: factoryHome };
-      const listBefore = execFileSync(process.execPath, [join(result.pluginDir, "commands", "jce-models")], { encoding: "utf8", env });
+      const listBefore = execFileSync(process.execPath, [join(result.pluginDir, "scripts", "jce-models.js")], { encoding: "utf8", env });
       expect(listBefore).toContain("jce-worker -> inherit");
       expect(listBefore).toContain("9r/cx/gpt-5.5 (GPT 5.5)");
 
-      const setOutput = execFileSync(process.execPath, [join(result.pluginDir, "commands", "jce-agent-model"), "jce-worker", "9r/cx/gpt-5.5"], { encoding: "utf8", env });
+      const setOutput = execFileSync(process.execPath, [join(result.pluginDir, "scripts", "jce-agent-model.js"), "jce-worker", "9r/cx/gpt-5.5"], { encoding: "utf8", env });
       expect(setOutput).toContain("jce-worker model set to custom:9r/cx/gpt-5.5");
       expect(readFileSync(join(factoryHome, "droids", "jce-worker.md"), "utf8")).toContain("model: custom:9r/cx/gpt-5.5");
 
       syncFactoryDroidPersonalConfig(factoryHome, { sourceConfigDir: join(process.cwd(), "config"), cliDir: join(root, "cli"), pluginDir: result.pluginDir });
       expect(readFileSync(join(factoryHome, "droids", "jce-worker.md"), "utf8")).toContain("model: custom:9r/cx/gpt-5.5");
 
-      execFileSync(process.execPath, [join(result.pluginDir, "commands", "jce-agent-model"), "jce-worker", "default"], { encoding: "utf8", env });
+      execFileSync(process.execPath, [join(result.pluginDir, "scripts", "jce-agent-model.js"), "jce-worker", "default"], { encoding: "utf8", env });
       expect(readFileSync(join(factoryHome, "droids", "jce-worker.md"), "utf8")).toContain("model: inherit");
     } finally {
       rmSync(root, { recursive: true, force: true });

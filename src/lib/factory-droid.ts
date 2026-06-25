@@ -143,19 +143,29 @@ const DROID_AGENT_MODEL_SCRIPT = "#!/usr/bin/env bun\n" + DROID_MODEL_LIB + [
   "}",
 ].join("\n") + "\n";
 
-function droidCommandWrapper(scriptName: string): string {
-  return [
-    "#!/usr/bin/env bun",
-    "const { spawnSync } = require(\"child_process\");",
-    "const path = require(\"path\");",
-    `const script = path.join(path.dirname(path.dirname(process.argv[1])), "scripts", "${scriptName}");`,
-    "const result = spawnSync(\"bun\", [script, ...process.argv.slice(2)], { stdio: \"inherit\" });",
-    "process.exit(result.status ?? 1);",
-  ].join("\n") + "\n";
-}
+const DROID_MODELS_COMMAND = `---
+description: Show JCE Droid agent model settings
+argument-hint:
+---
 
-const DROID_MODELS_COMMAND = droidCommandWrapper("jce-models.js");
-const DROID_AGENT_MODEL_COMMAND = droidCommandWrapper("jce-agent-model.js");
+Run this command and show the output to the user:
+
+\`\`\`powershell
+bun "\${DROID_PLUGIN_ROOT}/scripts/jce-models.js"
+\`\`\`
+`;
+
+const DROID_AGENT_MODEL_COMMAND = `---
+description: Set one JCE Droid agent model
+argument-hint: <agent> <model|default>
+---
+
+Run this command and show the output to the user:
+
+\`\`\`powershell
+bun "\${DROID_PLUGIN_ROOT}/scripts/jce-agent-model.js" $ARGUMENTS
+\`\`\`
+`;
 
 const DROID_TOOLS: Record<string, string[]> = {
   "jce-worker": ["Read", "LS", "Grep", "Glob", "Edit", "Create", "ApplyPatch", "Execute", "WebSearch", "FetchUrl"],
@@ -312,8 +322,8 @@ export function exportFactoryDroidPlugin(outputDir: string, options: { sourceCon
     writeText(join(pluginDir, "commands", `${name}.md`), content);
     commands.push(name);
   }
-  writeExecutableText(join(pluginDir, "commands", "jce-models"), DROID_MODELS_COMMAND);
-  writeExecutableText(join(pluginDir, "commands", "jce-agent-model"), DROID_AGENT_MODEL_COMMAND);
+  writeText(join(pluginDir, "commands", "jce-models.md"), DROID_MODELS_COMMAND);
+  writeText(join(pluginDir, "commands", "jce-agent-model.md"), DROID_AGENT_MODEL_COMMAND);
   writeExecutableText(join(pluginDir, "scripts", "jce-models.js"), DROID_MODELS_SCRIPT);
   writeExecutableText(join(pluginDir, "scripts", "jce-agent-model.js"), DROID_AGENT_MODEL_SCRIPT);
   commands.push("jce-models", "jce-agent-model");
@@ -323,9 +333,9 @@ export function exportFactoryDroidPlugin(outputDir: string, options: { sourceCon
   writeJson(join(pluginDir, "hooks", "hooks.json"), {
     description: "JCE context preservation for Droid compact and session lifecycle events.",
     hooks: {
-      PreCompact: [{ matcher: "manual|auto", hooks: [{ type: "command", command: "bun \"${DROID_PLUGIN_ROOT}/scripts/jce-context-hook.js\"", timeout: 15 }] }],
-      SessionEnd: [{ hooks: [{ type: "command", command: "bun \"${DROID_PLUGIN_ROOT}/scripts/jce-context-hook.js\"", timeout: 15 }] }],
-      SessionStart: [{ hooks: [{ type: "command", command: "bun \"${DROID_PLUGIN_ROOT}/scripts/jce-context-hook.js\"", timeout: 15 }] }],
+      PreCompact: [{ matcher: "manual|auto", hooks: [{ type: "command", command: "bun \"\${DROID_PLUGIN_ROOT}/scripts/jce-context-hook.js\"", timeout: 15 }] }],
+      SessionEnd: [{ hooks: [{ type: "command", command: "bun \"\${DROID_PLUGIN_ROOT}/scripts/jce-context-hook.js\"", timeout: 15 }] }],
+      SessionStart: [{ hooks: [{ type: "command", command: "bun \"\${DROID_PLUGIN_ROOT}/scripts/jce-context-hook.js\"", timeout: 15 }] }],
     },
   });
 
