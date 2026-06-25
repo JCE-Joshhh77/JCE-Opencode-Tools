@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.12] - 2026-06-25
+
+### Fixed
+- **Factory Droid marketplace layout**: `factory-jce` export now creates a valid Factory marketplace root with `.factory-plugin/marketplace.json` and stores the actual plugin under `factory-jce/jce-opencode-tools/`.
+- **Factory Droid install command compatibility**: generated marketplace now works with `droid plugin marketplace add <factory-jce>` followed by `droid plugin install jce-opencode-tools@factory-jce`, fixing `This doesn't appear to be a valid marketplace`.
+
+### Changed
+- Release version synced to `3.8.12` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/factory-droid.test.ts tests/unit/update-process-cleanup.test.ts` exit 0 (6 pass / 0 fail).
+- `bun run typecheck` exit 0.
+
+---
+
 ## [3.8.11] - 2026-06-25
 
 ### Fixed

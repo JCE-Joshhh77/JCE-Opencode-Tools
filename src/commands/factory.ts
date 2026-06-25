@@ -23,7 +23,7 @@ const exportCommand = new Command("export")
       info(`Skills: ${result.skills}`);
       info(`Commands: ${result.commands.map((c) => `/${c}`).join(", ")}`);
       info(`Install in Droid: droid plugin marketplace add ${result.outputDir}`);
-      info(`Then: droid plugin install jce-opencode-tools@${result.marketplaceName}`);
+      info(`Then: droid plugin install ${result.pluginName}@${result.marketplaceName}`);
       logCommandSuccess("factory export", `droids=${result.droids.length} skills=${result.skills}`);
       process.exit(EXIT_SUCCESS);
     } catch (err) {

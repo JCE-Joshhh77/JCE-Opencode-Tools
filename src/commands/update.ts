@@ -131,13 +131,13 @@ async function exportAndOfferFactoryDroidInstall(configDir: string): Promise<voi
   if (!install) {
     info("Skipped Factory Droid plugin install.");
     info(`Manual install: droid plugin marketplace add ${result.outputDir}`);
-    info(`Then: droid plugin install jce-opencode-tools@${result.marketplaceName}`);
+    info(`Then: droid plugin install ${result.pluginName}@${result.marketplaceName}`);
     return;
   }
 
   const add = await runCommand("droid", ["plugin", "marketplace", "add", result.outputDir]);
   if (add.code !== 0) warn(`Droid marketplace add reported: ${add.output || `exit ${add.code}`}. Continuing in case it already exists.`);
-  const installResult = await runCommand("droid", ["plugin", "install", `jce-opencode-tools@${result.marketplaceName}`]);
+  const installResult = await runCommand("droid", ["plugin", "install", `${result.pluginName}@${result.marketplaceName}`]);
   if (installResult.code === 0) success("Factory Droid plugin installed/updated.");
   else warn(`Factory Droid plugin install failed: ${installResult.output || `exit ${installResult.code}`}`);
 }

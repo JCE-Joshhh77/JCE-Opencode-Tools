@@ -17,27 +17,33 @@ describe("Factory Droid export", () => {
       const result = exportFactoryDroidPlugin(out, { sourceConfigDir: join(process.cwd(), "config"), cliDir: join(root, "cli") });
 
       expect(result.marketplaceName).toBe("factory-jce");
+      expect(result.pluginName).toBe("jce-opencode-tools");
       expect(result.droids).toEqual(["jce-worker", "oracle", "jce-researcher", "explorer", "frontend", "android"]);
       expect(result.skills).toBeGreaterThan(20);
       expect(result.commands).toContain("jce-review");
 
-      const manifest = JSON.parse(readFileSync(join(out, ".factory-plugin", "plugin.json"), "utf8"));
+      const marketplace = JSON.parse(readFileSync(join(out, ".factory-plugin", "marketplace.json"), "utf8"));
+      expect(marketplace.name).toBe("factory-jce");
+      expect(marketplace.plugins[0].source).toBe("./jce-opencode-tools");
+
+      const pluginRoot = join(out, "jce-opencode-tools");
+      const manifest = JSON.parse(readFileSync(join(pluginRoot, ".factory-plugin", "plugin.json"), "utf8"));
       expect(manifest.name).toBe("jce-opencode-tools");
       expect(manifest.version).toBe(VERSION);
 
-      const worker = readFileSync(join(out, "droids", "jce-worker.md"), "utf8");
+      const worker = readFileSync(join(pluginRoot, "droids", "jce-worker.md"), "utf8");
       expect(worker).toContain("name: jce-worker");
       expect(worker).toContain("model: inherit");
       expect(worker).toContain('"Edit"');
       expect(worker).toContain('"Execute"');
       expect(worker).toContain("JCE-Worker");
-      const explorer = readFileSync(join(out, "droids", "explorer.md"), "utf8");
+      const explorer = readFileSync(join(pluginRoot, "droids", "explorer.md"), "utf8");
       expect(explorer).toContain('["Read","LS","Grep","Glob"]');
 
-      expect(existsSync(join(out, "skills", "typescript", "SKILL.md"))).toBe(true);
-      expect(readFileSync(join(out, "commands", "jce-android.md"), "utf8")).toContain("$ARGUMENTS");
+      expect(existsSync(join(pluginRoot, "skills", "typescript", "SKILL.md"))).toBe(true);
+      expect(readFileSync(join(pluginRoot, "commands", "jce-android.md"), "utf8")).toContain("$ARGUMENTS");
 
-      const mcp = JSON.parse(readFileSync(join(out, "mcp.json"), "utf8"));
+      const mcp = JSON.parse(readFileSync(join(pluginRoot, "mcp.json"), "utf8"));
       expect(mcp.mcpServers["context-keeper"].command).toBe("bun");
       expect(mcp.mcpServers["context-keeper"].args[1]).toContain("/cli/src/mcp/context-keeper.ts");
       expect(readFileSync(join(out, "README.md"), "utf8")).toContain("droid plugin install jce-opencode-tools@factory-jce");

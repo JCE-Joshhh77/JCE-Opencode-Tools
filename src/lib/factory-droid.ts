@@ -6,7 +6,9 @@ import { AGENT_DESCRIPTIONS } from "./opencode-json-template.js";
 
 export interface FactoryDroidExportResult {
   outputDir: string;
+  pluginDir: string;
   marketplaceName: string;
+  pluginName: string;
   droids: string[];
   skills: number;
   commands: string[];
@@ -63,13 +65,22 @@ function defaultCliDir(outputDir: string): string {
 
 export function exportFactoryDroidPlugin(outputDir: string, options: { sourceConfigDir?: string; cliDir?: string; clean?: boolean } = {}): FactoryDroidExportResult {
   const root = outputDir;
+  const pluginName = "jce-opencode-tools";
   const marketplaceName = basename(root);
+  const pluginDir = join(root, pluginName);
   const cliContextKeeper = join(options.cliDir ?? defaultCliDir(root), "src", "mcp", "context-keeper.ts").replace(/\\/g, "/");
   if (options.clean && existsSync(root)) rmSync(root, { recursive: true, force: true });
   mkdirSync(root, { recursive: true });
 
-  writeJson(join(root, ".factory-plugin", "plugin.json"), {
-    name: "jce-opencode-tools",
+  writeJson(join(root, ".factory-plugin", "marketplace.json"), {
+    name: marketplaceName,
+    description: "Local JCE plugin marketplace for Factory Droid.",
+    owner: { name: "JCE" },
+    plugins: [{ name: pluginName, description: "JCE agent pack for Factory Droid.", source: `./${pluginName}` }],
+  });
+
+  writeJson(join(pluginDir, ".factory-plugin", "plugin.json"), {
+    name: pluginName,
     description: "JCE agent pack for Factory Droid: droids, skills, commands, and MCP tool bridge guidance.",
     version: VERSION,
     author: { name: "JCE" },
@@ -82,20 +93,20 @@ export function exportFactoryDroidPlugin(outputDir: string, options: { sourceCon
   for (const [id, config] of Object.entries(agents)) {
     const tools = JSON.stringify(DROID_TOOLS[id] ?? ["Read", "LS", "Grep", "Glob"]);
     const content = `---\nname: ${id}\ndescription: ${yamlString(AGENT_DESCRIPTIONS[id] ?? id)}\nmodel: inherit\ntools: ${tools}\n---\n\n${config.systemPrompt}\n`;
-    writeText(join(root, "droids", `${id}.md`), content);
+    writeText(join(pluginDir, "droids", `${id}.md`), content);
     droids.push(id);
   }
 
   const sourceConfigDir = options.sourceConfigDir ?? join(process.cwd(), "config");
-  const skills = copySkills(join(sourceConfigDir, "skills"), join(root, "skills"));
+  const skills = copySkills(join(sourceConfigDir, "skills"), join(pluginDir, "skills"));
 
   const commands: string[] = [];
   for (const [name, content] of Object.entries(DEFAULT_COMMANDS)) {
-    writeText(join(root, "commands", `${name}.md`), content);
+    writeText(join(pluginDir, "commands", `${name}.md`), content);
     commands.push(name);
   }
 
-  writeJson(join(root, "mcp.json"), {
+  writeJson(join(pluginDir, "mcp.json"), {
     mcpServers: {
       "context-keeper": {
         command: "bun",
@@ -110,7 +121,7 @@ export function exportFactoryDroidPlugin(outputDir: string, options: { sourceCon
     },
   });
 
-  writeText(join(root, "README.md"), `# JCE for Factory Droid\n\nFactory Droid package generated from JCE OpenCode Tools v${VERSION}.\n\n## Contents\n\n- Droids: ${droids.map((d) => `\`${d}\``).join(", ")}\n- Skills copied from JCE skill pack\n- Commands: ${commands.map((c) => `\`/${c}\``).join(", ")}\n- MCP bridge config for shared JCE/context tools\n\n## Local install\n\n\`\`\`bash\ndroid plugin marketplace add ${root}\ndroid plugin install jce-opencode-tools@${marketplaceName}\n\`\`\`\n`);
+  writeText(join(root, "README.md"), `# JCE for Factory Droid\n\nFactory Droid marketplace generated from JCE OpenCode Tools v${VERSION}.\n\n## Contents\n\n- Plugin: \`${pluginName}\`\n- Droids: ${droids.map((d) => `\`${d}\``).join(", ")}\n- Skills copied from JCE skill pack\n- Commands: ${commands.map((c) => `\`/${c}\``).join(", ")}\n- MCP bridge config for shared JCE/context tools\n\n## Local install\n\n\`\`\`bash\ndroid plugin marketplace add ${root}\ndroid plugin install ${pluginName}@${marketplaceName}\n\`\`\`\n`);
 
-  return { outputDir: root, marketplaceName, droids, skills, commands };
+  return { outputDir: root, pluginDir, marketplaceName, pluginName, droids, skills, commands };
 }
