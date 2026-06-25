@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.20] - 2026-06-25
+
+### Changed
+- **OpenCode TUI model picker**: `/jce-agent-model` now opens native OpenCode `DialogSelect` pickers to choose a JCE agent and set its model override or default active model.
+- **OpenCode TUI regression coverage**: `/jce-models` native picker behavior remains covered, and `/jce-agent-model` now has a picker regression test.
+- Release version synced to `3.8.20` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test` exit 0 (1316 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `bun audit` exit 0 (no vulnerabilities).
+- `bun ./src/index.ts validate` exit 0.
+- Git Bash `bash -n install.sh` exit 0; PowerShell parser check for `install.ps1` exit 0.
+
+---
+
 ## [3.8.19] - 2026-06-25
 
 ### Changed

@@ -69,6 +69,28 @@ describe("plugin entry point", () => {
     expect(select.options.some((option: any) => option.category === "Available models")).toBe(true);
   });
 
+  test("TUI /jce-agent-model command opens native agent and model pickers", async () => {
+    const mod = await import("../../src/plugin/tui.tsx");
+    const layers: any[] = [];
+    const selects: any[] = [];
+    await mod.default.tui({
+      keymap: { registerLayer: (layer: any) => layers.push(layer) },
+      slots: { register: () => "slot" },
+      ui: {
+        DialogSelect: (props: any) => props,
+        dialog: { replace: (render: any) => { selects.push(render()); } },
+        toast: () => undefined,
+      },
+    } as any, undefined, {} as any);
+    layers.flatMap((layer) => layer.commands ?? []).find((command) => command.slashName === "jce-agent-model")?.run();
+    expect(selects[0].title).toBe("JCE Agent Model");
+    expect(selects[0].placeholder).toContain("Select agent");
+    expect(selects[0].options.some((option: any) => option.title === "jce-worker" && option.category === "Agents")).toBe(true);
+    selects[0].options.find((option: any) => option.title === "jce-worker")?.onSelect();
+    expect(selects[1].title).toBe("JCE Agent Model: jce-worker");
+    expect(selects[1].options.some((option: any) => option.value === "default")).toBe(true);
+  });
+
   test("Token Savings line shows diagnostics before budget events", async () => {
     const root = mkdtempSync(join(tmpdir(), "opencode-jce-tui-"));
     try {
