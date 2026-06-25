@@ -117,7 +117,7 @@ const DROID_MODEL_LIB = [
   "}",
 ].join("\n") + "\n";
 
-const DROID_MODELS_COMMAND = "#!/usr/bin/env bun\n" + DROID_MODEL_LIB + [
+const DROID_MODELS_SCRIPT = "#!/usr/bin/env bun\n" + DROID_MODEL_LIB + [
   "console.log(\"JCE Droid Agent Models\");",
   "for (const agent of AGENTS) console.log(agent + \" -> \" + readModel(agent));",
   "const custom = customModels();",
@@ -128,7 +128,7 @@ const DROID_MODELS_COMMAND = "#!/usr/bin/env bun\n" + DROID_MODEL_LIB + [
   "console.log(\"\\nSet: /jce-agent-model <agent> <model|default>\");",
 ].join("\n") + "\n";
 
-const DROID_AGENT_MODEL_COMMAND = "#!/usr/bin/env bun\n" + DROID_MODEL_LIB + [
+const DROID_AGENT_MODEL_SCRIPT = "#!/usr/bin/env bun\n" + DROID_MODEL_LIB + [
   "const [agent, model, ...extra] = process.argv.slice(2);",
   "if (!agent || !model || extra.length) {",
   "  console.error(\"Usage: /jce-agent-model <agent> <model|default>\");",
@@ -142,6 +142,20 @@ const DROID_AGENT_MODEL_COMMAND = "#!/usr/bin/env bun\n" + DROID_MODEL_LIB + [
   "  process.exit(1);",
   "}",
 ].join("\n") + "\n";
+
+function droidCommandWrapper(scriptName: string): string {
+  return [
+    "#!/usr/bin/env bun",
+    "const { spawnSync } = require(\"child_process\");",
+    "const path = require(\"path\");",
+    `const script = path.join(path.dirname(path.dirname(process.argv[1])), "scripts", "${scriptName}");`,
+    "const result = spawnSync(\"bun\", [script, ...process.argv.slice(2)], { stdio: \"inherit\" });",
+    "process.exit(result.status ?? 1);",
+  ].join("\n") + "\n";
+}
+
+const DROID_MODELS_COMMAND = droidCommandWrapper("jce-models.js");
+const DROID_AGENT_MODEL_COMMAND = droidCommandWrapper("jce-agent-model.js");
 
 const DROID_TOOLS: Record<string, string[]> = {
   "jce-worker": ["Read", "LS", "Grep", "Glob", "Edit", "Create", "ApplyPatch", "Execute", "WebSearch", "FetchUrl"],
@@ -300,6 +314,8 @@ export function exportFactoryDroidPlugin(outputDir: string, options: { sourceCon
   }
   writeExecutableText(join(pluginDir, "commands", "jce-models"), DROID_MODELS_COMMAND);
   writeExecutableText(join(pluginDir, "commands", "jce-agent-model"), DROID_AGENT_MODEL_COMMAND);
+  writeExecutableText(join(pluginDir, "scripts", "jce-models.js"), DROID_MODELS_SCRIPT);
+  writeExecutableText(join(pluginDir, "scripts", "jce-agent-model.js"), DROID_AGENT_MODEL_SCRIPT);
   commands.push("jce-models", "jce-agent-model");
 
   const hooks = ["PreCompact", "SessionEnd", "SessionStart"];

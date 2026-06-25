@@ -46,8 +46,14 @@ describe("Factory Droid export", () => {
 
       expect(existsSync(join(pluginRoot, "skills", "typescript", "SKILL.md"))).toBe(true);
       expect(readFileSync(join(pluginRoot, "commands", "jce-android.md"), "utf8")).toContain("$ARGUMENTS");
-      expect(readFileSync(join(pluginRoot, "commands", "jce-models"), "utf8")).toContain("JCE Droid Agent Models");
-      expect(readFileSync(join(pluginRoot, "commands", "jce-agent-model"), "utf8")).toContain("setModel(agent, model)");
+      const modelsCommand = readFileSync(join(pluginRoot, "commands", "jce-models"), "utf8");
+      const agentModelCommand = readFileSync(join(pluginRoot, "commands", "jce-agent-model"), "utf8");
+      expect(modelsCommand).toContain("scripts");
+      expect(agentModelCommand).toContain("scripts");
+      expect(modelsCommand).not.toContain("JCE Droid Agent Models");
+      expect(agentModelCommand).not.toContain("setModel(agent, model)");
+      expect(readFileSync(join(pluginRoot, "scripts", "jce-models.js"), "utf8")).toContain("JCE Droid Agent Models");
+      expect(readFileSync(join(pluginRoot, "scripts", "jce-agent-model.js"), "utf8")).toContain("setModel(agent, model)");
 
       const hooks = JSON.parse(readFileSync(join(pluginRoot, "hooks", "hooks.json"), "utf8"));
       expect(hooks.hooks.PreCompact[0].matcher).toBe("manual|auto");
