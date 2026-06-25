@@ -6,6 +6,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.16] - 2026-06-25
+
+### Added
+- **Factory Droid context hooks**: generated Droid plugin packages now include `PreCompact` (`manual|auto`), `SessionStart`, and `SessionEnd` hooks plus a context hook script to checkpoint `.opencode-context.md` during Droid compaction/session lifecycle.
+- **Factory Droid per-agent model commands**: added Droid `/jce-models` and `/jce-agent-model <agent> <model|default>` executable commands so JCE droids can use different models.
+
+### Fixed
+- **Factory Droid personal sync safety**: syncing `~/.factory` now backs up existing `AGENTS.md`, `droids`, and `skills` before overwriting generated JCE files.
+- **Factory Droid model persistence**: non-inherit model choices in `~/.factory/droids/*.md` are preserved across JCE sync/update.
+- **Factory Droid install command robustness**: generated marketplace commands now quote paths and sanitize marketplace names for paths containing spaces.
+
+### Changed
+- Release version synced to `3.8.16` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/factory-droid.test.ts tests/unit/update-process-cleanup.test.ts` exit 0 (12 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `bun audit` exit 0 (no vulnerabilities).
+- `bun ./src/index.ts validate` exit 0.
+
+---
+
 ## [3.8.15] - 2026-06-25
 
 ### Fixed

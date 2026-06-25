@@ -3,9 +3,13 @@ import { join } from "path";
 import { homedir } from "os";
 import { getConfigDir } from "../lib/config.js";
 import { exportFactoryDroidPlugin, syncFactoryDroidPersonalConfig } from "../lib/factory-droid.js";
-import { error, info, success } from "../lib/ui.js";
+import { error, info, success, warn } from "../lib/ui.js";
 import { logCommandError, logCommandStart, logCommandSuccess } from "../lib/logger.js";
 import { EXIT_ERROR, EXIT_SUCCESS } from "../types.js";
+
+function shellQuote(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
 
 const exportCommand = new Command("export")
   .description("Generate a Factory Droid plugin package from JCE agents and skills")
@@ -24,6 +28,7 @@ const exportCommand = new Command("export")
       info(`Droids: ${result.droids.join(", ")}`);
       info(`Skills: ${result.skills}`);
       info(`Commands: ${result.commands.map((c) => `/${c}`).join(", ")}`);
+      info(`Hooks: ${result.hooks.join(", ")}`);
       if (opts.syncPersonal === true) {
         const synced = syncFactoryDroidPersonalConfig(join(homedir(), ".factory"), {
           sourceConfigDir: join(getConfigDir(), "cli", "config"),
@@ -32,8 +37,10 @@ const exportCommand = new Command("export")
         });
         success(`Factory Droid personal config synced to: ${synced.configDir}`);
         info(`Personal config: droids=${synced.droids} skills=${synced.skills} mcp=${synced.mcpServers.join(",")}`);
+        for (const backup of synced.backups) info(`Backup created: ${backup}`);
+        for (const warning of synced.warnings) warn(warning);
       }
-      info(`Install in Droid: droid plugin marketplace add ${result.outputDir}`);
+      info(`Install in Droid: droid plugin marketplace add ${shellQuote(result.outputDir)}`);
       info(`Then: droid plugin install ${result.pluginName}@${result.marketplaceName}`);
       logCommandSuccess("factory export", `droids=${result.droids.length} skills=${result.skills}`);
       process.exit(EXIT_SUCCESS);

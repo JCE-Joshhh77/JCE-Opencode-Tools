@@ -116,6 +116,8 @@ async function exportAndOfferFactoryDroidInstall(configDir: string): Promise<voi
   });
   success(`Factory Droid personal config synced to: ${factoryConfig.configDir}`);
   info(`Droids: ${factoryConfig.droids}; skills: ${factoryConfig.skills}; MCP servers: ${factoryConfig.mcpServers.join(", ")}`);
+  for (const backup of factoryConfig.backups) info(`Factory Droid backup created: ${backup}`);
+  for (const warning of factoryConfig.warnings) warn(warning);
 
   if (!(await commandAvailable("droid"))) {
     printDroidInstallInstructions();
