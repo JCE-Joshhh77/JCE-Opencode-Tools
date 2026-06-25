@@ -6,6 +6,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.21] - 2026-06-25
+
+### Added
+- **Factory Droid CLI model controls**: added `opencode-jce droid models` to list current JCE droid assignments, native Droid model IDs, and BYOK custom models from `~/.factory/settings.json`.
+- **Factory Droid CLI agent model setter**: added `opencode-jce droid agent <agent> <model|default>` to update `~/.factory/droids/<agent>.md` without relying on Droid slash-command plugin path expansion.
+
+### Fixed
+- **Install/update payload coverage**: `src/commands/droid.ts` is now included in the CLI payload manifest, with regression coverage so installed and updated users receive the new Droid model commands.
+
+### Changed
+- Release version synced to `3.8.21` across package metadata, installers, constants, MCP version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/factory-droid.test.ts tests/unit/install-payload-verification.test.ts tests/unit/update-process-cleanup.test.ts` exit 0 (18 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `bun ./src/index.ts validate` exit 0.
+
+---
+
 ## [3.8.20] - 2026-06-25
 
 ### Changed

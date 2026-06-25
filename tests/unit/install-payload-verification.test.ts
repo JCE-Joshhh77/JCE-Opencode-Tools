@@ -38,6 +38,9 @@ describe("installer CLI payload verification", () => {
   });
 
   test("payload includes generated agent prompts so updated users receive prompt changes", () => {
+    expect(payloadPaths).toContain("src/commands/droid.ts");
+    expect(payloadPaths).toContain("src/commands/factory.ts");
+    expect(payloadPaths).toContain("src/lib/factory-droid.ts");
     expect(payloadPaths).toContain("src/plugin/config.ts");
     expect(payloadPaths).toContain("src/plugin/agents/jce-worker.ts");
     expect(payloadPaths).toContain("config/AGENTS.md");

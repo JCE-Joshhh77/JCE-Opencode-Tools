@@ -146,6 +146,31 @@ describe("Factory Droid export", () => {
     }
   });
 
+  test("CLI droid commands list and set personal droid models", () => {
+    const root = fixture();
+    try {
+      const out = join(root, "factory-jce");
+      const factoryHome = join(root, ".factory");
+      const result = exportFactoryDroidPlugin(out, { sourceConfigDir: join(process.cwd(), "config"), cliDir: join(root, "cli") });
+      syncFactoryDroidPersonalConfig(factoryHome, { sourceConfigDir: join(process.cwd(), "config"), cliDir: join(root, "cli"), pluginDir: result.pluginDir });
+      writeFileSync(join(factoryHome, "settings.json"), JSON.stringify({ customModels: [{ model: "9r/cx/gpt-5.5", displayName: "GPT 5.5" }] }), "utf8");
+
+      const env = { ...process.env, FACTORY_HOME: factoryHome };
+      const list = execFileSync(process.execPath, [join(process.cwd(), "src", "index.ts"), "droid", "models"], { encoding: "utf8", env });
+      expect(list).toContain("JCE Droid Models");
+      expect(list).toContain("jce-worker       inherit");
+      expect(list).toContain("GPT-5.5 / gpt-5.5 [openai]");
+      expect(list).toContain("GPT 5.5 / 9r/cx/gpt-5.5 [custom]");
+      expect(list).toContain("opencode-jce droid agent <agent> <model|default>");
+
+      const set = execFileSync(process.execPath, [join(process.cwd(), "src", "index.ts"), "droid", "agent", "jce-worker", "gpt-5.5"], { encoding: "utf8", env });
+      expect(set).toContain("jce-worker model set to gpt-5.5");
+      expect(readFileSync(join(factoryHome, "droids", "jce-worker.md"), "utf8")).toContain("model: gpt-5.5");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test("Droid context hook checkpoints project context", () => {
     const root = fixture();
     try {

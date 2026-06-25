@@ -26,6 +26,7 @@ import { docsCommand } from "./commands/docs.js";
 import { analyticsCommand } from "./commands/analytics.js";
 import { flowCommand } from "./commands/flow.js";
 import { factoryCommand } from "./commands/factory.js";
+import { droidCommand } from "./commands/droid.js";
 import { VERSION } from "./lib/constants.js";
 
 const program = new Command();
@@ -60,5 +61,6 @@ program.addCommand(docsCommand);
 program.addCommand(analyticsCommand);
 program.addCommand(flowCommand);
 program.addCommand(factoryCommand);
+program.addCommand(droidCommand);
 
 program.parse(process.argv);

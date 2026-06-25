@@ -1,4 +1,5 @@
 src/index.ts
+src/commands/droid.ts
 src/commands/factory.ts
 src/lib/factory-droid.ts
 src/lib/context-template.ts
