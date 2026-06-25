@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { exportFactoryDroidPlugin } from "../../src/lib/factory-droid.ts";
+import { exportFactoryDroidPlugin, syncFactoryDroidPersonalConfig } from "../../src/lib/factory-droid.ts";
 import { VERSION } from "../../src/lib/constants.ts";
 
 function fixture(): string {
@@ -46,7 +46,31 @@ describe("Factory Droid export", () => {
       const mcp = JSON.parse(readFileSync(join(pluginRoot, "mcp.json"), "utf8"));
       expect(mcp.mcpServers["context-keeper"].command).toBe("bun");
       expect(mcp.mcpServers["context-keeper"].args[1]).toContain("/cli/src/mcp/context-keeper.ts");
+      expect(JSON.stringify(mcp)).not.toContain("${PROJECT_ROOT}");
       expect(readFileSync(join(out, "README.md"), "utf8")).toContain("droid plugin install jce-opencode-tools@factory-jce");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("syncs personal Factory config for AGENTS.md, droids, skills, and MCP", () => {
+    const root = fixture();
+    try {
+      const out = join(root, "factory-jce");
+      const factoryHome = join(root, ".factory");
+      const result = exportFactoryDroidPlugin(out, { sourceConfigDir: join(process.cwd(), "config"), cliDir: join(root, "cli") });
+      const synced = syncFactoryDroidPersonalConfig(factoryHome, { sourceConfigDir: join(process.cwd(), "config"), cliDir: join(root, "cli"), pluginDir: result.pluginDir });
+
+      expect(existsSync(join(factoryHome, "AGENTS.md"))).toBe(true);
+      expect(existsSync(join(factoryHome, "droids", "jce-worker.md"))).toBe(true);
+      expect(existsSync(join(factoryHome, "skills", "typescript", "SKILL.md"))).toBe(true);
+      expect(synced.droids).toBe(6);
+      expect(synced.skills).toBeGreaterThan(20);
+      expect(synced.mcpServers).toContain("context-keeper");
+
+      const mcp = JSON.parse(readFileSync(join(factoryHome, "mcp.json"), "utf8"));
+      expect(mcp.mcpServers["context-keeper"].command).toBe("bun");
+      expect(JSON.stringify(mcp)).not.toContain("${PROJECT_ROOT}");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

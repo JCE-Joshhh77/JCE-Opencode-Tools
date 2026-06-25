@@ -6,6 +6,7 @@
 import { Command } from "commander";
 import { existsSync, readdirSync } from "fs";
 import { dirname, join } from "path";
+import { homedir } from "os";
 import { cp, mkdir, writeFile, readFile, chmod, rename, rm } from "fs/promises";
 import { platform } from "os";
 import { createInterface } from "readline/promises";
@@ -24,7 +25,7 @@ import {
 import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
 import { GITHUB_RAW_BASE, GITHUB_REPO, VERSION } from "../lib/constants.js";
 import { getRequiredCliPayloadFiles, resolveCliPayloadManifestPath } from "../lib/cli-payload.js";
-import { exportFactoryDroidPlugin } from "../lib/factory-droid.js";
+import { exportFactoryDroidPlugin, syncFactoryDroidPersonalConfig } from "../lib/factory-droid.js";
 
 async function retryFs<T>(label: string, action: () => Promise<T>, attempts = 5): Promise<T> {
   let last: unknown;
@@ -121,6 +122,13 @@ async function exportAndOfferFactoryDroidInstall(configDir: string): Promise<voi
     clean: true,
   });
   success(`Factory Droid plugin package exported to: ${result.outputDir}`);
+  const factoryConfig = syncFactoryDroidPersonalConfig(join(homedir(), ".factory"), {
+    sourceConfigDir: join(configDir, "cli", "config"),
+    cliDir: join(configDir, "cli"),
+    pluginDir: result.pluginDir,
+  });
+  success(`Factory Droid personal config synced to: ${factoryConfig.configDir}`);
+  info(`Droids: ${factoryConfig.droids}; skills: ${factoryConfig.skills}; MCP servers: ${factoryConfig.mcpServers.join(", ")}`);
 
   if (!(await commandAvailable("droid"))) {
     printDroidInstallInstructions();

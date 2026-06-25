@@ -1,7 +1,8 @@
 import { Command } from "commander";
 import { join } from "path";
+import { homedir } from "os";
 import { getConfigDir } from "../lib/config.js";
-import { exportFactoryDroidPlugin } from "../lib/factory-droid.js";
+import { exportFactoryDroidPlugin, syncFactoryDroidPersonalConfig } from "../lib/factory-droid.js";
 import { error, info, success } from "../lib/ui.js";
 import { logCommandError, logCommandStart, logCommandSuccess } from "../lib/logger.js";
 import { EXIT_ERROR, EXIT_SUCCESS } from "../types.js";
@@ -10,7 +11,8 @@ const exportCommand = new Command("export")
   .description("Generate a Factory Droid plugin package from JCE agents and skills")
   .option("-o, --output <dir>", "Output directory", join(getConfigDir(), "factory-jce"))
   .option("--clean", "Delete existing output directory before export")
-  .action(async (opts: { output: string; clean?: boolean }) => {
+  .option("--sync-personal", "Also sync ~/.factory AGENTS.md, droids, skills, and MCP config")
+  .action(async (opts: { output: string; clean?: boolean; syncPersonal?: boolean }) => {
     logCommandStart("factory export", { output: opts.output });
     try {
       const result = exportFactoryDroidPlugin(opts.output, {
@@ -22,6 +24,15 @@ const exportCommand = new Command("export")
       info(`Droids: ${result.droids.join(", ")}`);
       info(`Skills: ${result.skills}`);
       info(`Commands: ${result.commands.map((c) => `/${c}`).join(", ")}`);
+      if (opts.syncPersonal === true) {
+        const synced = syncFactoryDroidPersonalConfig(join(homedir(), ".factory"), {
+          sourceConfigDir: join(getConfigDir(), "cli", "config"),
+          cliDir: join(getConfigDir(), "cli"),
+          pluginDir: result.pluginDir,
+        });
+        success(`Factory Droid personal config synced to: ${synced.configDir}`);
+        info(`Personal config: droids=${synced.droids} skills=${synced.skills} mcp=${synced.mcpServers.join(",")}`);
+      }
       info(`Install in Droid: droid plugin marketplace add ${result.outputDir}`);
       info(`Then: droid plugin install ${result.pluginName}@${result.marketplaceName}`);
       logCommandSuccess("factory export", `droids=${result.droids.length} skills=${result.skills}`);

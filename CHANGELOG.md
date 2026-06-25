@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.13] - 2026-06-25
+
+### Fixed
+- **Factory Droid usable configuration**: `factory export --sync-personal` now writes JCE `AGENTS.md`, droids, skills, and MCP servers into `~/.factory`, so Droid detects them in its normal personal config paths instead of only caching plugin payload files.
+- **Factory Droid MCP startup**: generated MCP config no longer includes `${PROJECT_ROOT}` as an unset environment placeholder, fixing Droid MCP errors like `MCP server credential references an unset environment variable` for `context-keeper`.
+- **Factory Droid install/update flow**: installers and `opencode-jce update` now sync personal Factory config after exporting the marketplace package, while keeping plugin installation opt-in.
+
+### Changed
+- Release version synced to `3.8.13` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/factory-droid.test.ts` exit 0 (2 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `C:\Program Files\Git\bin\bash.exe -n install.sh` exit 0.
+- PowerShell parser validation for `install.ps1` exit 0.
+
+---
+
 ## [3.8.12] - 2026-06-25
 
 ### Fixed

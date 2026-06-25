@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync, cpSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, cpSync } from "fs";
 import { basename, dirname, join } from "path";
 import { VERSION } from "./constants.js";
 import { buildAgentConfigs } from "../plugin/config.js";
@@ -12,6 +12,14 @@ export interface FactoryDroidExportResult {
   droids: string[];
   skills: number;
   commands: string[];
+}
+
+export interface FactoryDroidPersonalConfigResult {
+  configDir: string;
+  droids: number;
+  skills: number;
+  mcpServers: string[];
+  agentsMd: string;
 }
 
 const DEFAULT_COMMANDS: Record<string, string> = {
@@ -38,6 +46,16 @@ function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function readJsonObject(path: string): Record<string, unknown> {
+  if (!existsSync(path)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
 function writeText(path: string, value: string): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, value.endsWith("\n") ? value : `${value}\n`, "utf8");
@@ -61,6 +79,20 @@ function defaultCliDir(outputDir: string): string {
   return existsSync(join(process.cwd(), "src", "mcp", "context-keeper.ts"))
     ? process.cwd()
     : join(dirname(outputDir), "cli");
+}
+
+function factoryMcpServers(cliContextKeeper: string): Record<string, unknown> {
+  return {
+    "context-keeper": {
+      command: "bun",
+      args: ["run", cliContextKeeper],
+      disabled: false,
+    },
+    context7: { type: "http", url: "https://mcp.context7.com/mcp", disabled: false },
+    memory: { command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"], disabled: false },
+    playwright: { command: "npx", args: ["-y", "@playwright/mcp@latest"], disabled: false },
+    "sequential-thinking": { command: "npx", args: ["-y", "@modelcontextprotocol/server-sequential-thinking"], disabled: false },
+  };
 }
 
 export function exportFactoryDroidPlugin(outputDir: string, options: { sourceConfigDir?: string; cliDir?: string; clean?: boolean } = {}): FactoryDroidExportResult {
@@ -106,22 +138,38 @@ export function exportFactoryDroidPlugin(outputDir: string, options: { sourceCon
     commands.push(name);
   }
 
-  writeJson(join(pluginDir, "mcp.json"), {
-    mcpServers: {
-      "context-keeper": {
-        command: "bun",
-        args: ["run", cliContextKeeper],
-        env: { PROJECT_ROOT: "${PROJECT_ROOT}" },
-        disabled: false,
-      },
-      context7: { type: "http", url: "https://mcp.context7.com/mcp", disabled: false },
-      memory: { command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"], disabled: false },
-      playwright: { command: "npx", args: ["-y", "@playwright/mcp@latest"], disabled: false },
-      "sequential-thinking": { command: "npx", args: ["-y", "@modelcontextprotocol/server-sequential-thinking"], disabled: false },
-    },
-  });
+  writeJson(join(pluginDir, "mcp.json"), { mcpServers: factoryMcpServers(cliContextKeeper) });
 
   writeText(join(root, "README.md"), `# JCE for Factory Droid\n\nFactory Droid marketplace generated from JCE OpenCode Tools v${VERSION}.\n\n## Contents\n\n- Plugin: \`${pluginName}\`\n- Droids: ${droids.map((d) => `\`${d}\``).join(", ")}\n- Skills copied from JCE skill pack\n- Commands: ${commands.map((c) => `\`/${c}\``).join(", ")}\n- MCP bridge config for shared JCE/context tools\n\n## Local install\n\n\`\`\`bash\ndroid plugin marketplace add ${root}\ndroid plugin install ${pluginName}@${marketplaceName}\n\`\`\`\n`);
 
   return { outputDir: root, pluginDir, marketplaceName, pluginName, droids, skills, commands };
+}
+
+export function syncFactoryDroidPersonalConfig(factoryConfigDir: string, options: { sourceConfigDir?: string; cliDir?: string; pluginDir?: string } = {}): FactoryDroidPersonalConfigResult {
+  const sourceConfigDir = options.sourceConfigDir ?? join(process.cwd(), "config");
+  const pluginDir = options.pluginDir ?? join(dirname(factoryConfigDir), "factory-jce", "jce-opencode-tools");
+  const cliContextKeeper = join(options.cliDir ?? defaultCliDir(factoryConfigDir), "src", "mcp", "context-keeper.ts").replace(/\\/g, "/");
+  mkdirSync(factoryConfigDir, { recursive: true });
+
+  const agentsSource = join(sourceConfigDir, "AGENTS.md");
+  const agentsTarget = join(factoryConfigDir, "AGENTS.md");
+  if (existsSync(agentsSource)) cpSync(agentsSource, agentsTarget, { force: true });
+
+  let droids = 0;
+  const pluginDroids = join(pluginDir, "droids");
+  if (existsSync(pluginDroids)) {
+    cpSync(pluginDroids, join(factoryConfigDir, "droids"), { recursive: true, force: true });
+    droids = readdirSync(pluginDroids).filter((file) => file.endsWith(".md")).length;
+  }
+
+  const skills = copySkills(join(pluginDir, "skills"), join(factoryConfigDir, "skills"));
+  const mcpPath = join(factoryConfigDir, "mcp.json");
+  const existing = readJsonObject(mcpPath);
+  const existingServers = existing.mcpServers && typeof existing.mcpServers === "object" && !Array.isArray(existing.mcpServers)
+    ? existing.mcpServers as Record<string, unknown>
+    : {};
+  const jceServers = factoryMcpServers(cliContextKeeper);
+  writeJson(mcpPath, { ...existing, mcpServers: { ...existingServers, ...jceServers } });
+
+  return { configDir: factoryConfigDir, droids, skills, mcpServers: Object.keys(jceServers), agentsMd: agentsTarget };
 }

@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.12"
+VERSION="3.8.13"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -520,13 +520,13 @@ EOF
 
     if command -v opencode-jce &>/dev/null; then
         success "opencode-jce CLI installed globally"
-        opencode-jce factory export --output "${CONFIG_DIR}/factory-jce" --clean \
+        opencode-jce factory export --output "${CONFIG_DIR}/factory-jce" --clean --sync-personal \
             && success "Factory Droid plugin package exported to: ${CONFIG_DIR}/factory-jce" \
             && offer_factory_droid_install "${CONFIG_DIR}/factory-jce" \
             || warn "Factory Droid export failed. Run 'opencode-jce factory export' after install."
     else
         warn "opencode-jce installed. Add $bun_bin to PATH or restart your terminal."
-        bun run "$install_dir/src/index.ts" factory export --output "${CONFIG_DIR}/factory-jce" --clean \
+        bun run "$install_dir/src/index.ts" factory export --output "${CONFIG_DIR}/factory-jce" --clean --sync-personal \
             && success "Factory Droid plugin package exported to: ${CONFIG_DIR}/factory-jce" \
             && offer_factory_droid_install "${CONFIG_DIR}/factory-jce" \
             || warn "Factory Droid export failed. Run 'opencode-jce factory export' after install."

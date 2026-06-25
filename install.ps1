@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.12"
+$Version = "3.8.13"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -574,7 +574,7 @@ function Deploy-Config {
         }
         try {
             $factoryDir = Join-Path $ConfigDir "factory-jce"
-            & bun run (Join-Path $installDir "src\index.ts") -- factory export --output $factoryDir --clean | Out-Null
+            & bun run (Join-Path $installDir "src\index.ts") -- factory export --output $factoryDir --clean --sync-personal | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Exit code $LASTEXITCODE" }
             Write-Ok "Factory Droid plugin package exported to: $factoryDir"
             Install-FactoryDroidPlugin $factoryDir
