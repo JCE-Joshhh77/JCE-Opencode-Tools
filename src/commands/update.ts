@@ -247,6 +247,12 @@ async function fetchRemoteFile(relativePath: string): Promise<string | null> {
   }
 }
 
+async function readSourceConfigFile(configDir: string, relativePath: string): Promise<string | null> {
+  const localPath = join(configDir, "cli", "config", relativePath);
+  if (existsSync(localPath)) return await readFile(localPath, "utf-8");
+  return fetchRemoteFile(relativePath);
+}
+
 /**
  * Fetch the list of files in a directory from the GitHub repository.
  * Returns an array of filenames.
@@ -640,7 +646,7 @@ async function writeTextFile(filePath: string, content: string): Promise<void> {
  */
 async function mergeAgents(configDir: string): Promise<number> {
   const localPath = join(configDir, "agents.json");
-  const remoteContent = await fetchRemoteFile("agents.json");
+  const remoteContent = await readSourceConfigFile(configDir, "agents.json");
   if (!remoteContent) return -1;
 
   let remoteData: { agents: Array<{ id: string; [key: string]: unknown }> };
@@ -670,7 +676,7 @@ async function mergeAgents(configDir: string): Promise<number> {
  */
 async function mergeMcpServers(configDir: string): Promise<number> {
   const localPath = join(configDir, "mcp.json");
-  const remoteContent = await fetchRemoteFile("mcp.json");
+  const remoteContent = await readSourceConfigFile(configDir, "mcp.json");
   if (!remoteContent) return -1;
 
   let remoteData: { mcpServers: Record<string, unknown> };
@@ -707,7 +713,7 @@ async function mergeMcpServers(configDir: string): Promise<number> {
  */
 async function mergeLspEntries(configDir: string): Promise<number> {
   const localPath = join(configDir, "lsp.json");
-  const remoteContent = await fetchRemoteFile("lsp.json");
+  const remoteContent = await readSourceConfigFile(configDir, "lsp.json");
   if (!remoteContent) return -1;
 
   let remoteData: { lsp: Record<string, unknown> };
@@ -744,6 +750,19 @@ async function mergeLspEntries(configDir: string): Promise<number> {
  */
 async function mergeDirectory(configDir: string, dirName: string): Promise<DirectoryMergeResult> {
   const localDir = join(configDir, dirName);
+  const sourceDir = join(configDir, "cli", "config", dirName);
+  if (existsSync(sourceDir)) {
+    if (!existsSync(localDir)) await mkdir(localDir, { recursive: true });
+    let added = 0;
+    for (const fileName of readdirSync(sourceDir)) {
+      const sourcePath = join(sourceDir, fileName);
+      const targetPath = join(localDir, fileName);
+      if (existsSync(targetPath)) continue;
+      await cp(sourcePath, targetPath, { recursive: true });
+      added++;
+    }
+    return { added, failed: 0, listingFailed: false };
+  }
   const remoteFiles = await fetchDirectoryListing(dirName);
   // Distinguish fetch failure from genuinely empty directory via HTTP status
   if (remoteFiles.length === 0) {
@@ -897,7 +916,7 @@ async function mergeSkillsFromApi(localDir: string): Promise<DirectoryMergeResul
  * Returns true if updated.
  */
 async function updateAgentsMd(configDir: string): Promise<boolean> {
-  const content = await fetchRemoteFile("AGENTS.md");
+  const content = await readSourceConfigFile(configDir, "AGENTS.md");
   if (!content) return false;
 
   const localPath = join(configDir, "AGENTS.md");
@@ -927,7 +946,7 @@ async function handleFallback(configDir: string): Promise<FallbackStatus> {
     return "skipped"; // Skip — user may have customized
   }
 
-  const content = await fetchRemoteFile("fallback.json");
+  const content = await readSourceConfigFile(configDir, "fallback.json");
   if (!content) return "fetch-failed";
 
   await writeTextFile(localPath, content);

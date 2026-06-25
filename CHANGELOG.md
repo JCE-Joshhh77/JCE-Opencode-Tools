@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.11] - 2026-06-25
+
+### Fixed
+- **Update merge rollback after CLI self-update**: config merge now reads from the freshly downloaded local CLI source (`<configDir>/cli/config`) before falling back to GitHub raw/API fetches. This prevents transient GitHub fetch failures like `2/8 fetch(es) failed` from rolling back config after the CLI source has already updated successfully.
+- **Factory Droid update reliability**: because config merge no longer depends on a second GitHub fetch for core files, the Factory Droid export/install prompt can run after update migrations instead of being skipped by an opaque fetch rollback.
+
+### Changed
+- Release version synced to `3.8.11` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/update-process-cleanup.test.ts tests/unit/update-config-hardening.test.ts tests/unit/factory-droid.test.ts` exit 0 (10 pass / 0 fail).
+- `bun run typecheck` exit 0.
+
+---
+
 ## [3.8.10] - 2026-06-25
 
 ### Fixed
