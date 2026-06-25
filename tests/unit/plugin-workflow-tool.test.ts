@@ -48,7 +48,7 @@ describe("jce workflow tool", () => {
 
     expect(result).toContain("Summary");
     expect(result).toContain("Scope: Task 5");
-    expect(result).toContain("Current version: 3.8.9");
+    expect(result).toContain("Current version: 3.8.10");
     expect(result).toContain("Changed Files");
     expect(result).toContain("M src/plugin/tools/workflow.ts");
     expect(result).toContain("Detected Areas");

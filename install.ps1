@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.9"
+$Version = "3.8.10"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -39,6 +39,33 @@ function Write-Ok($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Write-Warn($msg) { Write-Host "[!] $msg" -ForegroundColor Yellow }
 function Write-Skip($msg) { Write-Host "[SKIP] $msg" -ForegroundColor Yellow }
 function Write-Err($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; exit 1 }
+
+function Install-FactoryDroidPlugin($factoryDir) {
+    if (-not (Test-Command "droid")) {
+        Write-Warn "Droid CLI not found. Factory Droid plugin install cancelled."
+        Write-Info "Install Factory Droid first, then rerun this installer or 'opencode-jce update':"
+        Write-Info "  irm https://app.factory.ai/cli/windows | iex"
+        Write-Info "Alternative: npm install -g droid"
+        return
+    }
+
+    $choice = Read-Host "Install/update this JCE plugin in Factory Droid now? (y/N)"
+    if ($choice -notmatch '^(y|yes)$') {
+        Write-Info "Skipped Factory Droid plugin install."
+        Write-Info "Manual install: droid plugin marketplace add $factoryDir"
+        Write-Info "Then: droid plugin install jce-opencode-tools@$([System.IO.Path]::GetFileName($factoryDir))"
+        return
+    }
+
+    $marketplaceName = [System.IO.Path]::GetFileName($factoryDir)
+    try { Invoke-NativeCommand "droid" @("plugin", "marketplace", "add", $factoryDir) } catch { Write-Warn "Droid marketplace add failed or already exists; continuing. $($_.Exception.Message)" }
+    try {
+        Invoke-NativeCommand "droid" @("plugin", "install", "jce-opencode-tools@$marketplaceName")
+        Write-Ok "Factory Droid plugin installed/updated."
+    } catch {
+        Write-Warn "Factory Droid plugin install failed. Run manual commands above. $($_.Exception.Message)"
+    }
+}
 
 function Add-UserPath($dir) {
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
@@ -546,9 +573,11 @@ function Deploy-Config {
             Write-Warn "opencode-jce installed. Restart PowerShell to use it."
         }
         try {
-            & bun run (Join-Path $installDir "src\index.ts") -- factory export --output (Join-Path $ConfigDir "factory-jce") --clean | Out-Null
+            $factoryDir = Join-Path $ConfigDir "factory-jce"
+            & bun run (Join-Path $installDir "src\index.ts") -- factory export --output $factoryDir --clean | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "Exit code $LASTEXITCODE" }
-            Write-Ok "Factory Droid plugin package exported to: $(Join-Path $ConfigDir "factory-jce")"
+            Write-Ok "Factory Droid plugin package exported to: $factoryDir"
+            Install-FactoryDroidPlugin $factoryDir
         } catch {
             Write-Warn "Factory Droid export failed. Run 'opencode-jce factory export' after install. $($_.Exception.Message)"
         }

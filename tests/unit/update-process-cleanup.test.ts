@@ -26,6 +26,16 @@ describe("update stale OpenCode process cleanup", () => {
     expect(ps).toContain("OPENCODE_JCE_SKIP_PROCESS_CLEANUP");
   });
 
+  test("installers fail Factory Droid plugin install clearly when droid is missing", () => {
+    const root = process.cwd();
+    const sh = readFileSync(join(root, "install.sh"), "utf8");
+    const ps = readFileSync(join(root, "install.ps1"), "utf8");
+    expect(sh).toContain("Droid CLI not found. Factory Droid plugin install cancelled.");
+    expect(sh).toContain("curl -fsSL https://app.factory.ai/cli | sh");
+    expect(ps).toContain("Droid CLI not found. Factory Droid plugin install cancelled.");
+    expect(ps).toContain("irm https://app.factory.ai/cli/windows | iex");
+  });
+
   test("payload manifest resolver supports installed cli base dir", () => {
     const root = mkdtempSync(join(tmpdir(), "update-manifest-"));
     try {

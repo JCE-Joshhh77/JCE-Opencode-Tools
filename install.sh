@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.9"
+VERSION="3.8.10"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -47,6 +47,40 @@ success() { echo -e "${GREEN}[✓]${NC} $1"; }
 warn() { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[✗]${NC} $1"; exit 1; }
 skip() { echo -e "${YELLOW}[SKIP]${NC} $1"; }
+
+offer_factory_droid_install() {
+    local factory_dir="$1"
+    if ! command -v droid &>/dev/null; then
+        warn "Droid CLI not found. Factory Droid plugin install cancelled."
+        info "Install Factory Droid first, then rerun this installer or 'opencode-jce update':"
+        info "  curl -fsSL https://app.factory.ai/cli | sh"
+        info "Alternative: npm install -g droid"
+        return
+    fi
+
+    if [ ! -t 0 ]; then
+        info "Non-interactive shell. Skipping Factory Droid plugin install prompt."
+        info "Manual install: droid plugin marketplace add ${factory_dir}"
+        info "Then: droid plugin install jce-opencode-tools@$(basename "$factory_dir")"
+        return
+    fi
+
+    read -rp "Install/update this JCE plugin in Factory Droid now? (y/N): " factory_choice
+    case "${factory_choice,,}" in
+        y|yes)
+            droid plugin marketplace add "${factory_dir}" \
+                || warn "Droid marketplace add failed or already exists; continuing."
+            droid plugin install "jce-opencode-tools@$(basename "$factory_dir")" \
+                && success "Factory Droid plugin installed/updated." \
+                || warn "Factory Droid plugin install failed. Run the manual commands above."
+            ;;
+        *)
+            info "Skipped Factory Droid plugin install."
+            info "Manual install: droid plugin marketplace add ${factory_dir}"
+            info "Then: droid plugin install jce-opencode-tools@$(basename "$factory_dir")"
+            ;;
+    esac
+}
 
 ensure_fish_bun_path() {
     local bun_bin="${HOME}/.bun/bin"
@@ -488,11 +522,13 @@ EOF
         success "opencode-jce CLI installed globally"
         opencode-jce factory export --output "${CONFIG_DIR}/factory-jce" --clean \
             && success "Factory Droid plugin package exported to: ${CONFIG_DIR}/factory-jce" \
+            && offer_factory_droid_install "${CONFIG_DIR}/factory-jce" \
             || warn "Factory Droid export failed. Run 'opencode-jce factory export' after install."
     else
         warn "opencode-jce installed. Add $bun_bin to PATH or restart your terminal."
         bun run "$install_dir/src/index.ts" factory export --output "${CONFIG_DIR}/factory-jce" --clean \
             && success "Factory Droid plugin package exported to: ${CONFIG_DIR}/factory-jce" \
+            && offer_factory_droid_install "${CONFIG_DIR}/factory-jce" \
             || warn "Factory Droid export failed. Run 'opencode-jce factory export' after install."
     fi
     terminate_stale_opencode_processes

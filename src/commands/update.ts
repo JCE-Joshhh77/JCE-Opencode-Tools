@@ -8,6 +8,8 @@ import { existsSync, readdirSync } from "fs";
 import { dirname, join } from "path";
 import { cp, mkdir, writeFile, readFile, chmod, rename, rm } from "fs/promises";
 import { platform } from "os";
+import { createInterface } from "readline/promises";
+import { stdin as input, stdout as output } from "process";
 import chalk from "chalk";
 import { getConfigDir } from "../lib/config.js";
 import { ensureOpenCodeJsonEntries, ensureTuiJsonEntries } from "../lib/opencode-config-merge.js";
@@ -22,6 +24,7 @@ import {
 import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
 import { GITHUB_RAW_BASE, GITHUB_REPO, VERSION } from "../lib/constants.js";
 import { getRequiredCliPayloadFiles, resolveCliPayloadManifestPath } from "../lib/cli-payload.js";
+import { exportFactoryDroidPlugin } from "../lib/factory-droid.js";
 
 async function retryFs<T>(label: string, action: () => Promise<T>, attempts = 5): Promise<T> {
   let last: unknown;
@@ -65,6 +68,78 @@ function isStaleOpenCodeCommand(command: string): boolean {
   return /(^|[\s/])opencode(\s|$)/i.test(normalized)
     || /\.config\/opencode\/cli\/src\/(plugin\/index|mcp\/context-keeper)\.ts/i.test(normalized)
     || /src\/(plugin\/index|mcp\/context-keeper)\.ts/i.test(normalized);
+}
+
+async function runCommand(command: string, args: string[]): Promise<{ code: number; output: string }> {
+  const proc = Bun.spawn([command, ...args], { stdout: "pipe", stderr: "pipe" });
+  const [code, stdoutText, stderrText] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return { code, output: `${stdoutText}${stderrText}`.trim() };
+}
+
+async function commandAvailable(command: string): Promise<boolean> {
+  try {
+    const result = await runCommand(command, ["--version"]);
+    return result.code === 0;
+  } catch {
+    return false;
+  }
+}
+
+async function askYesNo(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
+  const rl = createInterface({ input, output });
+  try {
+    const answer = (await rl.question(question)).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    rl.close();
+  }
+}
+
+function printDroidInstallInstructions(): void {
+  warn("Droid CLI not found. Factory Droid plugin install cancelled.");
+  info("Install Factory Droid first, then rerun `opencode-jce update`:");
+  if (platform() === "win32") {
+    info("  irm https://app.factory.ai/cli/windows | iex");
+  } else {
+    info("  curl -fsSL https://app.factory.ai/cli | sh");
+  }
+  info("Alternative: npm install -g droid");
+}
+
+async function exportAndOfferFactoryDroidInstall(configDir: string): Promise<void> {
+  console.log();
+  heading("Factory Droid Support");
+  const outputDir = join(configDir, "factory-jce");
+  const result = exportFactoryDroidPlugin(outputDir, {
+    sourceConfigDir: join(configDir, "cli", "config"),
+    cliDir: join(configDir, "cli"),
+    clean: true,
+  });
+  success(`Factory Droid plugin package exported to: ${result.outputDir}`);
+
+  if (!(await commandAvailable("droid"))) {
+    printDroidInstallInstructions();
+    return;
+  }
+
+  const install = await askYesNo("Install/update this JCE plugin in Factory Droid now? (y/N): ");
+  if (!install) {
+    info("Skipped Factory Droid plugin install.");
+    info(`Manual install: droid plugin marketplace add ${result.outputDir}`);
+    info(`Then: droid plugin install jce-opencode-tools@${result.marketplaceName}`);
+    return;
+  }
+
+  const add = await runCommand("droid", ["plugin", "marketplace", "add", result.outputDir]);
+  if (add.code !== 0) warn(`Droid marketplace add reported: ${add.output || `exit ${add.code}`}. Continuing in case it already exists.`);
+  const installResult = await runCommand("droid", ["plugin", "install", `jce-opencode-tools@${result.marketplaceName}`]);
+  if (installResult.code === 0) success("Factory Droid plugin installed/updated.");
+  else warn(`Factory Droid plugin install failed: ${installResult.output || `exit ${installResult.code}`}`);
 }
 
 export function planStaleOpenCodeProcessKills(processes: ProcessSnapshot[], currentPid = process.pid): ProcessSnapshot[] {
@@ -1228,6 +1303,14 @@ export const updateCommand = new Command("update")
       success(`Ran ${migrationsRun} migration(s).`);
     } else {
       info("No migrations needed.");
+    }
+
+    try {
+      await exportAndOfferFactoryDroidInstall(configDir);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warn(`Factory Droid setup skipped/failed: ${msg}`);
+      warn("Run `opencode-jce factory export` after update to retry.");
     }
 
     // Final summary

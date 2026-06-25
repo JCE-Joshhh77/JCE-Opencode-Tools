@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.10] - 2026-06-25
+
+### Fixed
+- **Factory Droid update setup**: `opencode-jce update` now exports the Factory Droid plugin package after config migration, so updated installs receive `factory-jce` without rerunning the full installer.
+- **Factory Droid install guard**: install/update flows now check for the `droid` CLI before attempting Droid plugin registration. If Droid is missing, the Droid plugin install is cancelled and platform-specific install instructions are printed instead of failing later with marketplace-not-found errors.
+- **Factory Droid registration prompt**: when Droid is available, install/update prompts before running `droid plugin marketplace add` and `droid plugin install`, so users can opt in without manual commands.
+
+### Changed
+- Release version synced to `3.8.10` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/update-process-cleanup.test.ts tests/unit/factory-droid.test.ts` exit 0 (6 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `C:\Program Files\Git\bin\bash.exe -n install.sh` exit 0.
+- PowerShell parser validation for `install.ps1` exit 0.
+
+---
+
 ## [3.8.9] - 2026-06-25
 
 ### Added
