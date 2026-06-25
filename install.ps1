@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.13"
+$Version = "3.8.14"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -49,21 +49,14 @@ function Install-FactoryDroidPlugin($factoryDir) {
         return
     }
 
-    $choice = Read-Host "Install/update this JCE plugin in Factory Droid now? (y/N)"
-    if ($choice -notmatch '^(y|yes)$') {
-        Write-Info "Skipped Factory Droid plugin install."
-        Write-Info "Manual install: droid plugin marketplace add $factoryDir"
-        Write-Info "Then: droid plugin install jce-opencode-tools@$([System.IO.Path]::GetFileName($factoryDir))"
-        return
-    }
-
     $marketplaceName = [System.IO.Path]::GetFileName($factoryDir)
+    Write-Info "Installing/updating Factory Droid plugin..."
     try { Invoke-NativeCommand "droid" @("plugin", "marketplace", "add", $factoryDir) } catch { Write-Warn "Droid marketplace add failed or already exists; continuing. $($_.Exception.Message)" }
     try {
         Invoke-NativeCommand "droid" @("plugin", "install", "jce-opencode-tools@$marketplaceName")
         Write-Ok "Factory Droid plugin installed/updated."
     } catch {
-        Write-Warn "Factory Droid plugin install failed. Run manual commands above. $($_.Exception.Message)"
+        Write-Warn "Factory Droid plugin install failed. Run: droid plugin marketplace add $factoryDir; droid plugin install jce-opencode-tools@$marketplaceName. $($_.Exception.Message)"
     }
 }
 

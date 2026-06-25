@@ -9,8 +9,6 @@ import { dirname, join } from "path";
 import { homedir } from "os";
 import { cp, mkdir, writeFile, readFile, chmod, rename, rm } from "fs/promises";
 import { platform } from "os";
-import { createInterface } from "readline/promises";
-import { stdin as input, stdout as output } from "process";
 import chalk from "chalk";
 import { getConfigDir } from "../lib/config.js";
 import { ensureOpenCodeJsonEntries, ensureTuiJsonEntries } from "../lib/opencode-config-merge.js";
@@ -90,17 +88,6 @@ async function commandAvailable(command: string): Promise<boolean> {
   }
 }
 
-async function askYesNo(question: string): Promise<boolean> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
-  const rl = createInterface({ input, output });
-  try {
-    const answer = (await rl.question(question)).trim().toLowerCase();
-    return answer === "y" || answer === "yes";
-  } finally {
-    rl.close();
-  }
-}
-
 function printDroidInstallInstructions(): void {
   warn("Droid CLI not found. Factory Droid plugin install cancelled.");
   info("Install Factory Droid first, then rerun `opencode-jce update`:");
@@ -135,14 +122,7 @@ async function exportAndOfferFactoryDroidInstall(configDir: string): Promise<voi
     return;
   }
 
-  const install = await askYesNo("Install/update this JCE plugin in Factory Droid now? (y/N): ");
-  if (!install) {
-    info("Skipped Factory Droid plugin install.");
-    info(`Manual install: droid plugin marketplace add ${result.outputDir}`);
-    info(`Then: droid plugin install ${result.pluginName}@${result.marketplaceName}`);
-    return;
-  }
-
+  info("Installing/updating Factory Droid plugin...");
   const add = await runCommand("droid", ["plugin", "marketplace", "add", result.outputDir]);
   if (add.code !== 0) warn(`Droid marketplace add reported: ${add.output || `exit ${add.code}`}. Continuing in case it already exists.`);
   const installResult = await runCommand("droid", ["plugin", "install", `${result.pluginName}@${result.marketplaceName}`]);

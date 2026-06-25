@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.14] - 2026-06-25
+
+### Fixed
+- **Factory Droid auto-install**: install and update flows now automatically run `droid plugin marketplace add <factory-jce>` and `droid plugin install jce-opencode-tools@factory-jce` when the `droid` CLI is available, removing the manual follow-up step for users.
+- **Factory Droid missing CLI guard**: if `droid` is not installed, the flow still cancels only the Droid plugin install and prints platform install instructions.
+
+### Changed
+- Release version synced to `3.8.14` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/update-process-cleanup.test.ts tests/unit/factory-droid.test.ts` exit 0 (8 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `C:\Program Files\Git\bin\bash.exe -n install.sh` exit 0.
+- PowerShell parser validation for `install.ps1` exit 0.
+
+---
+
 ## [3.8.13] - 2026-06-25
 
 ### Fixed

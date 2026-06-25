@@ -36,6 +36,20 @@ describe("update stale OpenCode process cleanup", () => {
     expect(ps).toContain("irm https://app.factory.ai/cli/windows | iex");
   });
 
+  test("installers auto-install Factory Droid plugin when droid exists", () => {
+    const root = process.cwd();
+    const sh = readFileSync(join(root, "install.sh"), "utf8");
+    const ps = readFileSync(join(root, "install.ps1"), "utf8");
+    expect(sh).toContain("Installing/updating Factory Droid plugin...");
+    expect(sh).toContain("droid plugin marketplace add");
+    expect(sh).toContain("droid plugin install");
+    expect(sh).not.toContain("Install/update this JCE plugin in Factory Droid now?");
+    expect(ps).toContain("Installing/updating Factory Droid plugin...");
+    expect(ps).toContain('Invoke-NativeCommand "droid" @("plugin", "marketplace", "add"');
+    expect(ps).toContain('Invoke-NativeCommand "droid" @("plugin", "install"');
+    expect(ps).not.toContain("Install/update this JCE plugin in Factory Droid now?");
+  });
+
   test("payload manifest resolver supports installed cli base dir", () => {
     const root = mkdtempSync(join(tmpdir(), "update-manifest-"));
     try {

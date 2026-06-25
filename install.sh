@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.13"
+VERSION="3.8.14"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -58,28 +58,12 @@ offer_factory_droid_install() {
         return
     fi
 
-    if [ ! -t 0 ]; then
-        info "Non-interactive shell. Skipping Factory Droid plugin install prompt."
-        info "Manual install: droid plugin marketplace add ${factory_dir}"
-        info "Then: droid plugin install jce-opencode-tools@$(basename "$factory_dir")"
-        return
-    fi
-
-    read -rp "Install/update this JCE plugin in Factory Droid now? (y/N): " factory_choice
-    case "${factory_choice,,}" in
-        y|yes)
-            droid plugin marketplace add "${factory_dir}" \
-                || warn "Droid marketplace add failed or already exists; continuing."
-            droid plugin install "jce-opencode-tools@$(basename "$factory_dir")" \
-                && success "Factory Droid plugin installed/updated." \
-                || warn "Factory Droid plugin install failed. Run the manual commands above."
-            ;;
-        *)
-            info "Skipped Factory Droid plugin install."
-            info "Manual install: droid plugin marketplace add ${factory_dir}"
-            info "Then: droid plugin install jce-opencode-tools@$(basename "$factory_dir")"
-            ;;
-    esac
+    info "Installing/updating Factory Droid plugin..."
+    droid plugin marketplace add "${factory_dir}" \
+        || warn "Droid marketplace add failed or already exists; continuing."
+    droid plugin install "jce-opencode-tools@$(basename "$factory_dir")" \
+        && success "Factory Droid plugin installed/updated." \
+        || warn "Factory Droid plugin install failed. Run: droid plugin marketplace add ${factory_dir} && droid plugin install jce-opencode-tools@$(basename "$factory_dir")"
 }
 
 ensure_fish_bun_path() {
