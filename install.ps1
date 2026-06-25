@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.8"
+$Version = "3.8.9"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -544,6 +544,13 @@ function Deploy-Config {
             Write-Ok "opencode-jce CLI installed globally"
         } else {
             Write-Warn "opencode-jce installed. Restart PowerShell to use it."
+        }
+        try {
+            & bun run (Join-Path $installDir "src\index.ts") -- factory export --output (Join-Path $ConfigDir "factory-jce") --clean | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Exit code $LASTEXITCODE" }
+            Write-Ok "Factory Droid plugin package exported to: $(Join-Path $ConfigDir "factory-jce")"
+        } catch {
+            Write-Warn "Factory Droid export failed. Run 'opencode-jce factory export' after install. $($_.Exception.Message)"
         }
         Stop-StaleOpenCodeProcesses
     } catch {

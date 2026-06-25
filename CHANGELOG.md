@@ -6,6 +6,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.9] - 2026-06-25
+
+### Added
+- **Factory Droid export support**: added `opencode-jce factory export` to generate a Factory-compatible plugin package from the existing JCE agent and skill pack.
+- **Factory Droid package contents**: generated package includes `.factory-plugin/plugin.json`, six native JCE droids, copied skills, `/jce-review`, `/jce-android`, `/jce-release-check` commands, and MCP bridge config for shared context/tools.
+- **Single-installer support**: Linux/macOS and Windows installers now preserve OpenCode setup and also export a Factory Droid package to `factory-jce` after CLI install.
+
+### Fixed
+- **Factory Droid audit fixes**: droid tool frontmatter now grants edit/execute tools only to agents that need them, keeps explorer read-only, uses the actual marketplace basename in install instructions, checks PowerShell export exit codes, and resolves the context-keeper MCP path through the installed CLI directory.
+
+### Changed
+- Release version synced to `3.8.9` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/factory-droid.test.ts tests/unit/plugin-agents.test.ts` exit 0 (25 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `bun ./src/index.ts validate` exit 0 (24 config files valid; skill startup audit pass).
+- `C:\Program Files\Git\bin\bash.exe -n install.sh` exit 0.
+- PowerShell parser validation for `install.ps1` exit 0.
+
+---
+
 ## [3.8.8] - 2026-06-25
 
 ### Fixed

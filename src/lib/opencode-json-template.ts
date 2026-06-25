@@ -24,7 +24,7 @@ interface NativeAgentEntry {
   prompt: string;
 }
 
-const AGENT_DESCRIPTIONS: Record<string, string> = {
+export const AGENT_DESCRIPTIONS: Record<string, string> = {
   "jce-worker": "Autonomous engineering worker and single front door for planning, frontend/backend execution, delegation, review, and verification.",
   oracle: "Architecture and debugging specialist for hard technical decisions and root-cause analysis.",
   "jce-researcher": "Evidence-first technical research analyst for docs, libraries, codebases, GitHub, and web sources.",
