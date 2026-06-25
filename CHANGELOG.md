@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.19] - 2026-06-25
+
+### Changed
+- **Factory Droid model listing**: `/jce-models` now lists native Droid AI model IDs from Factory docs plus configured BYOK custom models, so users can copy usable model IDs directly into `/jce-agent-model <agent> <model|default>`.
+- **Factory Droid model output**: `/jce-models` now shows current JCE agent assignments, available choices grouped by provider label, example commands, and valid agent names.
+- Release version synced to `3.8.19` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/factory-droid.test.ts tests/unit/update-process-cleanup.test.ts` exit 0 (12 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `bun ./src/index.ts validate` exit 0.
+
+---
+
 ## [3.8.18] - 2026-06-25
 
 ### Fixed

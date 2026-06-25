@@ -52,7 +52,7 @@ describe("Factory Droid export", () => {
       expect(agentModelCommand).toContain("$ARGUMENTS");
       expect(modelsCommand).not.toContain("#!/usr/bin/env bun");
       expect(agentModelCommand).not.toContain("setModel(agent, model)");
-      expect(readFileSync(join(pluginRoot, "scripts", "jce-models.js"), "utf8")).toContain("JCE Droid Agent Models");
+      expect(readFileSync(join(pluginRoot, "scripts", "jce-models.js"), "utf8")).toContain("JCE Droid Model Picker");
       expect(readFileSync(join(pluginRoot, "scripts", "jce-agent-model.js"), "utf8")).toContain("setModel(agent, model)");
 
       const hooks = JSON.parse(readFileSync(join(pluginRoot, "hooks", "hooks.json"), "utf8"));
@@ -124,8 +124,13 @@ describe("Factory Droid export", () => {
 
       const env = { ...process.env, FACTORY_HOME: factoryHome };
       const listBefore = execFileSync(process.execPath, [join(result.pluginDir, "scripts", "jce-models.js")], { encoding: "utf8", env });
-      expect(listBefore).toContain("jce-worker -> inherit");
-      expect(listBefore).toContain("9r/cx/gpt-5.5 (GPT 5.5)");
+      expect(listBefore).toContain("JCE Droid Model Picker");
+      expect(listBefore).toContain("jce-worker      inherit");
+      expect(listBefore).toContain("Available Droid AI choices");
+      expect(listBefore).toContain("GPT-5.5 / gpt-5.5 [openai]");
+      expect(listBefore).toContain("Claude Sonnet 4.6 / claude-sonnet-4-6 [anthropic]");
+      expect(listBefore).toContain("GPT 5.5 / 9r/cx/gpt-5.5");
+      expect(listBefore).toContain("/jce-agent-model jce-worker gpt-5.5");
 
       const setOutput = execFileSync(process.execPath, [join(result.pluginDir, "scripts", "jce-agent-model.js"), "jce-worker", "9r/cx/gpt-5.5"], { encoding: "utf8", env });
       expect(setOutput).toContain("jce-worker model set to custom:9r/cx/gpt-5.5");
