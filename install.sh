@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.14"
+VERSION="3.8.15"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -61,9 +61,15 @@ offer_factory_droid_install() {
     info "Installing/updating Factory Droid plugin..."
     droid plugin marketplace add "${factory_dir}" \
         || warn "Droid marketplace add failed or already exists; continuing."
-    droid plugin install "jce-opencode-tools@$(basename "$factory_dir")" \
-        && success "Factory Droid plugin installed/updated." \
-        || warn "Factory Droid plugin install failed. Run: droid plugin marketplace add ${factory_dir} && droid plugin install jce-opencode-tools@$(basename "$factory_dir")"
+    local plugin_id="jce-opencode-tools@$(basename "$factory_dir")"
+    if droid plugin install "$plugin_id"; then
+        success "Factory Droid plugin installed/updated."
+    else
+        warn "Factory Droid plugin install failed or already exists; trying update."
+        droid plugin update "$plugin_id" \
+            && success "Factory Droid plugin already installed; updated existing install." \
+            || warn "Factory Droid plugin update failed. Run: droid plugin update $plugin_id"
+    fi
 }
 
 ensure_fish_bun_path() {

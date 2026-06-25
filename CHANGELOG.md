@@ -6,6 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.15] - 2026-06-25
+
+### Fixed
+- **Factory Droid already-installed plugin updates**: when `droid plugin install jce-opencode-tools@factory-jce` reports the plugin is already installed, install/update flows now fall back to `droid plugin update jce-opencode-tools@factory-jce` instead of reporting failure.
+- **Factory Droid install/update UX**: existing user-scope installs are now updated in place, so users do not need to uninstall/reinstall manually.
+
+### Changed
+- Release version synced to `3.8.15` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/update-process-cleanup.test.ts tests/unit/factory-droid.test.ts` exit 0 (8 pass / 0 fail).
+- `bun run typecheck` exit 0.
+- `C:\Program Files\Git\bin\bash.exe -n install.sh` exit 0.
+- PowerShell parser validation for `install.ps1` exit 0.
+
+---
+
 ## [3.8.14] - 2026-06-25
 
 ### Fixed

@@ -127,7 +127,11 @@ async function exportAndOfferFactoryDroidInstall(configDir: string): Promise<voi
   if (add.code !== 0) warn(`Droid marketplace add reported: ${add.output || `exit ${add.code}`}. Continuing in case it already exists.`);
   const installResult = await runCommand("droid", ["plugin", "install", `${result.pluginName}@${result.marketplaceName}`]);
   if (installResult.code === 0) success("Factory Droid plugin installed/updated.");
-  else warn(`Factory Droid plugin install failed: ${installResult.output || `exit ${installResult.code}`}`);
+  else if (/already installed/i.test(installResult.output)) {
+    const updateResult = await runCommand("droid", ["plugin", "update", `${result.pluginName}@${result.marketplaceName}`]);
+    if (updateResult.code === 0) success("Factory Droid plugin already installed; updated existing install.");
+    else warn(`Factory Droid plugin update failed: ${updateResult.output || `exit ${updateResult.code}`}`);
+  } else warn(`Factory Droid plugin install failed: ${installResult.output || `exit ${installResult.code}`}`);
 }
 
 export function planStaleOpenCodeProcessKills(processes: ProcessSnapshot[], currentPid = process.pid): ProcessSnapshot[] {

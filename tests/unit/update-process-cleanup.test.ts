@@ -43,10 +43,12 @@ describe("update stale OpenCode process cleanup", () => {
     expect(sh).toContain("Installing/updating Factory Droid plugin...");
     expect(sh).toContain("droid plugin marketplace add");
     expect(sh).toContain("droid plugin install");
+    expect(sh).toContain("droid plugin update");
     expect(sh).not.toContain("Install/update this JCE plugin in Factory Droid now?");
     expect(ps).toContain("Installing/updating Factory Droid plugin...");
     expect(ps).toContain('Invoke-NativeCommand "droid" @("plugin", "marketplace", "add"');
     expect(ps).toContain('Invoke-NativeCommand "droid" @("plugin", "install"');
+    expect(ps).toContain('Invoke-NativeCommand "droid" @("plugin", "update"');
     expect(ps).not.toContain("Install/update this JCE plugin in Factory Droid now?");
   });
 
