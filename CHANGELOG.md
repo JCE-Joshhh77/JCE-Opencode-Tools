@@ -6,6 +6,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.22] - 2026-06-26
+
+### Added
+- **MCP stdio resilience for slow OpenCode load**: `context-keeper` MCP server now swallows `EPIPE` on stdout/stderr, ignores `SIGPIPE`, gracefully exits on `SIGTERM`/`SIGINT`/`SIGHUP`, and traps `unhandledRejection`/`uncaughtException` so transient stdio errors during slow OpenCode cold-start no longer crash the MCP server. Emits a non-fatal warning after 45s of waiting for the `initialize` handshake instead of failing.
+- **Bounded session timeouts in background dispatch**: `src/plugin/background/spawner.ts` now wraps `client.session.create` (default 60s, env `OPENCODE_JCE_BG_SESSION_CREATE_TIMEOUT_MS`) and `client.session.prompt`/`promptAsync`/`chat` (default 12min, env `OPENCODE_JCE_BG_PROMPT_TIMEOUT_MS`) with active-fire timeouts so a stalled OpenCode session API fails the task in minutes rather than waiting 30 minutes for `staleAfterMs`.
+- **Bounded fs timeouts in context-keeper MCP**: `readContext` and `writeContext` now run under a 10s timeout (env `OPENCODE_JCE_MCP_FS_TIMEOUT_MS`) so antivirus/EDR holding the context file on Windows no longer hangs MCP tool calls.
+- **Bounded git status timeout in workflow tool**: `jce_workflow` now runs `git status --porcelain` with a 10s `execFileSync` timeout so a wedged git (network FS, gc lock) cannot block the tool.
+
+### Fixed
+- **Critical bug in `withTimeout` helper**: previous attempts to `timer.unref()` the timeout caused Bun/Node to exit the event loop before the rejection could fire, silently hanging the `await` whenever the inner SDK promise never resolved. The timer is now intentionally left ref'd so the rejection is guaranteed to fire and the call site receives a real `timed out after Xms` error.
+
+### Changed
+- Release version synced to `3.8.22` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun run typecheck` exit 0.
+- `bun test tests/unit/plugin-background.test.ts tests/unit/plugin-background-recovery.test.ts tests/unit/background-manager.test.ts tests/unit/context-keeper.test.ts tests/unit/plugin-workflow-tool.test.ts` exit 0 (75 pass / 0 fail; includes 2 new spawner timeout regression tests).
+- `bun test tests/unit/audit-fixes.test.ts tests/unit/factory-droid.test.ts tests/unit/update-config-hardening.test.ts tests/unit/plugin-workflow-assistant.test.ts` exit 0 (95 pass / 0 fail).
+- `bun ./src/index.ts validate` exit 0.
+- Git Bash `bash -n install.sh` exit 0; PowerShell parser check for `install.ps1` exit 0.
+
+---
+
 ## [3.8.21] - 2026-06-25
 
 ### Added

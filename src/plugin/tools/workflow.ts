@@ -21,7 +21,16 @@ const z = tool.schema;
 
 function readGitStatus(cwd: string): string {
   try {
-    return execFileSync("git", ["status", "--porcelain"], { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+    // 10s timeout: git status on a typical repo is <100ms; on a huge repo with
+    // a slow disk it can take a few seconds. 10s guarantees the tool never
+    // hangs OpenCode if git is wedged (network FS, AV scan, gc lock).
+    return execFileSync("git", ["status", "--porcelain"], {
+      cwd,
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: 10_000,
+      windowsHide: true,
+    });
   } catch {
     return "";
   }

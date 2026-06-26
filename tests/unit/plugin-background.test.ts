@@ -232,4 +232,80 @@ describe("background manager reliability metadata", () => {
     expect(manager.getTask(taskId)?.status).toBe("error");
     expect(manager.getTask(taskId)?.error).toContain("No supported session prompt method");
   });
+
+  test("spawner fails task when session.create stalls past timeout (slow OpenCode load)", async () => {
+    // Force a tiny session-create timeout so the test runs fast.
+    const previous = process.env.OPENCODE_JCE_BG_SESSION_CREATE_TIMEOUT_MS;
+    process.env.OPENCODE_JCE_BG_SESSION_CREATE_TIMEOUT_MS = "50";
+    // Settle deferred slowly so tests don't leak pending promises.
+    let releaseCreate: ((value: { id: string }) => void) | undefined;
+    const createDeferred = new Promise<{ id: string }>((resolve) => { releaseCreate = resolve; });
+    try {
+      const manager = new BackgroundManager({ maxConcurrency: 3, now: () => "2026-05-06T00:00:00.000Z" } as any);
+      const client = {
+        session: {
+          // Returns a promise we resolve only after assertions — simulates a
+          // session.create that did not resolve before the timeout fired.
+          create: () => createDeferred,
+          prompt: async () => "should not reach",
+        },
+      } as any;
+
+      const taskId = await spawnBackgroundTask(manager, client, {
+        description: "Check plugin",
+        prompt: "p",
+        agent: "explorer",
+        parentSessionId: "s",
+        parentMessageId: "m",
+      });
+      // Wait long enough for the timeout to fire and the catch handler to run.
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      const task = manager.getTask(taskId);
+      expect(task?.status).toBe("error");
+      expect(task?.error).toContain("timed out");
+    } finally {
+      // Release the pending deferred so the test runner can shut down cleanly.
+      releaseCreate?.({ id: "late-session" });
+      if (previous === undefined) delete process.env.OPENCODE_JCE_BG_SESSION_CREATE_TIMEOUT_MS;
+      else process.env.OPENCODE_JCE_BG_SESSION_CREATE_TIMEOUT_MS = previous;
+    }
+  });
+
+  test("spawner fails task when session.prompt stalls past timeout (orphaned delegated session)", async () => {
+    const previous = process.env.OPENCODE_JCE_BG_PROMPT_TIMEOUT_MS;
+    process.env.OPENCODE_JCE_BG_PROMPT_TIMEOUT_MS = "50";
+    let releasePrompt: ((value: unknown) => void) | undefined;
+    const promptDeferred = new Promise<unknown>((resolve) => { releasePrompt = resolve; });
+    try {
+      const manager = new BackgroundManager({ maxConcurrency: 3, now: () => "2026-05-06T00:00:00.000Z" } as any);
+      const client = {
+        session: {
+          create: async () => ({ id: "child-session" }),
+          // Prompt resolves only after we release it — simulates a stalled
+          // provider/model call that exceeds the per-prompt timeout.
+          prompt: () => promptDeferred,
+        },
+      } as any;
+
+      const taskId = await spawnBackgroundTask(manager, client, {
+        description: "Check plugin",
+        prompt: "p",
+        agent: "explorer",
+        parentSessionId: "s",
+        parentMessageId: "m",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      const task = manager.getTask(taskId);
+      expect(task?.status).toBe("error");
+      expect(task?.error).toContain("timed out");
+      // The task must have been marked running before timing out, not stuck pending.
+      expect(task?.failureReason).toContain("timed out");
+    } finally {
+      releasePrompt?.("late-result");
+      if (previous === undefined) delete process.env.OPENCODE_JCE_BG_PROMPT_TIMEOUT_MS;
+      else process.env.OPENCODE_JCE_BG_PROMPT_TIMEOUT_MS = previous;
+    }
+  });
 });

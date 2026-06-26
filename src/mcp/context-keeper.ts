@@ -89,9 +89,44 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * Bounded wait for an fs operation. On Windows, antivirus/EDR scans can hold
+ * a file handle for tens of seconds during real-time scanning; without a
+ * timeout the MCP request hangs and OpenCode surfaces a generic MCP error.
+ *
+ * 10s is generous enough for any legitimate read/write of a context file
+ * (typical size < 100 KB) while still failing fast enough that the AI agent
+ * can retry within the same turn.
+ *
+ * Override via env `OPENCODE_JCE_MCP_FS_TIMEOUT_MS` for unusually slow disks.
+ */
+const DEFAULT_FS_TIMEOUT_MS = 10_000;
+
+function resolveFsTimeoutMs(): number {
+  const raw = process.env?.OPENCODE_JCE_MCP_FS_TIMEOUT_MS;
+  if (!raw) return DEFAULT_FS_TIMEOUT_MS;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_FS_TIMEOUT_MS;
+  return parsed;
+}
+
+async function withFsTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  const timeoutMs = resolveFsTimeoutMs();
+  // Important: do NOT unref the timer. The timeout must actively fire so the
+  // promise rejects even when the underlying fs operation never resolves
+  // (e.g. AV scanner holding the file handle indefinitely).
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 async function readContext(): Promise<string | null> {
   try {
-    return await readFile(contextPath(), "utf-8");
+    return await withFsTimeout(readFile(contextPath(), "utf-8"), `read ${CONTEXT_FILENAME}`);
   } catch (error) {
     // Only treat a genuinely-missing file as "no context". Any other error
     // (EACCES/EBUSY/EPERM — common on Windows under AV or concurrent access)
@@ -111,7 +146,7 @@ async function writeContext(content: string): Promise<void> {
     /> Last updated:.*/,
     `> Last updated: ${today}`
   );
-  await writeFileAtomic(contextPath(), updated);
+  await withFsTimeout(writeFileAtomic(contextPath(), updated), `write ${CONTEXT_FILENAME}`);
 }
 
 async function writeFileAtomic(path: string, content: string): Promise<void> {
@@ -240,7 +275,7 @@ async function appendArchive(content: string): Promise<void> {
 const server = new McpServer(
   {
     name: "context-keeper",
-    version: "3.8.21",
+    version: "3.8.22",
   },
   {
     instructions: [
@@ -898,14 +933,97 @@ server.tool(
 
 // ─── Start ───────────────────────────────────────────────────
 
+/**
+ * Time (ms) to wait for the JSON-RPC `initialize` handshake from OpenCode
+ * before logging a warning. We do NOT exit on timeout — slow-loading OpenCode
+ * (cold start, AV scan, network plugin fetch) can take 30s+. Logging only.
+ */
+const MCP_INIT_HANDSHAKE_WARN_MS = 45_000;
+
+/**
+ * Wire up resilience so a single transient stdio error does not kill the MCP
+ * server. The most common failure mode on Windows is EPIPE on stdout when
+ * OpenCode briefly closes/recycles its child process pipes during slow load.
+ *
+ * Behavior:
+ *  - EPIPE on stdout: swallow (parent is recycling pipe; next write will succeed
+ *    after MCP SDK auto-reopens or the new transport binds).
+ *  - SIGPIPE: ignored (Unix-only); Node would otherwise terminate the process.
+ *  - SIGTERM/SIGINT: graceful exit code 0 so OpenCode does not surface "MCP
+ *    server crashed" to the user.
+ *  - Unhandled rejections / uncaught exceptions: log to stderr but stay alive
+ *    so OpenCode can retry the JSON-RPC request after its event loop resumes.
+ */
+function installResilienceHandlers(): void {
+  // EPIPE on stdout/stderr is the #1 cause of "MCP error when OpenCode loads
+  // slowly". Node by default emits this as an uncaught error on the stream
+  // and kills the process. We swallow it; the MCP SDK will reattempt the
+  // next write when the transport recovers.
+  const swallowEpipe = (err: NodeJS.ErrnoException) => {
+    if (err && err.code === "EPIPE") return;
+    // For any other stream error, log to stderr but stay alive so the next
+    // initialize attempt from OpenCode can succeed.
+    try { console.error("context-keeper stream error:", err.message); } catch { /* ignore */ }
+  };
+  process.stdout.on("error", swallowEpipe);
+  process.stderr.on("error", swallowEpipe);
+
+  // SIGPIPE is delivered on Unix when the parent closes its pipe end mid-write.
+  // Node's default handler exits the process; we want to stay alive and let
+  // the next stdin chunk drive the MCP transport.
+  if (typeof process.on === "function") {
+    try { process.on("SIGPIPE", () => { /* keep MCP alive */ }); } catch { /* not all platforms */ }
+  }
+
+  // Slow OpenCode load can fire SIGTERM during initialization (e.g. user
+  // cancelled, OpenCode restart). Exit 0 so the parent doesn't classify us
+  // as crashed.
+  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
+    try { process.on(sig, () => process.exit(0)); } catch { /* ignore */ }
+  }
+
+  // Surface stray errors without dying. The MCP SDK occasionally throws on
+  // partial JSON-RPC frames when stdio is recycled; we log and continue so
+  // the next valid frame is processed normally.
+  process.on("unhandledRejection", (reason) => {
+    try { console.error("context-keeper unhandled rejection:", reason); } catch { /* ignore */ }
+  });
+  process.on("uncaughtException", (err) => {
+    if ((err as NodeJS.ErrnoException)?.code === "EPIPE") return;
+    try { console.error("context-keeper uncaught exception:", err); } catch { /* ignore */ }
+  });
+}
+
 async function main() {
+  installResilienceHandlers();
   const transport = new StdioServerTransport();
-  await server.connect(transport);
+
+  // Warn (don't fail) when OpenCode is slow to send the initialize handshake.
+  // This is purely diagnostic — the server stays connected and ready.
+  const initWarn = setTimeout(() => {
+    try {
+      console.error(
+        `context-keeper: still waiting for OpenCode initialize after ${MCP_INIT_HANDSHAKE_WARN_MS}ms; ` +
+        `OpenCode may be cold-starting. MCP server will keep listening.`,
+      );
+    } catch { /* ignore */ }
+  }, MCP_INIT_HANDSHAKE_WARN_MS);
+  // Allow process to exit naturally; the timer must not keep the event loop alive.
+  if (typeof initWarn.unref === "function") initWarn.unref();
+
+  try {
+    await server.connect(transport);
+  } finally {
+    clearTimeout(initWarn);
+  }
 }
 
 if (import.meta.main) {
   main().catch((err) => {
-    console.error("context-keeper failed to start:", err);
+    // Only exit on a genuine connect failure (e.g. malformed transport). For
+    // transient stdio issues the resilience handlers above keep us alive and
+    // we never reach here.
+    try { console.error("context-keeper failed to start:", err); } catch { /* ignore */ }
     process.exit(1);
   });
 }
