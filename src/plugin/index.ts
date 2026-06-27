@@ -1084,9 +1084,27 @@ const jcePlugin: Plugin = async (input) => {
         }
       }
 
+      // lastTodoState must be updated BEFORE evaluateOpenWork reads it below.
+      // The variable is session-scoped, so a TodoWrite earlier in the same
+      // message keeps this fresh for the next tool's gate evaluation in the
+      // same hook chain. Do not move this block below the gate.
       if (typeof output.output === "string" && toolName === "todowrite") {
         lastTodoState = extractTodoState(output.output);
       }
+
+      // L1 race fix: when the CURRENT tool output is itself a completion claim
+      // (e.g. a `task` collect result with "all done"), and that same tool
+      // chain just ran a TodoWrite that closed all items, the gate must see
+      // the freshest todo state extracted from any inline TodoWrite-shaped
+      // JSON in the output, not the previously-cached session state.
+      const freshTodoFromOutput = typeof output.output === "string" && shouldInspectCompletionOutput(toolName)
+        ? extractTodoState(output.output)
+        : undefined;
+      const effectiveTodoState: TodoState | undefined = freshTodoFromOutput?.hasOpenTodos
+        ? freshTodoFromOutput
+        : freshTodoFromOutput && !lastTodoState?.hasOpenTodos
+          ? freshTodoFromOutput
+          : lastTodoState;
 
       let routeUpdatePolicy: ExecutionPolicyDecision | undefined;
       if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName)) {
@@ -1098,7 +1116,7 @@ const jcePlugin: Plugin = async (input) => {
 
       const shouldEnforceWorkflowGates = workflowRuntimeActive && (!hadActiveWorkflow || hadWorkflowRuntimeActive);
       const openWork = typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && looksLikeStopEarlyOrConfirmation(output.output)
-        ? evaluateOpenWork(currentMemory, currentPolicyProfile(), lastTodoState, { includeWorkflowGate: hadActiveWorkflow || hadWorkflowRuntimeActive })
+        ? evaluateOpenWork(currentMemory, currentPolicyProfile(), effectiveTodoState, { includeWorkflowGate: hadActiveWorkflow || hadWorkflowRuntimeActive })
         : undefined;
 
       if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && looksLikeCompletionClaim(output.output) && currentMemory.activeWorkflow && (shouldEnforceWorkflowGates || currentMemory.activeWorkflow.route?.intent === "review")) {

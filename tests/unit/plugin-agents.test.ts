@@ -50,6 +50,41 @@ describe("plugin agents", () => {
     expect(prompt).toContain("Verification Requirements");
   });
 
+  test("oracle sub-agent enforces Mandatory Root Cause Gate for bug delegations (#3)", () => {
+    const agents = buildAgentConfigs();
+    const prompt = agents.oracle.systemPrompt;
+    expect(prompt).toContain("Mandatory Root Cause Gate");
+    expect(prompt).toContain("Do NOT guess-fix");
+    expect(prompt).toContain("Root Cause Evidence");
+    expect(prompt).toContain("Output Contract");
+    expect(prompt).toContain("## Summary");
+    expect(prompt).toContain("## Files");
+    expect(prompt).toContain("## Verification");
+    expect(prompt).toContain("## Risks");
+  });
+
+  test("android sub-agent enforces Mandatory Root Cause Gate for build/runtime issues (#3)", () => {
+    const agents = buildAgentConfigs();
+    const prompt = agents.android.systemPrompt;
+    expect(prompt).toContain("Mandatory Root Cause Gate");
+    expect(prompt).toContain("Do NOT guess-fix");
+    expect(prompt).toContain("Root Cause Evidence");
+    // Android-specific forbidden actions must be listed so delegations don't
+    // turn a focused bug fix into a sweeping dependency upgrade or build-style
+    // rewrite.
+    expect(prompt).toContain("enableJetifier");
+    expect(prompt).toContain("disabling R8");
+  });
+
+  test("frontend sub-agent enforces Mandatory Root Cause Gate for UI bugs (#3)", () => {
+    const agents = buildAgentConfigs();
+    const prompt = agents.frontend.systemPrompt;
+    expect(prompt).toContain("Mandatory Root Cause Gate");
+    expect(prompt).toContain("Do NOT guess-fix");
+    expect(prompt).toContain("Root Cause Evidence");
+    expect(prompt).toContain("screenshot");
+  });
+
   test("jce-worker agent has boulder/todo system prompt", () => {
     const agents = buildAgentConfigs();
     const prompt = agents["jce-worker"].systemPrompt;

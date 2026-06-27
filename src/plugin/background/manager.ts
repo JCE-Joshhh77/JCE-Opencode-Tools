@@ -132,7 +132,13 @@ export class BackgroundManager {
   completeTask(id: string, result: string): void {
     const task = this.tasks.get(id);
     if (!task) return;
-    if (task.status === "cancelled") {
+    // Guard against late-arrival completions for tasks that already settled.
+    // After withTimeout fails a stalled session.prompt and failTask sets
+    // status="error", the inner SDK promise may eventually resolve and run
+    // the .then(completeTask) chain in spawner — overwriting status back to
+    // "completed" and corrupting the recovery flow that already kicked in.
+    // The same protection applies to cancelled and already-completed tasks.
+    if (task.status === "cancelled" || task.status === "error" || task.status === "completed") {
       this.recordTrace("verification.recorded", task.id, `Ignored late completion for ${task.status} task`);
       return;
     }

@@ -308,4 +308,52 @@ describe("background manager reliability metadata", () => {
       else process.env.OPENCODE_JCE_BG_PROMPT_TIMEOUT_MS = previous;
     }
   });
+
+  test("manager.completeTask ignores late completion for already-error tasks (#6 race fix)", () => {
+    // Regression guard: when withTimeout fails a stalled session.prompt and
+    // failTask sets status="error", the inner SDK promise may eventually
+    // resolve and run the .then(completeTask) chain. Without the error-status
+    // guard, completeTask would overwrite the failed task back to "completed"
+    // and corrupt the recovery flow. The guard must drop the late completion
+    // silently and leave the task in its terminal "error" state.
+    const manager = new BackgroundManager({ maxConcurrency: 3, now: () => "2026-05-06T00:00:00.000Z" } as any);
+    const task = manager.createTask({
+      description: "Check plugin",
+      prompt: "p",
+      agent: "explorer",
+      parentSessionId: "s",
+      parentMessageId: "m",
+    });
+
+    manager.failTask(task.id, "Session prompt timed out after 50ms");
+    expect(manager.getTask(task.id)?.status).toBe("error");
+    expect(manager.getTask(task.id)?.error).toContain("timed out");
+
+    // Simulate the late-arrival completion from the stalled SDK promise.
+    manager.completeTask(task.id, "late successful result");
+
+    const after = manager.getTask(task.id);
+    expect(after?.status).toBe("error");
+    expect(after?.error).toContain("timed out");
+    expect(after?.result).toBeUndefined();
+    // Trace should record the ignored late completion for diagnostic visibility.
+    expect(manager.getTraceEvents().map((e) => e.message).some((m) => m.includes("Ignored late completion"))).toBe(true);
+  });
+
+  test("manager.completeTask ignores late completion for already-completed tasks (idempotent)", () => {
+    const manager = new BackgroundManager({ maxConcurrency: 3, now: () => "2026-05-06T00:00:00.000Z" } as any);
+    const task = manager.createTask({
+      description: "Check plugin",
+      prompt: "p",
+      agent: "explorer",
+      parentSessionId: "s",
+      parentMessageId: "m",
+    });
+
+    manager.completeTask(task.id, "first result");
+    expect(manager.getTask(task.id)?.result).toBe("first result");
+
+    manager.completeTask(task.id, "second result");
+    expect(manager.getTask(task.id)?.result).toBe("first result");
+  });
 });

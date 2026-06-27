@@ -1,16 +1,33 @@
 const COMPLETION_PATTERNS = [
+  // ── English "complete/done/finished" forms ──────────────────────────────
   /\b(?:is\s+)?complete(?:d)?\.?\s*$/im,
   /\band\s+(?:is\s+)?complete\b/i,
   /\b(?:all|everything)\s+(?:is\s+)?done\b/i,
   /\bI(?:'ve|'m|\s+have)\s+(?:finished|completed|done)\b/i,
-  /\bsuccessfully\s+(?:implemented|completed|fixed|resolved)\b/i,
-  /\bready\s+(?:for\s+review|to\s+merge|to\s+ship)\b/i,
-  /\b(?:task|work|implementation|feature|fix|bug|update)\s+(?:is\s+)?complete(?:d)?\b/i,
+  /\bsuccessfully\s+(?:implemented|completed|fixed|resolved|patched|released|shipped|deployed|pushed|tagged|merged)\b/i,
+  /\bready\s+(?:for\s+review|to\s+merge|to\s+ship|to\s+release)\b/i,
+  /\b(?:task|work|implementation|feature|fix|bug|update|patch|release|build)\s+(?:is\s+)?complete(?:d)?\b/i,
   /\bfinished\s+(?:implementing|fixing|building|coding|and)\b/i,
   /\bimplemented\s+(?:the|this|all)\b/i,
-  /\b(?:selesai|beres|sudah\s+(?:selesai|beres|kelar))\b/i,
+  // ── English past-tense action verbs that indicate work has been performed
+  // (release-/dev-flow phrasing that the prior regex set missed). Each verb is
+  // anchored to a subject or object word so we don't flag prose like "I would
+  // have applied the fix" — only real claims of action having occurred.
+  /\b(?:has\s+been|have\s+been|was|were)\s+(?:released|shipped|deployed|pushed|tagged|merged|patched|applied|landed|published)\b/i,
+  /\b(?:release|tag|patch|fix|deploy|push|commit)\s+(?:done|complete(?:d)?|landed|shipped|published)\b/i,
+  // Heading-style "DONE" / "FIXED" / "RELEASED" tokens commonly used at the
+  // top of a final report (case-insensitive, word-boundary anchored).
+  /\b(?:DONE|FIXED|RELEASED|SHIPPED|MERGED|RESOLVED)\b\s*[\.!\u2014\-]?\s*$/im,
+  // ── Bahasa Indonesia completion phrasing ────────────────────────────────
+  // Covers: selesai, beres, kelar, rampung, tuntas, sukses, berhasil, jadi,
+  // sudah/udah variants, and common release/patch verbs.
+  /\b(?:sudah|udah|telah)\s+(?:selesai|beres|kelar|rampung|tuntas|jadi|fix(?:ed)?|patched?|dirilis|dipush|ditag|diterapkan|berhasil|sukses)\b/i,
+  /\b(?:selesai|beres|kelar|rampung|tuntas)\.?\s*$/im,
+  /\b(?:fix|perbaikan|patch|rilis|release|build)\s+(?:sudah\s+)?(?:selesai|beres|jadi|berhasil|diterapkan|dipush)\b/i,
+  /\b(?:berhasil|sukses)\s+(?:di(?:rilis|push|tag|terapkan|deploy)|merilis|menerapkan|memperbaiki|mengupdate)\b/i,
+  /\bsemuanya\s+(?:sudah\s+)?(?:selesai|beres|jadi|fix(?:ed)?)\b/i,
 ];
-const EVIDENCE_PATTERNS = [/\bverification\b/i, /\bbun test\b/i, /\btypecheck\b/i, /\bpassed\b/i, /\bbuild\b/i, /\btests?\s+pass/i, /\bno\s+errors?\b/i];
+const EVIDENCE_PATTERNS = [/\bverification\b/i, /\bbun test\b/i, /\btypecheck\b/i, /\bpassed\b/i, /\bbuild\b/i, /\btests?\s+pass/i, /\bno\s+errors?\b/i, /\bexit\s+0\b/i, /\bverifikasi\b/i, /\blulus\b/i];
 
 const STOP_EARLY_PATTERNS = [
   /\blet\s+me\s+know\s+if\b/i,

@@ -57,6 +57,7 @@ import {
   type ContextIndexInput,
   type ContextIndexReadOptions,
 } from "../lib/context-index.js";
+import { withTimeout } from "../lib/timeout.js";
 
 // ─── Re-export section utilities (extracted to prevent circular deps) ────
 export { countLines, getSection, replaceSection } from "../lib/context-sections.js";
@@ -102,26 +103,8 @@ async function fileExists(path: string): Promise<boolean> {
  */
 const DEFAULT_FS_TIMEOUT_MS = 10_000;
 
-function resolveFsTimeoutMs(): number {
-  const raw = process.env?.OPENCODE_JCE_MCP_FS_TIMEOUT_MS;
-  if (!raw) return DEFAULT_FS_TIMEOUT_MS;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_FS_TIMEOUT_MS;
-  return parsed;
-}
-
 async function withFsTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
-  const timeoutMs = resolveFsTimeoutMs();
-  // Important: do NOT unref the timer. The timeout must actively fire so the
-  // promise rejects even when the underlying fs operation never resolves
-  // (e.g. AV scanner holding the file handle indefinitely).
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
-    promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (err) => { clearTimeout(timer); reject(err); },
-    );
-  });
+  return withTimeout(promise, DEFAULT_FS_TIMEOUT_MS, label, { envOverride: "OPENCODE_JCE_MCP_FS_TIMEOUT_MS" });
 }
 
 async function readContext(): Promise<string | null> {
@@ -275,7 +258,7 @@ async function appendArchive(content: string): Promise<void> {
 const server = new McpServer(
   {
     name: "context-keeper",
-    version: "3.8.22",
+    version: "3.8.23",
   },
   {
     instructions: [

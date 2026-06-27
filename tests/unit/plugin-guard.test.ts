@@ -53,4 +53,40 @@ describe("JCE-Worker guard", () => {
       expect(looksLikeCompletionClaim(text)).toBe(false);
     });
   });
+
+  describe("expanded completion regex coverage (release-flow + Bahasa Indonesia)", () => {
+    test("detects release-flow English past-tense verbs", () => {
+      expect(looksLikeCompletionClaim("The release has been pushed and tagged.")).toBe(true);
+      expect(looksLikeCompletionClaim("Successfully released v3.8.22.")).toBe(true);
+      expect(looksLikeCompletionClaim("Patch was applied.")).toBe(true);
+      expect(looksLikeCompletionClaim("Successfully deployed the fix.")).toBe(true);
+    });
+
+    test("detects heading-style DONE/FIXED/RELEASED tokens at end-of-line", () => {
+      expect(looksLikeCompletionClaim("Release v3.8.22 — DONE")).toBe(true);
+      expect(looksLikeCompletionClaim("Bug FIXED")).toBe(true);
+      expect(looksLikeCompletionClaim("All tests RESOLVED.")).toBe(true);
+    });
+
+    test("detects Bahasa Indonesia release/patch completion phrasing", () => {
+      expect(looksLikeCompletionClaim("Fix sudah diterapkan.")).toBe(true);
+      expect(looksLikeCompletionClaim("Rilis sudah selesai dan dipush.")).toBe(true);
+      expect(looksLikeCompletionClaim("Patch berhasil diterapkan.")).toBe(true);
+      expect(looksLikeCompletionClaim("Sudah rampung semua.")).toBe(true);
+      expect(looksLikeCompletionClaim("Semuanya beres.")).toBe(true);
+      expect(looksLikeCompletionClaim("Berhasil merilis v3.8.22.")).toBe(true);
+    });
+
+    test("Indonesian evidence keywords suppress missing-verification warning", () => {
+      // "Verifikasi: bun test lulus" should be recognised as evidence so the
+      // completion claim does not trip the missing-verification warning.
+      const text = "Fix sudah diterapkan. Verifikasi: bun test lulus, exit 0.";
+      expect(shouldWarnForMissingVerification(text)).toBe(false);
+    });
+
+    test("negated Indonesian completion is still NOT a claim", () => {
+      expect(looksLikeCompletionClaim("Belum berhasil diterapkan.")).toBe(false);
+      expect(looksLikeCompletionClaim("Tidak rampung karena ada blocker.")).toBe(false);
+    });
+  });
 });

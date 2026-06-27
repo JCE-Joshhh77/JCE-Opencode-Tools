@@ -6,6 +6,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.23] - 2026-06-27
+
+### Added
+- **Sub-agent Mandatory Root Cause Gate**: `oracle`, `android`, and `frontend` sub-agent prompts now enforce the same Root Cause discipline as the main JCE-Worker. Delegated bugfix work cannot guess-fix or propose broad refactors before establishing Root Cause Evidence (symptom, reproduction, exact error, fault location, causal chain, minimal fix plan). Android sub-agent explicitly forbids blanket Jetifier/R8/dependency-style "fixes" without evidence; frontend sub-agent requires screenshot/snapshot evidence.
+- **Shared `withTimeout` helper** (`src/lib/timeout.ts`): single source of truth for active-fire promise timeouts, used by `src/plugin/background/spawner.ts` and `src/mcp/context-keeper.ts`. Supports `envOverride` so runtime users can tune any timeout without recompiling.
+- **Indonesian completion + premature-stop coverage**:
+  - `looksLikeCompletionClaim` now detects past-tense release verbs (released/pushed/tagged/shipped/deployed/patched/applied/landed/published), heading-style `DONE`/`FIXED`/`RELEASED` tokens, and Bahasa Indonesia phrasing (sudah diterapkan, berhasil dirilis, rampung, tuntas, semuanya beres, etc).
+  - `detectPrematureStop` now flags Indonesian early-stop phrases ("sudah, ada yang lain", "tinggal segini dulu", "cukup segitu", "sisanya nanti", "lanjut nanti", "berhenti di sini", "mohon konfirmasi", "kalau ada yang lain bilang ya").
+  - Evidence keywords expanded with `verifikasi`, `lulus`, and `exit 0` so Indonesian-language verification reports correctly suppress the missing-verification warning.
+- **Version sync invariant test** (`tests/unit/version-sync.test.ts`): fast CI guard that fails the build if any of the 9 hardcoded version sites (package.json, install.ps1, install.sh, version.ts, context-keeper.ts, README badge, CHANGELOG heading, ui.test.ts, plugin-workflow-tool.test.ts) drifts from `src/lib/constants.ts` VERSION.
+
+### Fixed
+- **Late-arrival task completion corruption (`manager.completeTask`)**: after `withTimeout` fails a stalled session.prompt and `failTask` sets `status="error"`, the inner SDK promise could eventually resolve and overwrite the task back to `"completed"`, corrupting the active recovery flow. `completeTask` now guards `status === "error" | "completed" | "cancelled"` and silently drops late completions while recording a diagnostic trace event.
+- **TodoState race (`tool.execute.after`)**: when a tool output itself contains TodoWrite-shaped JSON (e.g. a sub-agent collect result), the open-work gate now extracts that fresh state inline and prefers it over the previously cached session state, eliminating a window where a same-message TodoWrite update could be evaluated against stale state.
+
+### Changed
+- Release version synced to `3.8.23` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun run typecheck` exit 0.
+- `bun test tests/unit/timeout.test.ts tests/unit/plugin-guard.test.ts tests/unit/todo-enforcer.test.ts tests/unit/plugin-background.test.ts tests/unit/plugin-agents.test.ts tests/unit/version-sync.test.ts` exit 0 (75 pass / 0 fail; 28 new regression tests added).
+- `bun test tests/unit/plugin-background-recovery.test.ts tests/unit/background-manager.test.ts tests/unit/context-keeper.test.ts tests/unit/plugin-workflow-tool.test.ts tests/unit/audit-fixes.test.ts tests/unit/ui.test.ts` exit 0 (136 pass / 0 fail).
+- `bun ./src/index.ts validate` exit 0 (24 configs valid, 80 skills auto-reachable).
+- `bun ./src/index.ts --version` returns `3.8.23`.
+- Git Bash `bash -n install.sh` exit 0; PowerShell parser check for `install.ps1` exit 0.
+
+---
+
 ## [3.8.22] - 2026-06-26
 
 ### Added

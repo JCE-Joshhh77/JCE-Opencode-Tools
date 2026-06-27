@@ -1,6 +1,7 @@
 import type { BackgroundManager } from "./manager.js";
 import type { LaunchInput, OpenCodeClient, ModelHint } from "./types.js";
 import { applyContextBudget } from "../lib/context-budget.js";
+import { withTimeout } from "../../lib/timeout.js";
 
 /**
  * Default per-prompt inflight timeout for delegated sub-agent sessions.
@@ -26,43 +27,6 @@ const DEFAULT_PROMPT_TIMEOUT_MS = 12 * 60 * 1000;
  * rather than block the dispatch tool indefinitely.
  */
 const DEFAULT_SESSION_CREATE_TIMEOUT_MS = 60_000;
-
-function resolvePositiveEnvMs(name: string, fallback: number): number {
-  const raw = process.env?.[name];
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return parsed;
-}
-
-/**
- * Race a promise against a timeout. On timeout, the original promise is
- * abandoned (we cannot cancel arbitrary SDK calls) but our caller stops
- * waiting and can mark the task failed so recovery proceeds.
- *
- * We intentionally use a plain Promise.race without a `.finally` derivative
- * on the inner promise: chaining `.finally` would keep a pending microtask
- * reference to the never-resolving SDK promise and prevent the test runner
- * (and in production, the Node event loop in some edge cases) from settling
- * cleanly when the inner promise never resolves at all.
- */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
-  return new Promise<T>((resolve, reject) => {
-    // Important: do NOT call timer.unref() here. The whole purpose of the
-    // timeout is to actively fire and reject after timeoutMs. Unref-ing it
-    // would let the runtime exit before the rejection happens whenever the
-    // inner SDK promise never resolves, leaving the await hanging in tests
-    // and silently swallowing the timeout in production.
-    const timer = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (err) => { clearTimeout(timer); reject(err); },
-    );
-  });
-}
 
 export function extractPromptText(result: unknown): string {
   if (typeof result === "string" && result.trim().length > 0) return result;
@@ -93,19 +57,20 @@ function buildPromptRequest(sessionId: string, input: LaunchInput, prompt: strin
 }
 
 function runSessionPrompt(client: OpenCodeClient, sessionId: string, input: LaunchInput, prompt: string, model?: ModelHint): Promise<unknown> {
-  const timeoutMs = resolvePositiveEnvMs("OPENCODE_JCE_BG_PROMPT_TIMEOUT_MS", DEFAULT_PROMPT_TIMEOUT_MS);
+  const envOverride = "OPENCODE_JCE_BG_PROMPT_TIMEOUT_MS";
   const label = `Session prompt for agent ${input.agent}`;
   if (typeof client.session?.prompt === "function") {
-    return withTimeout(client.session.prompt(buildPromptRequest(sessionId, input, prompt, model)), timeoutMs, label);
+    return withTimeout(client.session.prompt(buildPromptRequest(sessionId, input, prompt, model)), DEFAULT_PROMPT_TIMEOUT_MS, label, { envOverride });
   }
   if (typeof client.session?.promptAsync === "function") {
-    return withTimeout(client.session.promptAsync(buildPromptRequest(sessionId, input, prompt, model)), timeoutMs, label);
+    return withTimeout(client.session.promptAsync(buildPromptRequest(sessionId, input, prompt, model)), DEFAULT_PROMPT_TIMEOUT_MS, label, { envOverride });
   }
   if (typeof client.session?.chat === "function") {
     return withTimeout(
       client.session.chat({ params: { id: sessionId }, body: { content: prompt, agent: input.agent } }),
-      timeoutMs,
+      DEFAULT_PROMPT_TIMEOUT_MS,
       label,
+      { envOverride },
     );
   }
   return Promise.reject(new Error("No supported session prompt method found: expected session.prompt, session.promptAsync, or session.chat"));
@@ -118,14 +83,11 @@ export async function launchExistingBackgroundTask(manager: BackgroundManager, c
   if (!manager.canLaunch()) return false;
 
   try {
-    const sessionCreateTimeout = resolvePositiveEnvMs(
-      "OPENCODE_JCE_BG_SESSION_CREATE_TIMEOUT_MS",
-      DEFAULT_SESSION_CREATE_TIMEOUT_MS,
-    );
     const session = await withTimeout(
       client.session.create({ body: { parentID: task.parentSessionId } }),
-      sessionCreateTimeout,
+      DEFAULT_SESSION_CREATE_TIMEOUT_MS,
       `Session create for agent ${task.agent}`,
+      { envOverride: "OPENCODE_JCE_BG_SESSION_CREATE_TIMEOUT_MS" },
     );
 
     const sessionId = session?.id ?? session?.data?.id;
