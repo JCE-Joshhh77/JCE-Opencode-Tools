@@ -189,6 +189,58 @@ describe("plugin agents", () => {
     expect(prompt).toContain("Delegation Quality");
   });
 
+  test("jce-worker prompt enforces Orchestration Enforcement v4 hard rules", () => {
+    const agents = buildAgentConfigs();
+    const prompt = agents["jce-worker"].systemPrompt;
+
+    // Top-level section header
+    expect(prompt).toContain("Orchestration Enforcement v4 (Hard Rules)");
+
+    // 1. IntentGate Output mandatory format
+    expect(prompt).toContain("IntentGate Output");
+    expect(prompt).toContain("Intent: <category> | Risk: low|med|high");
+    expect(prompt).toContain("Parallelizable: yes|no");
+
+    // 2. Parallel Delegation Audit
+    expect(prompt).toContain("Parallel Delegation Audit");
+    expect(prompt).toContain("MUST be dispatched in a single batched tool call");
+    expect(prompt).toContain("Sequential delegation due to:");
+
+    // 3. Skill Loading Fallback with explicit triggers
+    expect(prompt).toContain("Skill Loading Fallback");
+    expect(prompt).toContain("orchestration-patterns");
+    expect(prompt).toContain("failure-recovery");
+    expect(prompt).toContain("release-engineering");
+    expect(prompt).toContain("git-guardrails");
+    expect(prompt).toContain("incident-response");
+
+    // 4. Failure Recovery Counter — explicit attempt protocol
+    expect(prompt).toContain("Failure Recovery Counter");
+    expect(prompt).toContain("attempt 1:");
+    expect(prompt).toContain("attempt 2:");
+    expect(prompt).toContain("attempt 3:");
+    expect(prompt).toContain("Never silently exceed 3 failed attempts");
+
+    // 5. Anti-Duplication Enforcement with internal set
+    expect(prompt).toContain("Anti-Duplication Enforcement");
+    expect(prompt).toContain("already delegated");
+
+    // 6. Wisdom Loop Closure — calls to context tools
+    expect(prompt).toContain("Wisdom Loop Closure");
+    expect(prompt).toContain("context_update");
+    expect(prompt).toContain("context_index_update");
+    expect(prompt).toContain("context_checkpoint");
+
+    // 7. Meta-Cognition Gate explicit plan line
+    expect(prompt).toContain("Meta-Cognition Gate (visible intent line)");
+    expect(prompt).toContain("Task: <X> | Risk: <Y> | AC: <Z> | Evidence: <cmd>");
+
+    // 8. Final Response Contract hard requirement
+    expect(prompt).toContain("Final Response Contract (hard-required when work was done)");
+    expect(prompt).toContain("Verification Evidence: explicit command(s)");
+    expect(prompt).toContain("Not verified because:");
+  });
+
   test("jce-worker prompt owns advanced frontend work as single front door", () => {
     const agents = buildAgentConfigs();
     const prompt = agents["jce-worker"].systemPrompt;

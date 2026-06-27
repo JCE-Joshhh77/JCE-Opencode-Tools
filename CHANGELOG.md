@@ -6,6 +6,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.24] - 2026-06-27
+
+### Added
+- **Orchestration Enforcement v4 (JCE-Worker hard rules)**: jce-worker prompt now ships eight auditable hard rules to close gaps in soft orchestration policy:
+  1. **IntentGate Output** — multi-step / error / release / refactor / audit messages must emit a one-line `Intent | Risk | Specialists | Parallelizable` classification.
+  2. **Parallel Delegation Audit** — 2+ clearly independent units MUST be dispatched in one batched tool call; sequential delegation must declare the reason in final Risks.
+  3. **Skill Loading Fallback** — explicit skill triggers (`orchestration-patterns`, `failure-recovery`, `release-engineering`, `git-guardrails`, `incident-response`, etc) when plugin auto-injection misses.
+  4. **Failure Recovery Counter** — explicit attempt 1/2/3 protocol; never silently exceed 3 failed focused fixes; attempt 3 forces oracle delegation or user blocker report.
+  5. **Anti-Duplication Enforcement** — internal "already delegated" set per turn; forbids re-running local search/read that a sub-agent already covered.
+  6. **Wisdom Loop Closure** — mandatory `context_update` / `context_index_update` / `context_checkpoint` calls at task end for substantive work.
+  7. **Meta-Cognition Gate** — explicit "Task | Risk | AC | Evidence" plan line before edits/multi-tool/delegations.
+  8. **Final Response Contract (hard-required)** — when work was done this turn, final reply MUST include What changed / Verification Evidence (explicit cmd+result, or "Not verified because: …") / Risks / Next step.
+- **Regression test** `jce-worker prompt enforces Orchestration Enforcement v4 hard rules` in `tests/unit/plugin-agents.test.ts` covering all 8 rules with explicit string anchors.
+
+### Changed
+- Release version synced to `3.8.24` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun run typecheck` exit 0.
+- `bun test tests/unit/plugin-agents.test.ts tests/unit/orchestration-intelligence-upgrades.test.ts tests/unit/plugin-workflow-tool.test.ts tests/unit/ui.test.ts tests/unit/plugin-integration.test.ts tests/unit/plugin-settings.test.ts tests/unit/plugin-tools.test.ts` exit 0 (146 pass / 0 fail).
+- `bun test` (full suite) exit 0 (1343 pass / 0 fail across 116 files).
+- `bun audit` no vulnerabilities.
+- `bun ./src/index.ts validate` exit 0 (24 configs valid, 80 skills auto-reachable).
+- Git Bash `bash -n install.sh` exit 0; PowerShell parser check for `install.ps1` exit 0.
+
+### Notes (user-environment fix, outside repo)
+- Patched user `~/.config/opencode/opencode.json` to resolve recurring 30s MCP timeouts on `github-search`, `memory`, `playwright`, `sequential-thinking`: swapped `npx` → `bunx` (faster Windows cold-start) and set explicit `timeout: 120000`. Also stripped a UTF-8 BOM that was blocking `validate`. Backup saved as `opencode.json.bak-<ts>`.
+
+---
+
 ## [3.8.23] - 2026-06-27
 
 ### Added
