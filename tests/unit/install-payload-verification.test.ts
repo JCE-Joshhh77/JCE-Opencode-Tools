@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CLI_PAYLOAD_MANIFEST_PATH, getRequiredCliPayloadFiles } from "../../src/lib/cli-payload.ts";
 
@@ -38,15 +38,17 @@ describe("installer CLI payload verification", () => {
   });
 
   test("payload includes generated agent prompts so updated users receive prompt changes", () => {
+    // Only assert files that are shipped in the committed cli-payload + repo tree.
+    // WIP paths (why.ts, chinese-translator, slash-model-command) stay out until those features land.
     expect(payloadPaths).toContain("src/commands/droid.ts");
-    expect(payloadPaths).toContain("src/commands/why.ts");
     expect(payloadPaths).toContain("src/commands/factory.ts");
     expect(payloadPaths).toContain("src/lib/factory-droid.ts");
     expect(payloadPaths).toContain("src/plugin/config.ts");
     expect(payloadPaths).toContain("src/plugin/agents/jce-worker.ts");
-    expect(payloadPaths).toContain("src/plugin/lib/chinese-translator.ts");
-    expect(payloadPaths).toContain("src/plugin/lib/slash-model-command.ts");
     expect(payloadPaths).toContain("config/AGENTS.md");
+    for (const file of payloadPaths) {
+      expect(existsSync(join(root, file)), `payload entry missing from repo: ${file}`).toBe(true);
+    }
   });
 
   test("PowerShell installer verifies Android advanced modules before swapping CLI", () => {

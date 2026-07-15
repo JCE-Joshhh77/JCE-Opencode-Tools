@@ -6,6 +6,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.27] - 2026-07-15
+
+### Fixed
+- **CI `test` job**: `install-payload-verification` no longer asserts unshipped WIP paths (`src/commands/why.ts`, `chinese-translator.ts`, `slash-model-command.ts`) that were only present in a dirty local tree. Payload assertions now match the committed `config/cli-payload.txt` and verify every listed file exists in the repo.
+- Restored committed `config/cli-payload.txt` (removed local WIP entries that were never released).
+
+### Changed
+- Release version synced to `3.8.27` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun test tests/unit/install-payload-verification.test.ts tests/unit/version-sync.test.ts` exit 0.
+- `bun test` (full suite) exit 0.
+
+---
+
 ## [3.8.26] - 2026-07-15
 
 ### Fixed
