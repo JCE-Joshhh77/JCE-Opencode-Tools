@@ -50,6 +50,15 @@ describe("plugin skill loader", () => {
     expect(skills).toContain("grill-with-docs");
   });
 
+  test("routes website pentest and OWASP audit prompts to web-security-audit", () => {
+    const skills = determineSkillsForMessage(
+      "Lakukan penetration test dan OWASP security audit website, map attack surface XSS SQLi IDOR SSRF",
+    );
+
+    expect(skills).toContain("web-security-audit");
+    expect(matchSkillBundles("web pentest OWASP attack surface audit").some((b) => b.id === "web-pentest")).toBe(true);
+  });
+
   test("does not route generic priority wording to triage", () => {
     const skills = determineSkillsForMessage("Update priority terbaik saja for workflow skills");
 

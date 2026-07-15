@@ -6,6 +6,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.25] - 2026-07-15
+
+### Added
+- **`web-security-audit` skill** (`config/skills/web-security-audit/SKILL.md`): framework-agnostic website security audit and **authorized** pentest methodology.
+  - Dual lens: white-hat reporting (scope, evidence, remediation, retest) + attacker mindset (abuse chains **in-scope only**).
+  - Hard gate: written authorization / RoE / bug-bounty scope required before any probe.
+  - Phases: attack-surface map → baseline hardening (headers/cookies/CORS/CSP/secrets) → OWASP-class deep checks (access control, auth/session, injection, XSS, SSRF, files, business logic, API/GraphQL) → stack adapters (Next/SPA/Laravel/Django/Rails/Express/PHP/WordPress/GraphQL) → severity model + report template.
+  - Explicit anti-crime constraints: no unauthorized targets, no weaponized malware kits, minimal proof without real data theft.
+- **Skill routing for web pentest/audit**:
+  - `SKILL_NAME_TO_FILE` / canonical prompt / preferred agent (`oracle`) for `web-security-audit`.
+  - Context detector for pentest, OWASP, attack surface, bug bounty, XSS/SQLi/IDOR/SSRF, etc.
+  - Bundle `web-pentest` → `web-security-audit` + `security` + `auth-identity`.
+  - Preference over generic `security` for web audit/pentest prompts (skill-loader scoring + jce-intelligence conflict resolution).
+- **Workflow template update**: `security-audit` orchestration stages now use `web-security-audit` (scope-first surface map, findings with attacker path, remediate, re-verify).
+- **Regression test**: routes website pentest / OWASP audit prompts to `web-security-audit` and matches `web-pentest` bundle (`tests/unit/plugin-skill-loader.test.ts`).
+
+### Changed
+- Release version synced to `3.8.25` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun run typecheck` exit 0.
+- `bun test tests/unit/plugin-skill-loader.test.ts tests/unit/skill-security.test.ts tests/unit/version-sync.test.ts tests/unit/ui.test.ts tests/unit/plugin-workflow-tool.test.ts tests/unit/config.test.ts tests/unit/plugin-skill-sync.test.ts` exit 0.
+- `bun test` (full suite) exit 0.
+- `bun ./src/index.ts validate` exit 0 (24 configs valid, 81 skills auto-reachable).
+- `bun ./src/index.ts --version` returns `3.8.25`.
+- Skill security scanner: `web-security-audit` risk 0 (no false-positive block).
+
+---
+
 ## [3.8.24] - 2026-06-27
 
 ### Added

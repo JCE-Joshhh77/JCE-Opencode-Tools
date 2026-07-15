@@ -70,6 +70,7 @@ export const SKILL_NAME_TO_FILE: Record<string, string> = {
   // Security & Compliance
   "auth-identity": "auth-identity.md",
   "compliance-governance": "compliance-governance.md",
+  "web-security-audit": "web-security-audit.md",
 
   // AI & Specialized
   "ai-llm-engineering": "ai-llm-engineering.md",
@@ -246,6 +247,7 @@ export const AUTO_ROUTE_CANONICAL_PROMPTS: Record<string, string> = {
   "rust": "Fix Rust async ownership bug in .rs module",
   "scala": "Fix Scala Akka Cats service bug in .scala file",
   "security": "Review CORS CSP XSS injection vulnerability and input validation",
+  "web-security-audit": "Authorized website pentest OWASP attack surface XSS SQLi IDOR SSRF audit report",
   "shell-bash": "Fix Bash shell script Makefile automation issue in .sh file",
   "software-engineering": "Refactor code safely with tests and debugging",
   "spring-boot": "Fix Spring Boot JPA service bug in Java app",
@@ -301,6 +303,7 @@ export const SKILL_PREFERRED_AGENTS: Record<string, string[]> = {
   "advanced-patterns": ["oracle"],
   "verification-discipline": ["oracle"],
   "developer-tooling": ["oracle"],
+  "web-security-audit": ["oracle"],
   "human-ui-design": ["frontend"],
   "visual-qa-rubric": ["frontend"],
   "ui-pattern-library": ["frontend"],
@@ -384,6 +387,7 @@ function detectContextSkills(text: string): string[] {
   if (/\b(docker|ci\/cd|deploy|kubernetes|helm|terraform|pulumi|github\s*actions?|gitlab\s*ci)\b/i.test(lower)) skills.push("devops");
   if (/\b(sql|query|migration|schema|database|postgres|mysql|sqlite|prisma|drizzle|knex)\b/i.test(lower)) skills.push("sql-database");
   if (/\b(security|vulnerability|cors|csrf|xss|injection|sanitiz|escape)\b/i.test(lower) && !/\b(oauth|jwt|rbac)\b/i.test(lower)) skills.push("security");
+  if (/\b(web\s*security|website\s*security|web\s*audit|security\s*audit|pen\s*test|penetration\s*test|pentest|bug\s*bounty|attack\s*surface|red\s*team|owasp|sql\s*injection|sqli|xss|idor|ssrf|rce|lfi|open\s*redirect|vuln(?:erability)?\s*assessment)\b/i.test(lower)) skills.push("web-security-audit");
   if (/\b(tailwind|@apply|utility.?first|tw-)\b/i.test(lower)) skills.push("tailwind");
   if (/\b(ux|dashboard|landing\s*page|figma|wireframe|mockup|visual|generated\s*by\s*ai|generated\s*ai|ai-looking|human.?crafted|anti.?ai|ui\s*polish|design\s*review)\b/i.test(lower)) skills.push("human-ui-design");
   if (/\b(pattern|catalog|katalog|dashboard|landing\s*page|admin|saas|fintech|billing|ecommerce|marketplace|developer\s*tool|healthcare|settings|onboarding|data\s*dashboard|form|table)\b/i.test(lower)) skills.push("ui-pattern-library");
@@ -487,6 +491,7 @@ function buildSkillRegistry(): Record<string, SkillRegistryEntry> {
   registry["nextjs"].preferredOver = ["react", "frontend"];
   registry["auth-identity"].preferredOver = ["security"];
   registry["android-security"].preferredOver = ["security"];
+  registry["web-security-audit"].preferredOver = ["security"];
   registry["api-design-patterns"].preferredOver = ["architecture"];
   registry["platform-engineering"].preferredOver = ["devops"];
   registry["reliability-engineering"].preferredOver = ["observability"];
@@ -524,6 +529,7 @@ export const SKILL_BUNDLES: SkillBundle[] = [
   { id: "delegation-review", skills: ["delegation-quality", "verification-discipline", "codebase-intelligence"], triggers: /\b(review delegated|delegation review|sub-?agent (output|review)|verify delegated)\b/i },
   { id: "ui-polish", skills: ["human-ui-design", "visual-qa-rubric", "ui-pattern-library"], triggers: /\b(ui polish|design review|visual qa|dashboard polish|make it look|not look(ing)? (ai|generated))\b/i },
   { id: "api-contract", skills: ["api-design-patterns", "security", "architecture"], triggers: /\b(rest api|graphql|openapi|endpoint contract|api versioning|api pagination)\b/i },
+  { id: "web-pentest", skills: ["web-security-audit", "security", "auth-identity"], triggers: /\b(web\s*(pentest|pen\s*test|security\s*audit)|penetration\s*test|bug\s*bounty|owasp\s*audit|attack\s*surface)\b/i },
   { id: "release-prep", skills: ["release-engineering", "verification-discipline", "git-guardrails"], triggers: /\b(prepare release|version sync|changelog|tag release|release readiness)\b/i },
   // Advanced orchestration bundles
   { id: "complex-migration", skills: ["orchestration-patterns", "estimation-planning", "code-archaeology"], triggers: /\b(complex migration|large refactor|multi-?phase|migrate across|10\+? files)\b/i },
@@ -651,6 +657,9 @@ export function scoreSkillCandidates(text: string, agent?: string): SkillScoreBr
     }
     if (skill === "security" && /\b(oauth|oidc|jwt|rbac|login|auth)\b/i.test(lower) && candidates.has("auth-identity")) {
       contributions.push({ source: "negative", score: -30, reason: "auth-heavy prompt should prefer auth-identity" });
+    }
+    if (skill === "security" && /\b(pentest|pen\s*test|penetration\s*test|bug\s*bounty|attack\s*surface|owasp|web\s*security\s*audit)\b/i.test(lower) && candidates.has("web-security-audit")) {
+      contributions.push({ source: "negative", score: -28, reason: "web pentest/audit prompt should prefer web-security-audit" });
     }
     if (skill === "human-ui-design" && /\bbackend|api|endpoint\b/i.test(lower) && !/\b(ui|ux|dashboard|visual|figma|frontend)\b/i.test(lower)) {
       contributions.push({ source: "negative", score: -45, reason: "backend wording alone should not trigger visual design skill" });

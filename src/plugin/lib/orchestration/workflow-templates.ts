@@ -89,10 +89,10 @@ const TEMPLATES: TemplateBlueprint[] = [
     triggers: /\b(security\s+(audit|review)|audit\s+(the\s+)?(security|auth|api)|pen\s*test|vulnerabilit(y|ies)\s+scan|threat\s+model)\b/i,
     minComplexity: 3,
     steps: [
-      { key: "surface", type: "research", title: "Map attack surface", agent: "explorer", dependsOn: [], skills: ["security", "codebase-intelligence"], promptHint: "Identify entry points, auth boundaries, input handling, secrets, and trust boundaries." },
-      { key: "findings", type: "review", title: "Catalog findings by severity", agent: "oracle", dependsOn: ["surface"], skills: ["security"], promptHint: "List findings ordered by severity with file/line refs. Separate confirmed from suspected." },
-      { key: "remediate", type: "code", title: "Remediate high-severity findings", agent: "self", dependsOn: ["findings"], skills: ["security", "software-engineering"], promptHint: "Fix highest-severity issues first with secure patterns. Do not introduce regressions." },
-      { key: "verify", type: "verify", title: "Re-verify after fixes", agent: "self", dependsOn: ["remediate"], skills: ["verification-discipline", "security"], promptHint: "Confirm fixes hold, add regression tests, and re-check the surface for the patched class of issue." },
+      { key: "surface", type: "research", title: "Map attack surface", agent: "explorer", dependsOn: [], skills: ["web-security-audit", "codebase-intelligence"], promptHint: "Confirm authorization/scope first. Identify entry points, auth boundaries, input handling, secrets, and trust boundaries." },
+      { key: "findings", type: "review", title: "Catalog findings by severity", agent: "oracle", dependsOn: ["surface"], skills: ["web-security-audit", "security"], promptHint: "List findings ordered by severity with file/line refs, attacker path, and remediations. Separate confirmed from suspected." },
+      { key: "remediate", type: "code", title: "Remediate high-severity findings", agent: "self", dependsOn: ["findings"], skills: ["web-security-audit", "software-engineering"], promptHint: "Fix highest-severity issues first with secure patterns. Do not introduce regressions." },
+      { key: "verify", type: "verify", title: "Re-verify after fixes", agent: "self", dependsOn: ["remediate"], skills: ["verification-discipline", "web-security-audit"], promptHint: "Confirm fixes hold, add regression tests, and re-check the surface for the patched class of issue." },
     ],
   },
   {

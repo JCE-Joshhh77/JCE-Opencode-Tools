@@ -141,6 +141,7 @@ export function resolveSkillConflicts(skills: string[], max = 4): SkillConflictR
     if (skill === "php" && has("laravel")) { suppress(skill, "Laravel skill is more specific than generic PHP."); continue; }
     if (skill === "java-kotlin" && has("android-kotlin")) { suppress(skill, "Android Kotlin skill is more specific than generic JVM guidance."); continue; }
     if (skill === "security" && has("android-security")) { suppress(skill, "Android security skill is more specific for Android surfaces."); continue; }
+    if (skill === "security" && has("web-security-audit")) { suppress(skill, "Web security audit skill is more specific for website pentest/audit."); continue; }
     selected.push(skill);
   }
   const rank = (skill: string) => ({ framework: 0, domain: 1, language: 2, workflow: 3, generic: 4 }[classifySkill(skill)] ?? 9);
@@ -189,6 +190,7 @@ export function resolveSkillConflictsV2(skills: string[], context: { intent?: st
     if (fileText.includes(skill.replace("-", "")) || fileText.includes(skill)) value += 20;
     if (skill === "typescript" && /(\.ts|\.tsx|package\.json)/.test(fileText)) value += 12;
     if (skill === "security" && /security|auth|vulnerab|audit/.test(intent)) value += 15;
+    if (skill === "web-security-audit" && /security|auth|vulnerab|audit|pentest|owasp|attack surface|bug bounty/.test(intent)) value += 18;
     if (skill === "auth-identity" && /oauth|jwt|rbac|session|login|auth/.test(intent)) value += 20;
     if (skill === "api-design-patterns" && /api|endpoint|route|openapi|graphql/.test(intent)) value += 20;
     if (skill === "verification-discipline" && /test|verify|release|fix|bug/.test(intent)) value += 10;
@@ -198,6 +200,7 @@ export function resolveSkillConflictsV2(skills: string[], context: { intent?: st
     if (skill === "frontend" && ["react", "nextjs", "vue", "svelte", "angular"].some(has)) { suppress(skill, "Specific frontend framework skill outranks generic frontend.", "conflict"); return false; }
     if (skill === "react" && has("nextjs")) { suppress(skill, "Next.js skill covers React guidance for this route.", "conflict"); return false; }
     if (skill === "security" && has("auth-identity") && /oauth|jwt|rbac|session|login|auth/.test(intent)) { suppress(skill, "Auth identity is more specific for authentication work.", "conflict"); return false; }
+    if (skill === "security" && has("web-security-audit") && /pentest|pen test|penetration|bug bounty|attack surface|owasp|web audit|web security/.test(intent)) { suppress(skill, "Web security audit is more specific for website pentest/audit.", "conflict"); return false; }
     if (skill === "architecture" && has("api-design-patterns") && /api|endpoint|openapi|graphql/.test(intent)) { suppress(skill, "API design patterns are more specific than generic architecture for API work.", "conflict"); return false; }
     if (skill === "devops" && has("platform-engineering") && /kubernetes|helm|gitops|terraform|pulumi/.test(intent)) { suppress(skill, "Platform engineering is more specific for platform/IaC work.", "conflict"); return false; }
     if (skill === "observability" && has("reliability-engineering") && /sre|incident|load|chaos|error budget/.test(intent)) { suppress(skill, "Reliability engineering is more specific for SRE/resilience work.", "conflict"); return false; }
