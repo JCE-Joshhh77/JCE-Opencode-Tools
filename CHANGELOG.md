@@ -6,6 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.26] - 2026-07-15
+
+### Fixed
+- **Windows installer CLI install failure (MAX_PATH)**: `install.ps1` / `install.sh` no longer recursive-copy `node_modules` into `~/.config/opencode/cli`. Deep `@babel` trees from `bun install` exceeded Windows path limits (`Could not find a part of the path ... identifier.js.map`), leaving staging at `.cli-install-new` without promoting to `cli/`, so context-keeper MCP and Token Savings TUI registration were skipped.
+  - Copy source/config/schemas only into staging.
+  - Run `bun install --ignore-scripts` **inside** the staging directory (same pattern as `opencode-jce update`).
+  - Require `node_modules` present before rename/swap to `cli/`.
+- Installer skill count banner **80 → 81** (matches `web-security-audit` skill).
+
+### Changed
+- Release version synced to `3.8.26` across package metadata, installers, constants, MCP version, config version, README badge, changelog, and version tests.
+
+### Verification
+- `bun run typecheck` exit 0.
+- `bun test tests/unit/install-payload-verification.test.ts tests/unit/version-sync.test.ts tests/unit/ui.test.ts` exit 0.
+- `bun test` (full suite) exit 0.
+- `bun ./src/index.ts --version` returns `3.8.26`.
+
+---
+
 ## [3.8.25] - 2026-07-15
 
 ### Added

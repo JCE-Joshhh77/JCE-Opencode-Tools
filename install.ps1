@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.25"
+$Version = "3.8.26"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -503,17 +503,6 @@ function Deploy-Config {
     # Install opencode-jce CLI globally
     Write-Info "Installing opencode-jce CLI..."
     try {
-        Push-Location $TempDir
-        $prevErrorAction2 = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        bun install --ignore-scripts 2>$null
-        $bunInstallExit = $LASTEXITCODE
-        $ErrorActionPreference = $prevErrorAction2
-        Pop-Location
-        if ($bunInstallExit -ne 0) {
-            throw "bun install --ignore-scripts failed while preparing opencode-jce CLI dependencies"
-        }
-
         # Create .cmd wrapper in bun bin directory
         $bunPath = Join-Path $env:USERPROFILE ".bun\bin"
         if (!(Test-Path $bunPath)) { New-Item -ItemType Directory -Path $bunPath -Force | Out-Null }
@@ -531,7 +520,9 @@ function Deploy-Config {
         $stagingDir = Join-Path $ConfigDir ".cli-install-new"
         $backupDir = Join-Path $ConfigDir ".cli-install-backup"
         
-        # Copy CLI source to staging first; only swap after verification succeeds.
+        # Copy CLI source only (no node_modules). Recursive Copy-Item of node_modules
+        # fails on Windows MAX_PATH with deep @babel nested trees from bun install.
+        # Install deps in staging with bun instead (junctions + short paths).
         Remove-Item $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item $backupDir -Recurse -Force -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
@@ -542,8 +533,24 @@ function Deploy-Config {
         if (Test-Path $scriptsDir) { Copy-Item $scriptsDir (Join-Path $stagingDir "scripts") -Recurse }
         Copy-Item (Join-Path $TempDir "package.json") $stagingDir
         Copy-Item (Join-Path $TempDir "tsconfig.json") $stagingDir
-        Copy-Item (Join-Path $TempDir "node_modules") (Join-Path $stagingDir "node_modules") -Recurse
+        foreach ($lockName in @("bun.lock", "bun.lockb", "package-lock.json")) {
+            $lockSrc = Join-Path $TempDir $lockName
+            if (Test-Path $lockSrc) { Copy-Item $lockSrc $stagingDir }
+        }
         Test-JceCliPayload $stagingDir
+        Push-Location $stagingDir
+        $prevErrorAction2 = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        bun install --ignore-scripts 2>$null
+        $bunInstallExit = $LASTEXITCODE
+        $ErrorActionPreference = $prevErrorAction2
+        Pop-Location
+        if ($bunInstallExit -ne 0) {
+            throw "bun install --ignore-scripts failed in CLI staging directory"
+        }
+        if (!(Test-Path (Join-Path $stagingDir "node_modules"))) {
+            throw "CLI staging missing node_modules after bun install"
+        }
         if (Test-Path $installDir) { Rename-Item $installDir $backupDir -Force }
         try {
             Rename-Item $stagingDir $installDir -Force
@@ -1101,7 +1108,7 @@ function Write-Summary {
 
     Write-Host "  [OK] 42 AI Agents   - configured" -ForegroundColor Green
     Write-Host "  [OK] AGENTS.md      - global AI instructions" -ForegroundColor Green
-    Write-Host "  [OK] 80 Skills      - on-demand workflows" -ForegroundColor Green
+    Write-Host "  [OK] 81 Skills      - on-demand workflows" -ForegroundColor Green
     Write-Host "  [OK] 19 Profiles    - ready" -ForegroundColor Green
     Write-Host "  [OK] 6 MCP Tools    - cached & ready" -ForegroundColor Green
     if ($LspInstalled -gt 0) {

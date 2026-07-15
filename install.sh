@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.25"
+VERSION="3.8.26"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -463,11 +463,9 @@ deploy_config() {
 
     # Install opencode-jce CLI globally
     info "Installing opencode-jce CLI..."
-    if ! (cd "$TEMP_DIR" && bun install --ignore-scripts) 2>/dev/null; then
-        error "bun install --ignore-scripts failed while preparing opencode-jce CLI dependencies"
-    fi
 
-    # Copy CLI source to persistent location (same as PS1 installer)
+    # Copy CLI source only (no node_modules). Recursive copy of node_modules can fail
+    # on Windows MAX_PATH and wastes I/O. Install deps in staging with bun instead.
     local install_dir="${CONFIG_DIR}/cli"
     local staging_dir="${CONFIG_DIR}/.cli-install-new"
     local backup_dir="${CONFIG_DIR}/.cli-install-backup"
@@ -479,8 +477,16 @@ deploy_config() {
     [ -d "$TEMP_DIR/scripts" ] && cp -r "$TEMP_DIR/scripts" "$staging_dir/scripts"
     cp "$TEMP_DIR/package.json" "$staging_dir/"
     cp "$TEMP_DIR/tsconfig.json" "$staging_dir/"
-    cp -r "$TEMP_DIR/node_modules" "$staging_dir/node_modules"
+    for lock_name in bun.lock bun.lockb package-lock.json; do
+        [ -f "$TEMP_DIR/$lock_name" ] && cp "$TEMP_DIR/$lock_name" "$staging_dir/"
+    done
     verify_jce_cli_payload "$staging_dir"
+    if ! (cd "$staging_dir" && bun install --ignore-scripts) 2>/dev/null; then
+        error "bun install --ignore-scripts failed in CLI staging directory"
+    fi
+    if [ ! -d "$staging_dir/node_modules" ]; then
+        error "CLI staging missing node_modules after bun install"
+    fi
     if [ -d "$install_dir" ]; then
         mv "$install_dir" "$backup_dir"
     fi
@@ -1406,7 +1412,7 @@ print_summary() {
 
     echo "║ ✅ 42 AI Agents   — configured           ║"
     echo "║ ✅ AGENTS.md      — global AI instructions ║"
-    echo "║ ✅ 80 Skills      — on-demand workflows  ║"
+    echo "║ ✅ 81 Skills      — on-demand workflows  ║"
     echo "║ ✅ 19 Profiles    — ready                ║"
     echo "║ ✅ 6 MCP Servers  — cached & ready        ║"
     if [ "$LSP_INSTALLED" -gt 0 ]; then

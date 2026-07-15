@@ -39,10 +39,13 @@ describe("installer CLI payload verification", () => {
 
   test("payload includes generated agent prompts so updated users receive prompt changes", () => {
     expect(payloadPaths).toContain("src/commands/droid.ts");
+    expect(payloadPaths).toContain("src/commands/why.ts");
     expect(payloadPaths).toContain("src/commands/factory.ts");
     expect(payloadPaths).toContain("src/lib/factory-droid.ts");
     expect(payloadPaths).toContain("src/plugin/config.ts");
     expect(payloadPaths).toContain("src/plugin/agents/jce-worker.ts");
+    expect(payloadPaths).toContain("src/plugin/lib/chinese-translator.ts");
+    expect(payloadPaths).toContain("src/plugin/lib/slash-model-command.ts");
     expect(payloadPaths).toContain("config/AGENTS.md");
   });
 
@@ -59,6 +62,10 @@ describe("installer CLI payload verification", () => {
     expect(text).toContain('config\\cli-payload.txt');
     expect(text).toContain('Get-Content $manifest');
     expect(text).toContain('Copy-Item (Join-Path $TempDir "config") (Join-Path $stagingDir "config") -Recurse');
+    // Windows MAX_PATH: install deps in staging; never recursive-copy node_modules.
+    expect(text).not.toContain('Copy-Item (Join-Path $TempDir "node_modules")');
+    expect(text).toContain('bun install --ignore-scripts');
+    expect(text).toContain('Push-Location $stagingDir');
   });
 
   test("Unix installer verifies Android advanced modules before swapping CLI", () => {
@@ -74,6 +81,9 @@ describe("installer CLI payload verification", () => {
     expect(text).toContain('config/cli-payload.txt');
     expect(text).toContain('done < "$manifest"');
     expect(text).toContain('cp -r "$TEMP_DIR/config" "$staging_dir/config"');
+    // Match PowerShell: install deps in staging, do not cp -r node_modules.
+    expect(text).not.toContain('cp -r "$TEMP_DIR/node_modules"');
+    expect(text).toContain('cd "$staging_dir" && bun install --ignore-scripts');
   });
 
   test("Unix installer configures Fish PATH for Bun global binaries", () => {
