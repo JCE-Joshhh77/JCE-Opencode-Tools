@@ -23,6 +23,7 @@ describe("shouldAutoActivateFromUserMessage", () => {
       "please refactor this module?",
       "bisa tolong perbaiki bug ini?",
       "tolong buatkan fitur login?",
+      "audit plugin ini?",
     ])("activates: %s", (msg) => {
       expect(shouldAutoActivateFromUserMessage(msg)).toBe(true);
     });

@@ -21,7 +21,7 @@ import { getTopFacts, getActiveConstraints } from "./shared-memory.js";
 import { matchWorkflowTemplate, instantiateWorkflowTemplate } from "./workflow-templates.js";
 import { assessTaskComplexity } from "./intelligence.js";
 
-const IMPLEMENTATION_SPLIT_VERBS = /\b(?:add|implement|create|build|update|refactor|extract|wire|support|improve)\b/i;
+const IMPLEMENTATION_SPLIT_VERBS = /\b(?:add|implement|create|build|update|refactor|extract|wire|support|improve|fix|audit|review|perbaiki|tambah(?:kan)?|buat(?:kan)?)\b/i;
 const SEQUENCE_SIGNALS = /\b(?:first|then|after|before|finally|depends on|dependency|wire into|followed by)\b/i;
 
 function normalizeUnitLabel(text: string): string {
@@ -66,7 +66,7 @@ function detectIndependentUnits(goal: string): { units: string[]; reason: string
   if (bulletLines.length >= 2) return { units: Array.from(new Set(bulletLines)), reason: "Explicit list-like units detected." };
 
   if (!IMPLEMENTATION_SPLIT_VERBS.test(goal)) return { units: [], reason: "No strong implementation split verb detected." };
-  const match = goal.match(/\b(?:add|implement|create|build|update|refactor|extract|wire|support|improve)\b\s+(.+)/i);
+  const match = goal.match(/\b(?:add|implement|create|build|update|refactor|extract|wire|support|improve|fix|audit|review|perbaiki|tambah(?:kan)?|buat(?:kan)?)\b\s+(.+)/i);
   const tail = match?.[1]?.trim() ?? "";
   if (!tail) return { units: [], reason: "No tail segment found after implementation verb." };
   if (SEQUENCE_SIGNALS.test(tail)) return { units: [], reason: "Tail contains sequential dependency signals; keep linear plan." };
@@ -365,7 +365,7 @@ export class AdaptivePlanner {
       }
     }
 
-    if (intent.intent === "feature" || intent.intent === "general" || intent.intent === "refactor") {
+    if (intent.intent === "feature" || intent.intent === "general" || intent.intent === "refactor" || intent.intent === "bugfix" || intent.intent === "review") {
       const detection = detectIndependentUnits(goal);
       if (detection.units.length >= 2) {
         return buildParallelImplementationPlan({ intent, goal, facts, constraints, objective, units: detection.units });
@@ -399,7 +399,7 @@ export class AdaptivePlanner {
           plannerMode: objective.mode,
           plannerReason: objective.reason,
           parallelization: "linear-fallback",
-          parallelFallbackReason: (intent.intent === "feature" || intent.intent === "general" || intent.intent === "refactor") ? detectIndependentUnits(goal).reason : "Intent not eligible for parallel fan-out.",
+          parallelFallbackReason: (intent.intent === "feature" || intent.intent === "general" || intent.intent === "refactor" || intent.intent === "bugfix" || intent.intent === "review") ? detectIndependentUnits(goal).reason : "Intent not eligible for parallel fan-out.",
         },
       });
     }

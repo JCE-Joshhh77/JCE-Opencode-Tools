@@ -6,6 +6,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.28] - 2026-09-25
+
+### Fixed
+- Completion gates now see passing `bun test` / typecheck output. Auto-captured command evidence is attached to the active workflow, and an empty workflow no longer passes without a passing command.
+- First-turn completion claims are gated. The workflow-runtime race that skipped the gate on the same tool that created the workflow is gone.
+- Dispatch uses the scored agent hint without an unchecked cast. Workflow intents now include refactor, release, research, config, and docs.
+- Indonesian intent keywords (`perbaiki`, `teliti`, `rilis`, `apa yang kurang`) score correctly. Bare imperative questions (`audit X?`) auto-activate; advice questions still do not.
+- Command evidence no longer treats the word `error` inside a passing log as failure. Failure follows a fail count, `error TS`, or a non-zero exit code.
+- Bash output is no longer aggressively compressed, so pass/fail lines stay intact for the evidence parser.
+- Skill injection and auto-dispatch are bounded by an 8s hook timeout (`JCE_HOOK_TIMEOUT_MS`).
+
+### Changed
+- Parallel plan fan-out now includes bugfix and review, not only feature/refactor/general.
+- Explorer sub-agents receive codebase skills. Main skill injection cap is 4, matching the router cap.
+- JCE-Worker prompt drops duplicated verification/review/release/anti-pattern prose. Contract headings stay.
+
+### Verification
+- `bun run typecheck` exit 0.
+- Focused orchestration suite: 191 pass, 0 fail.
+
+---
+
 ## [3.8.27] - 2026-07-15
 
 ### Fixed

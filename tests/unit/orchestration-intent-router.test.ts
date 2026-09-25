@@ -25,6 +25,11 @@ describe("Intent Router v2", () => {
       expect(result.intent).toBe("refactor");
     });
 
+    test("detects Indonesian review intent", () => {
+      const result = scoreIntent("teliti plugin ini, apa yang kurang");
+      expect(result.intent).toBe("review");
+    });
+
     test("detects review intent", () => {
       const result = scoreIntent("review this pull request for security issues");
       expect(result.intent).toBe("review");

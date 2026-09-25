@@ -8,7 +8,7 @@ const COMPLETION_PATTERNS = [
   /\bready\s+(?:for\s+review|to\s+merge|to\s+ship|to\s+release)\b/i,
   /\b(?:task|work|implementation|feature|fix|bug|update|patch|release|build)\s+(?:is\s+)?complete(?:d)?\b/i,
   /\bfinished\s+(?:implementing|fixing|building|coding|and)\b/i,
-  /\bimplemented\s+(?:the|this|all)\b/i,
+  /\b(?:I\s+)?implemented\s+(?:the|this|all)\s+\w+/i,
   // ── English past-tense action verbs that indicate work has been performed
   // (release-/dev-flow phrasing that the prior regex set missed). Each verb is
   // anchored to a subject or object word so we don't flag prose like "I would

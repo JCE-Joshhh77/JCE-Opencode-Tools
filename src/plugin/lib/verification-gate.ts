@@ -92,8 +92,9 @@ export function evaluateWorkflowCompletionGate(run: WorkflowRun, profile: Policy
   ];
   if (blockedReasons.length > 0) return { status: "blocked", reasons: blockedReasons };
 
-  if (run.steps.length === 0 && !run.evidence.some((evidence) => evidence.passed !== false)) {
-    return { status: profile === "strict" ? "blocked" : "needs_verification", reasons: ["Workflow requires at least one verification evidence item before completion."] };
+  const hasPassingCommand = run.evidence.some((evidence) => evidence.kind === "command" && evidence.passed === true && !!evidence.command);
+  if (run.steps.length === 0 && !hasPassingCommand) {
+    return { status: profile === "strict" ? "blocked" : "needs_verification", reasons: ["Workflow requires at least one passing command evidence item before completion."] };
   }
 
   const reasons = run.steps.flatMap((step) => evaluateWorkflowStepGate(step, profile).reasons);

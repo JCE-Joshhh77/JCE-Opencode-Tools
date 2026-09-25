@@ -51,10 +51,13 @@ export function decideAutoActivation(message: string): AutoActivationDecision {
     signals.push("informational_lead");
     return { activate: false, confidence: 0.2, reason: "informational or advice question", signals };
   }
-  if (!ACTION_REQUEST.test(trimmed)) return { activate: false, confidence: 0.35, reason: "question lacks explicit action-request framing", signals };
-
-  signals.push("action_request_frame");
-  return { activate: true, confidence: 0.75, reason: "action request phrased as question", signals };
+  if (ACTION_REQUEST.test(trimmed)) {
+    signals.push("action_request_frame");
+    return { activate: true, confidence: 0.75, reason: "action request phrased as question", signals };
+  }
+  // Bare imperative with a question mark ("audit X?", "perbaiki Y?") is still an action.
+  signals.push("imperative_question");
+  return { activate: true, confidence: 0.7, reason: "imperative action phrased as a question", signals };
 }
 
 export function shouldAutoActivateFromUserMessage(message: string): boolean {

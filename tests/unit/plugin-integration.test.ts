@@ -1128,7 +1128,7 @@ describe("plugin integration", () => {
     const out = { text: "The fix is complete." };
     await hooks["experimental.text.complete"]!({ sessionID: "s", messageID: "m", partID: "p" } as any, out);
     expect(out.text).toContain("FINAL REVIEW GATE");
-    expect(out.text).toContain("Workflow requires at least one verification evidence item before completion.");
+    expect(out.text).toContain("Workflow requires at least one passing command evidence item before completion.");
   });
 
   test("experimental.text.complete appends final review gate for blocked completion claim", async () => {

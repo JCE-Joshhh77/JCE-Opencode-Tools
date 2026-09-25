@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { addWorkflowStep, attachStepEvidence, createWorkflowRun } from "../../src/plugin/lib/workflow.ts";
+import { addWorkflowStep, attachStepEvidence, createWorkflowRun, recordCommandEvidence } from "../../src/plugin/lib/workflow.ts";
 import { evaluateWorkflowCompletionGate, evaluateWorkflowStepGate } from "../../src/plugin/lib/verification-gate.ts";
 
 describe("workflow verification gate", () => {
@@ -9,7 +9,18 @@ describe("workflow verification gate", () => {
     const result = evaluateWorkflowCompletionGate(run, "balanced");
 
     expect(result.status).toBe("needs_verification");
-    expect(result.reasons).toContain("Workflow requires at least one verification evidence item before completion.");
+    expect(result.reasons).toContain("Workflow requires at least one passing command evidence item before completion.");
+  });
+
+  test("records a passing command onto an empty workflow so the gate can see it", () => {
+    const run = recordCommandEvidence(createWorkflowRun({ id: "wf-auto", goal: "Fix" }), {
+      kind: "command",
+      command: "bun test",
+      summary: "bun test -> pass",
+      passed: true,
+    });
+    expect(run.steps.map((step) => step.id)).toContain("auto-verify");
+    expect(evaluateWorkflowCompletionGate(run, "balanced").status).toBe("passed");
   });
 
   test("requires command evidence for code steps", () => {

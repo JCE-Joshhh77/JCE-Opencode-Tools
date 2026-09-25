@@ -223,7 +223,15 @@ export function buildDispatchTool(
       const routeText = `${args.description}\n${args.prompt}`;
       const override = resolveAgentOverride?.(args.agent as string, routeText);
       const effectiveAgent = override?.agent ?? (args.agent as string);
-      const route = toLegacyRoute(scoreIntent(routeText)) as unknown as SkillRoute;
+      const scored = toLegacyRoute(scoreIntent(routeText));
+      const route: SkillRoute = {
+        intent: scored.intent as SkillRoute["intent"],
+        skills: scored.skills,
+        reason: scored.reason,
+        agentHint: scored.agentHint && ["oracle", "jce-researcher", "explorer", "frontend", "android"].includes(scored.agentHint)
+          ? scored.agentHint as SkillRoute["agentHint"]
+          : undefined,
+      };
       const policy = afterRoute?.(routeText, route, effectiveAgent);
       if (policy?.status === "block") return policy.message ?? "EXECUTION POLICY: blocked";
 
@@ -275,7 +283,7 @@ export function buildStatusTool(manager: BackgroundManager, getOrchestrationStat
 export function buildCollectTool(
   manager: BackgroundManager,
   client?: OpenCodeClient,
-  afterMutation?: () => void,
+  afterMutation?: (task: BackgroundTask) => void,
   chineseTranslator?: ChineseTranslator,
 ): ToolDefinition {
   return tool({
@@ -294,7 +302,7 @@ export function buildCollectTool(
       if (task.status === "error") {
         const errorText = task.error || task.failureReason || "Task failed";
         const result = `Task ${taskId} failed: ${errorText}\n${await handleRecovery(manager, client, task, errorText)}`;
-        afterMutation?.();
+        afterMutation?.(task);
         return filterOutput(result);
       }
 
@@ -321,7 +329,7 @@ export function buildCollectTool(
         const reason = review.notes.join(", ") || "Delegated result did not satisfy the required contract";
         manager.recordRetryableFailure(task.id, reason);
         const result = `${await handleRecovery(manager, client, task, reason)}\n\nOriginal task output:\n${compressedResult}`;
-        afterMutation?.();
+        afterMutation?.(task);
         return filterOutput(result);
       }
 
@@ -347,7 +355,7 @@ export function buildCollectTool(
           manager.recordRetryableFailure(task.id, `Auto-recovery hint: retry same agent with updated context — ${reason}`);
         }
         const result = `${await handleRecovery(manager, client, task, reason)}\n\nOriginal task output:\n${compressedResult}`;
-        afterMutation?.();
+        afterMutation?.(task);
         return filterOutput(`${result}${switchHint}${contextHint}`);
       }
 
@@ -370,7 +378,7 @@ export function buildCollectTool(
           traceHighlights: (task.traceEvents ?? []).map((event) => event.type).slice(-5),
         });
         const result = `Task ${taskId} blocked:\nReview: ${review.status}\n\n${summary}\n\n${buildHandoffReport(handoff)}\n\n${compressedResult}`;
-        afterMutation?.();
+        afterMutation?.(task);
         return filterOutput(result);
       }
 
@@ -385,7 +393,7 @@ export function buildCollectTool(
       });
 
       if (reviewStatus === "accepted" && evidenceScore) manager.recordAcceptedDelegationLearning(task, evidenceScore.evidenceStrength);
-      afterMutation?.();
+      afterMutation?.(task);
       return filterOutput(`Task ${taskId} completed:\nReview: ${reviewStatus}${reviewMissing.length ? ` (${reviewMissing.join(", ")})` : ""}${evidenceScore ? `\nEvidence score: ${evidenceScore.evidenceStrength}` : ""}\n\n${summary}\n\n${compressedResult}`);
     },
   });

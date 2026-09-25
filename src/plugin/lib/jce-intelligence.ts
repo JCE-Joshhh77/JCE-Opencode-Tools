@@ -224,8 +224,15 @@ export function summarizeCommandEvidence(command: string, output: string): Omit<
   const normalized = `${command}\n${output}`;
   const isVerification = /\b(test|typecheck|tsc|lint|build|audit|validate|doctor|check|bun\s+test|npm\s+test|pytest|cargo\s+test)\b/i.test(normalized);
   if (!isVerification) return null;
-  const failed = /\b(0\s+pass|fail(?:ed)?|error|exit\s+code\s+[1-9]|not ok)\b/i.test(output) && !/\b0\s+fail\b/i.test(output);
-  const passed = /\b(pass(?:ed)?|0\s+fail|no\s+errors?|success|ok)\b/i.test(output) && !failed;
+  const failCount = output.match(/\b(\d+)\s+fail(?:ed|ure|ures)?\b/i);
+  const errorCount = output.match(/\b(\d+)\s+errors?\b/i);
+  const exitFail = /\bexit\s+code\s+[1-9]\d*\b/i.test(output);
+  const zeroPass = /\b0\s+pass(?:ed)?\b/i.test(output) && !/\b[1-9]\d*\s+pass(?:ed)?\b/i.test(output);
+  const notOk = /\bnot ok\b/i.test(output);
+  const failed = exitFail || notOk || zeroPass
+    || (failCount ? Number(failCount[1]) > 0 : /\b(FAIL|FAILED|failures?)\b/.test(output))
+    || (errorCount ? Number(errorCount[1]) > 0 : /\berror TS\d+\b/.test(output));
+  const passed = !failed && /\b(\d+\s+pass(?:ed)?|0\s+fail|no\s+errors?|success|ok)\b/i.test(output);
   return { taskId: "auto-capture", type: "command", command, status: passed ? "pass" : failed ? "fail" : "unknown", summary: `${command} -> ${passed ? "pass" : failed ? "fail" : "unknown"}`, area: "auto-capture" };
 }
 

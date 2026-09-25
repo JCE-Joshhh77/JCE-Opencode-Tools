@@ -4,7 +4,7 @@
  * The routeJceWorkerIntent function has been removed — use scoreIntent from orchestration/intent-router.ts instead.
  */
 
-export type JceWorkerIntent = "bugfix" | "feature" | "completion_claim" | "review" | "branch_completion" | "parallel_work" | "general";
+export type JceWorkerIntent = "bugfix" | "feature" | "refactor" | "review" | "release" | "research" | "config" | "docs" | "completion_claim" | "branch_completion" | "parallel_work" | "general";
 export type JceWorkerAgentHint = "oracle" | "jce-researcher" | "explorer" | "frontend" | "android";
 
 export interface SkillRoute {

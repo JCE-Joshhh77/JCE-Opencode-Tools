@@ -190,6 +190,24 @@ export function attachStepEvidence(run: WorkflowRun, stepId: string, evidence: W
   return next;
 }
 
+/** Attach command evidence to the active step, creating a verify step when the run has none. */
+export function recordCommandEvidence(run: WorkflowRun, evidence: WorkflowEvidence, now?: string): WorkflowRun {
+  const target = run.steps.find((step) => step.id === run.activeStepId)
+    ?? [...run.steps].reverse().find((step) => step.status === "running" || step.status === "pending")
+    ?? run.steps.at(-1);
+  if (!target) {
+    const seeded = addWorkflowStep(run, {
+      id: "auto-verify",
+      title: "Verify",
+      taskType: "code",
+      verification: evidence.command ? [evidence.command] : [],
+    }, now);
+    const running = updateWorkflowStepStatus(seeded, "auto-verify", "running", now);
+    return attachStepEvidence(running, "auto-verify", evidence, now);
+  }
+  return attachStepEvidence(run, target.id, evidence, now);
+}
+
 export function blockWorkflow(run: WorkflowRun, blocker: WorkflowBlocker, now?: string): WorkflowRun {
   const next = cloneRun(run, now);
   next.status = "blocked";

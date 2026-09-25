@@ -5,7 +5,6 @@ import type { Plugin, Hooks } from "@opencode-ai/plugin";
 import { existsSync, writeFileSync, appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { BackgroundManager } from "./background/manager.js";
-import { extractPromptText } from "./background/spawner.js";
 import { buildDispatchTool, buildStatusTool, buildCollectTool } from "./tools/dispatch.js";
 import { buildAgentConfigs } from "./config.js";
 import { analyzeCommentDensity, COMMENT_WARNING } from "./hooks/comment-checker.js";
@@ -15,24 +14,26 @@ import { evaluateSelfCritique } from "./lib/self-critique.js";
 import { evaluateOpenWork, extractTodoState, type TodoState } from "./hooks/open-work-enforcer.js";
 import { loadSessionState, mergeRuntimeStateSnapshot, saveSessionState } from "./lib/session-store.js";
 import type { RuntimeState } from "./lib/session-store.js";
-import { buildChineseTranslationPrompt, filterChineseOutput, type ChineseTranslator } from "./lib/chinese-output-filter.js";
+import { filterChineseOutput } from "./lib/chinese-output-filter.js";
+import { buildChineseTranslator } from "./lib/chinese-translator.js";
 import { CONTEXT_FILENAME, getContextTemplate } from "../lib/context-template.js";
 import { evaluateExecutionPolicy, formatExecutionPolicyDecision } from "./lib/execution-policy.js";
 import type { ExecutionPolicyDecision } from "./lib/execution-policy.js";
 import { evaluateFinalReviewGate } from "./lib/final-review-gate.js";
 import { resolvePolicyProfile } from "./lib/policy-profile.js";
-import { applyWorkflowIntentRoute } from "./lib/workflow.js";
+import { applyWorkflowIntentRoute, recordCommandEvidence } from "./lib/workflow.js";
 import type { WorkflowIntentRouteSource } from "./lib/workflow.js";
 import { buildWorkflowTool } from "./tools/workflow.js";
 import { buildAndroidLogcatTool } from "./tools/android-logcat.js";
 import { createWorkflowRun } from "./lib/workflow.js";
 import { isRecord } from "./lib/shared-predicates.js";
-import { getConfigurableAgentIds, isModelAvailable, listAvailableModels, loadJcePluginSettings, saveJcePluginSettings } from "./lib/settings.js";
 import { determineSkillsForMessage, shouldSkipSkillInjection, explainSkillRouting, parseSkillCorrection, applySkillCorrection, applySkillHistoryAdjustments, applySubAgentTelemetryQuality, resolveSkills, getLastBlockedSkills, type SkillCorrection } from "./lib/skill-loader.js";
+import { handleJceModelCommand } from "./lib/slash-model-command.js";
 import { applyContextBudget } from "./lib/context-budget.js";
 import { POST_COMPACTION_NO_TASK_GUARD, shouldSuppressCompactionAutocontinue } from "./lib/compaction-loop-guard.js";
 import { resolveContextLimit, extractTokensUsed, computeUsage, crossedThreshold, buildCompactionPreservation, formatUsage, DEFAULT_COMPACTION_THRESHOLD } from "./lib/context-window-monitor.js";
 import { scoreIntent, toLegacyRoute } from "./lib/orchestration/intent-router.js";
+import { withTimeout } from "../lib/timeout.js";
 import { OrchestrationController } from "./lib/orchestration/controller.js";
 import { OrchestrationBridge } from "./lib/orchestration/bridge.js";
 import { shouldDropPersistedWorkflow } from "./lib/orchestration/staleness.js";
@@ -78,29 +79,11 @@ function isJceWorkerAgentHint(value: string): value is "oracle" | "jce-researche
   return value === "oracle" || value === "jce-researcher" || value === "explorer" || value === "frontend" || value === "android";
 }
 
-function extractTranslationText(result: unknown): string | undefined {
-  const text = extractPromptText(result);
-  return text === "Task completed" ? undefined : text;
-}
+const HOOK_TIMEOUT_MS = 8000;
 
-function buildChineseTranslator(client: any): ChineseTranslator | undefined {
-  if (!client?.session?.create) return undefined;
-  return async (text: string) => {
-    const session = await client.session.create({});
-    if (!session?.id) throw new Error("Translation session returned no id");
-    const prompt = text.includes("<<<CHINESE_OUTPUT_TO_TRANSLATE>>>") ? text : buildChineseTranslationPrompt(text);
-    const promptRequest = { path: { id: session.id }, body: { agent: "jce-worker", parts: [{ type: "text" as const, text: prompt }] } };
-    const result = typeof client.session.prompt === "function"
-      ? await client.session.prompt(promptRequest)
-      : typeof client.session.promptAsync === "function"
-        ? await client.session.promptAsync(promptRequest)
-        : typeof client.session.chat === "function"
-          ? await client.session.chat({ params: { id: session.id }, body: { content: prompt, agent: "jce-worker" } })
-          : await Promise.reject(new Error("No supported session prompt method found: expected session.prompt, session.promptAsync, or session.chat"));
-    const translated = extractTranslationText(result);
-    if (!translated) throw new Error("Translation returned no text");
-    return translated;
-  };
+/** Bound a hook await so a stalled skill read or dispatch cannot freeze the turn. */
+function boundHook<T>(promise: Promise<T>, label: string, fallback: T): Promise<T> {
+  return withTimeout(promise, HOOK_TIMEOUT_MS, label, { envOverride: "JCE_HOOK_TIMEOUT_MS" }).catch(() => fallback);
 }
 
 // NOTE: the `tool` argument to these helpers MUST already be normalized to
@@ -123,6 +106,7 @@ const CONTEXT_BUDGET_EXCLUDED_TOOLS = new Set([
   "edit",        // confirmation only — already tiny
   "todowrite",   // parsed downstream for state extraction
   "skill",       // skill content must be exact (instructions)
+  "bash",        // verification parser needs the raw pass/fail lines
 ]);
 
 function shouldApplyDirectContextBudget(tool: string): boolean {
@@ -145,60 +129,6 @@ function ensureProjectContextFile(projectRoot: string): boolean {
 
 function textPart(text: string) {
   return { type: "text" as const, text } as any;
-}
-
-async function syncLiveAgentModel(client: unknown, projectRoot: string, agent: string, model: string | null, liveAgents?: Record<string, { model?: string }>): Promise<boolean> {
-  const api = client as { config?: { get?: (options?: unknown) => Promise<{ data?: any; error?: unknown }>; update?: (options?: unknown) => Promise<{ data?: any; error?: unknown }> } };
-  if (!api.config?.get || !api.config?.update) return false;
-  const current = await api.config.get({ query: { directory: projectRoot } });
-  if (current.error || !current.data || typeof current.data !== "object") return false;
-  const config = current.data;
-  if (!config.agent || typeof config.agent !== "object") config.agent = {};
-  let entry = config.agent[agent];
-  if (!entry || typeof entry !== "object") {
-    entry = liveAgents?.[agent];
-    if (!entry) return false;
-    config.agent[agent] = entry;
-  }
-  if (model) entry.model = model;
-  else delete entry.model;
-  const updated = await api.config.update({ query: { directory: projectRoot }, body: config });
-  return !updated.error;
-}
-
-async function handleJceModelCommand(command: string, args: string, projectRoot: string, client?: unknown, liveAgents?: Record<string, { model?: string }>): Promise<string | undefined> {
-  if (command === "jce-models") {
-    const settings = loadJcePluginSettings();
-    const models = listAvailableModels();
-    const lines = ["JCE Agent Models", "", "Agents:"];
-    for (const agent of getConfigurableAgentIds()) {
-      const value = settings.agents[agent];
-      lines.push(`- ${agent}: ${typeof value === "string" && models.includes(value) ? value : "active OpenCode model"}`);
-    }
-    lines.push("", "Available models:", ...(models.length ? models.map((model) => `- ${model}`) : ["- none found"]));
-    lines.push("", "Set: /jce-agent-model <agent> <provider/model|default>");
-    return lines.join("\n");
-  }
-
-  if (command !== "jce-agent-model") return undefined;
-  const [agent, model, ...extra] = args.trim().split(/\s+/).filter(Boolean);
-  if (!agent || !model || extra.length > 0) return "Usage: /jce-agent-model <agent> <provider/model|default>";
-  const agents = getConfigurableAgentIds();
-  if (!agents.includes(agent)) return `Unknown agent: ${agent}\nKnown agents: ${agents.join(", ")}`;
-  const settings = loadJcePluginSettings();
-  if (model === "default") {
-    settings.agents[agent] = null;
-    if (liveAgents?.[agent]) delete liveAgents[agent].model;
-    await saveJcePluginSettings(settings);
-    await syncLiveAgentModel(client, projectRoot, agent, null, liveAgents);
-    return `${agent} now uses active OpenCode model.`;
-  }
-  if (!isModelAvailable(model)) return `Model not found: ${model}\nRun /jce-models to list available models.`;
-  settings.agents[agent] = model;
-  if (liveAgents?.[agent]) liveAgents[agent].model = model;
-  await saveJcePluginSettings(settings);
-  await syncLiveAgentModel(client, projectRoot, agent, model, liveAgents);
-  return `${agent} now uses ${model}.`;
 }
 
 /**
@@ -290,6 +220,7 @@ const jcePlugin: Plugin = async (input) => {
     chineseTranslator,
     onPersist: () => persistCurrentMemory(),
   });
+  bridge.reconcileRestoredTasks();
 
   if (currentMemory.activeTasks.length === 0 && currentMemory.blockers.length > 0) {
     currentMemory = saveSessionState(projectRoot, {
@@ -512,10 +443,18 @@ const jcePlugin: Plugin = async (input) => {
         persistCurrentMemory();
         // Periodic timeout detection and health check
         withErrorBoundary(() => {
+          bridge.reconcileTaskFailures();
           const graph = orchestrator.getGraph();
           if (graph) {
             const timedOut = detectTimedOutNodes(graph);
             for (const node of timedOut) {
+              const taskId = orchestrator.getTaskForNode(node.id);
+              if (taskId) {
+                const task = manager.getTask(taskId);
+                if (task && task.status !== "completed" && task.status !== "error" && task.status !== "cancelled") {
+                  manager.failTask(taskId, "Orchestration node timed out");
+                }
+              }
               orchestrator.handleFailure(node.id, `Node timed out`);
               orchestrationLogger.log("warn", "node.timeout.periodic", `Periodic check: node ${node.id} timed out`);
             }
@@ -624,15 +563,21 @@ const jcePlugin: Plugin = async (input) => {
         }, "", orchestrationLogger);
         return `${statusReport}${health}`;
       }),
-      bg_collect: buildCollectTool(manager, client, () => {
+      bg_collect: buildCollectTool(manager, client, (task) => {
         persistCurrentMemory();
         // After collecting, check if orchestration loop should continue
         if (bridge.hasActivePlan()) {
-          const tasks = manager.listTasks();
-          const lastCompleted = tasks.filter((t) => t.status === "completed").pop();
-          if (lastCompleted?.result) {
+          if (task.status === "error") {
+            const reason = task.error ?? task.failureReason ?? "Background task failed";
+            void bridge.handleTaskFailure(task.id, reason, task.parentSessionId ?? "", task.parentMessageId ?? "").catch((err) => {
+              withErrorBoundary(() => {
+                currentMemory.blockers = [...currentMemory.blockers, { id: `orchestration-${Date.now()}`, failureReason: err instanceof Error ? err.message : String(err) }];
+                saveRuntimeOnly(currentMemory);
+              }, undefined, orchestrationLogger);
+            });
+          } else if (task.status === "completed" && task.result) {
               // Feed result through orchestration bridge; failures persist as blockers for closed-loop gating.
-              bridge.collectAndContinue(lastCompleted.id, lastCompleted.result, lastCompleted.parentSessionId ?? "", lastCompleted.parentMessageId ?? "").catch((err) => {
+              bridge.collectAndContinue(task.id, task.result, task.parentSessionId ?? "", task.parentMessageId ?? "").catch((err) => {
                 withErrorBoundary(() => {
                   currentMemory.blockers = [...currentMemory.blockers, { id: `orchestration-${Date.now()}`, failureReason: err instanceof Error ? err.message : String(err) }];
                   saveRuntimeOnly(currentMemory);
@@ -806,10 +751,10 @@ const jcePlugin: Plugin = async (input) => {
               if (workstreams.isMulti && workstreams.workstreams.length >= 2) {
                 orchestrationLogger.log("info", "plan.auto_activated.concurrent", `Auto-activated ${workstreams.workstreams.length} concurrent workstream(s): ${workstreams.reason}`);
                 withErrorBoundary(() => appendTelemetry(projectRoot, { kind: "routing_decision", name: "concurrent_workstreams", metadata: { count: workstreams.workstreams.length, reason: workstreams.reason } }), undefined, orchestrationLogger);
-                await withAsyncErrorBoundary(() => bridge.planAndDispatchConcurrent(workstreams.workstreams, "", ""), { dispatched: [], graphStatus: "failed", message: "Concurrent auto-dispatch failed" }, orchestrationLogger);
+                await boundHook(withAsyncErrorBoundary(() => bridge.planAndDispatchConcurrent(workstreams.workstreams, "", ""), { dispatched: [], graphStatus: "failed", message: "Concurrent auto-dispatch failed" }, orchestrationLogger), "concurrent auto-dispatch", { dispatched: [], graphStatus: "failed", message: "Concurrent auto-dispatch timed out" });
               } else {
                 orchestrationLogger.log("info", "plan.auto_activated", `Auto-activated plan: ${goal.slice(0, 80)}`);
-                await withAsyncErrorBoundary(() => bridge.planAndDispatch(goal, "", ""), { dispatched: [], graphStatus: "failed", message: "Auto-dispatch failed" }, orchestrationLogger);
+                await boundHook(withAsyncErrorBoundary(() => bridge.planAndDispatch(goal, "", ""), { dispatched: [], graphStatus: "failed", message: "Auto-dispatch failed" }, orchestrationLogger), "auto-dispatch", { dispatched: [], graphStatus: "failed", message: "Auto-dispatch timed out" });
               }
             }
           }
@@ -883,7 +828,7 @@ const jcePlugin: Plugin = async (input) => {
       // Saves ~2-4K tokens per deduplicated skill on multi-turn conversations.
       const skillNames = allSkillNames.filter((name) => !sessionInjectedSkills.has(name));
       if (skillNames.length === 0) return;
-      const skillContents = await resolveSkills(skillNames);
+      const skillContents = await boundHook(resolveSkills(skillNames), "skill injection", []);
       // Supply-chain defense: surface any skill the security scanner blocked from
       // injection so the user is alerted to a likely malicious/exfiltration skill.
       const blockedSkills = getLastBlockedSkills();
@@ -1004,7 +949,6 @@ const jcePlugin: Plugin = async (input) => {
       // against capitalized literals downstream (root cause of L1).
       const toolName = normalizeToolName(input.tool);
       const hadActiveWorkflow = Boolean(currentMemory.activeWorkflow);
-      const hadWorkflowRuntimeActive = workflowRuntimeActive;
 
       // Extract facts from tool outputs into orchestration memory (with error boundary)
       if (typeof output.output === "string" && output.output.length > 0) {
@@ -1023,6 +967,14 @@ const jcePlugin: Plugin = async (input) => {
             appendTelemetry(projectRoot, { kind: "verification_used", name: evidence.command ?? command, metadata: { command: evidence.command ?? command, status: evidence.status } });
             appendTelemetry(projectRoot, { kind: "verification_result", name: evidence.command ?? command, metadata: { skill: primarySkill, passed: evidence.status === "pass", command: evidence.command ?? command } });
             currentMemory.verificationEvidence = [...currentMemory.verificationEvidence, { ...evidence, captured: "auto", workflowId: currentMemory.activeWorkflow?.id }].slice(-100);
+            if (currentMemory.activeWorkflow && evidence.status === "pass" && evidence.command) {
+              currentMemory.activeWorkflow = recordCommandEvidence(currentMemory.activeWorkflow, {
+                kind: "command",
+                command: evidence.command,
+                summary: evidence.summary,
+                passed: true,
+              });
+            }
             currentMemory.traceEvents = [...(currentMemory.traceEvents ?? []), { type: "verification.recorded", message: evidence.summary, at: new Date().toISOString(), metadata: { command } }];
             currentMemory = saveSessionState(projectRoot, {
               runtime: currentMemory,
@@ -1040,7 +992,13 @@ const jcePlugin: Plugin = async (input) => {
           if (graph) {
             const timedOut = detectTimedOutNodes(graph);
             for (const node of timedOut) {
-              orchestrator.handleFailure(node.id, `Node timed out after ${node.startedAt ? Math.round((Date.now() - Date.parse(node.startedAt)) / 1000) : "?"}s`);
+              const reason = `Node timed out after ${node.startedAt ? Math.round((Date.now() - Date.parse(node.startedAt)) / 1000) : "?"}s`;
+              const taskId = orchestrator.getTaskForNode(node.id);
+              if (taskId) {
+                const task = manager.getTask(taskId);
+                if (task && task.status !== "completed" && task.status !== "error" && task.status !== "cancelled") manager.failTask(taskId, reason);
+              }
+              orchestrator.handleFailure(node.id, reason);
               orchestrationLogger.log("warn", "node.timeout", `Node ${node.id} timed out`, { nodeId: node.id, title: node.title });
             }
             // Conflict detection
@@ -1114,9 +1072,9 @@ const jcePlugin: Plugin = async (input) => {
         applyRuntimeRoute(output.output, routeSource);
       }
 
-      const shouldEnforceWorkflowGates = workflowRuntimeActive && (!hadActiveWorkflow || hadWorkflowRuntimeActive);
+      const shouldEnforceWorkflowGates = workflowRuntimeActive || hadActiveWorkflow;
       const openWork = typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && looksLikeStopEarlyOrConfirmation(output.output)
-        ? evaluateOpenWork(currentMemory, currentPolicyProfile(), effectiveTodoState, { includeWorkflowGate: hadActiveWorkflow || hadWorkflowRuntimeActive })
+        ? evaluateOpenWork(currentMemory, currentPolicyProfile(), effectiveTodoState, { includeWorkflowGate: hadActiveWorkflow || workflowRuntimeActive })
         : undefined;
 
       if (typeof output.output === "string" && shouldInspectCompletionOutput(toolName) && looksLikeCompletionClaim(output.output) && currentMemory.activeWorkflow && (shouldEnforceWorkflowGates || currentMemory.activeWorkflow.route?.intent === "review")) {

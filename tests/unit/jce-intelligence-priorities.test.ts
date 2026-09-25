@@ -54,6 +54,8 @@ describe("JCE priorities 1-10 intelligence", () => {
   test("summarizes command evidence for auto-capture", () => {
     const evidence = summarizeCommandEvidence("bun test tests/unit/foo.test.ts", "12 pass\n0 fail");
     expect(evidence?.status).toBe("pass");
+    expect(summarizeCommandEvidence("bun test", "12 pass\n0 fail\nerror: expected warning in fixture")?.status).toBe("pass");
+    expect(summarizeCommandEvidence("bun test", "3 pass\n2 fail")?.status).toBe("fail");
     expect(evidence?.type).toBe("command");
   });
 

@@ -18,14 +18,14 @@ interface KeywordRule {
 }
 
 const KEYWORD_RULES: KeywordRule[] = [
-  { intent: "bugfix", keywords: ["bug", "fix", "error", "crash", "debug", "broken", "failing", "regression"], multiWord: ["failing test", "failed test", "stack trace", "not working", "doesn't work"], weight: 1.0 },
-  { intent: "feature", keywords: ["add", "implement", "feature", "build", "create", "new", "introduce", "support"], multiWord: ["add support", "new feature", "implement the"], weight: 0.9 },
-  { intent: "refactor", keywords: ["refactor", "restructure", "reorganize", "clean", "simplify", "extract", "inline", "rename"], multiWord: ["clean up", "code smell", "technical debt"], weight: 1.0 },
-  { intent: "review", keywords: ["review", "audit", "inspect", "evaluate", "assess"], multiWord: ["code review", "check this", "look at this", "cari kekurangan", "find issues", "find problems"], weight: 1.1 },
-  { intent: "release", keywords: ["release", "version", "tag", "publish", "deploy", "changelog"], multiWord: ["bump version", "prepare release", "cut release"], weight: 1.0 },
-  { intent: "research", keywords: ["research", "investigate", "explore", "understand", "learn", "compare"], multiWord: ["how does", "what is", "best practice", "pros and cons"], weight: 0.8 },
-  { intent: "config", keywords: ["config", "configure", "setup", "settings", "environment", "env"], multiWord: ["set up", "configuration file"], weight: 0.9 },
-  { intent: "docs", keywords: ["document", "documentation", "readme", "describe", "comment"], multiWord: ["write docs", "add documentation", "update readme"], weight: 0.9 },
+  { intent: "bugfix", keywords: ["bug", "fix", "error", "crash", "debug", "broken", "failing", "regression", "perbaiki", "perbaikan"], multiWord: ["failing test", "failed test", "stack trace", "not working", "doesn't work", "tidak jalan", "test gagal"], weight: 1.0 },
+  { intent: "feature", keywords: ["add", "implement", "feature", "build", "create", "new", "introduce", "support", "tambah", "buat", "buatkan", "implementasikan"], multiWord: ["add support", "new feature", "implement the", "tambahkan fitur"], weight: 0.9 },
+  { intent: "refactor", keywords: ["refactor", "restructure", "reorganize", "clean", "simplify", "extract", "inline", "rename", "rapikan", "sederhanakan"], multiWord: ["clean up", "code smell", "technical debt", "rapikan kode"], weight: 1.0 },
+  { intent: "review", keywords: ["review", "audit", "inspect", "evaluate", "assess", "teliti", "periksa", "tinjau"], multiWord: ["code review", "check this", "look at this", "cari kekurangan", "find issues", "find problems", "apa yang kurang"], weight: 1.1 },
+  { intent: "release", keywords: ["release", "version", "tag", "publish", "deploy", "changelog", "rilis"], multiWord: ["bump version", "prepare release", "cut release", "siapkan rilis"], weight: 1.0 },
+  { intent: "research", keywords: ["research", "investigate", "explore", "understand", "learn", "compare", "telusuri", "pelajari"], multiWord: ["how does", "what is", "best practice", "pros and cons", "bagaimana cara", "cara kerja"], weight: 0.8 },
+  { intent: "config", keywords: ["config", "configure", "setup", "settings", "environment", "env", "atur", "pengaturan"], multiWord: ["set up", "configuration file", "atur konfigurasi"], weight: 0.9 },
+  { intent: "docs", keywords: ["document", "documentation", "readme", "describe", "comment", "dokumentasi", "dokumentasikan"], multiWord: ["write docs", "add documentation", "update readme", "tulis dokumentasi"], weight: 0.9 },
 ];
 
 interface FileExtensionRule {
