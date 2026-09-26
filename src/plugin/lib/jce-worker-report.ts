@@ -243,3 +243,24 @@ export function formatJceWorkerReport(memory: RuntimeState, policy?: PolicyProfi
     lineList(staleTasks),
   ].join("\n");
 }
+
+export function formatJceWorkerWhy(memory: RuntimeState, policy?: PolicyProfileDisplay, orchestration?: OrchestrationMemoryState): string {
+  const workflow = memory.activeWorkflow;
+  const blockers = getActiveBlockers(memory).map(summarizeUnknown);
+  const latestEvidence = summarizeUnknown(getLatestVerificationEvidence(memory));
+  const decision = recommendNextDecision(memory);
+  const planner = getPlannerRationaleSummary(orchestration);
+  return [
+    "JCE-Worker Why",
+    `State: ${workflow?.status ?? "idle"}`,
+    `Goal: ${workflow?.goal ?? "none"}`,
+    ...policyLine(policy),
+    `Decision risk: ${decision.risk}`,
+    `Decision reason: ${decision.reasons.length ? decision.reasons.join(" | ") : "none"}`,
+    `Blocking reason: ${blockers[0] ?? workflow?.blocker ?? "none"}`,
+    `Latest verification: ${latestEvidence}`,
+    `Planner mode: ${planner.plannerModes.length ? planner.plannerModes.join(", ") : "none"}`,
+    `Planner reason: ${planner.plannerReasons.length ? planner.plannerReasons.join(" | ") : "none"}`,
+    `Next action: ${getJceWorkerNextAction(memory)}`,
+  ].join("\n");
+}

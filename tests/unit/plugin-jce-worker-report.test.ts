@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { addFailureMemory, createEmptyRuntimeState, createFailureMemoryEntry } from "../../src/plugin/lib/runtime-state.ts";
 import { addWorkflowStep, attachStepEvidence, createWorkflowRun, updateWorkflowStepStatus } from "../../src/plugin/lib/workflow.ts";
-import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace, formatPlannerExplain, getJceWorkerNextAction } from "../../src/plugin/lib/jce-worker-report.ts";
+import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace, formatJceWorkerWhy, formatPlannerExplain, getJceWorkerNextAction } from "../../src/plugin/lib/jce-worker-report.ts";
 
 describe("JCE-Worker CLI report helpers", () => {
   test("formats status from active workflow memory", () => {
@@ -45,6 +45,20 @@ describe("JCE-Worker CLI report helpers", () => {
     expect(output).toContain("Goal: Resume legacy workflow");
     expect(output).toContain("State: planning");
     expect(output).toContain("Next action: Review plan and start the next pending step.");
+  });
+
+  test("formats why safely when stale memory has unknown route intent", () => {
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
+    memory.activeWorkflow = {
+      ...createWorkflowRun({ id: "wf-stale-route", goal: "Explain stale route" }),
+      route: { intent: "release", skills: [], reason: "old route", source: "message" },
+    } as any;
+
+    const output = formatJceWorkerWhy(memory);
+
+    expect(output).toContain("JCE-Worker Why");
+    expect(output).toContain("Decision reason: old route");
+    expect(output).toContain("Next action:");
   });
 
   test("formats status with verification summary from latest memory evidence", () => {
@@ -139,6 +153,21 @@ describe("JCE-Worker CLI report helpers", () => {
     expect(output).toContain("bun test");
     expect(output).toContain("network timeout");
     expect(output).toContain("task-1");
+  });
+
+  test("formats concise why report with blocker and next action", () => {
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
+    memory.activeWorkflow = createWorkflowRun({ id: "wf-why", goal: "Explain guard" });
+    memory.blockers = [{ reason: "verification evidence missing" }];
+    memory.verificationEvidence = [{ verificationSummary: "none yet" }];
+
+    const output = formatJceWorkerWhy(memory, { profile: "balanced", source: "default" });
+
+    expect(output).toContain("JCE-Worker Why");
+    expect(output).toContain("Goal: Explain guard");
+    expect(output).toContain("Policy profile: balanced (default)");
+    expect(output).toContain("Blocking reason: verification evidence missing");
+    expect(output).toContain("Next action:");
   });
 
   test("formats operator report with memory-level verification evidence when workflow evidence is empty", () => {

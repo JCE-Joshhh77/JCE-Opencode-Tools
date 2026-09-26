@@ -279,22 +279,32 @@ export class Scheduler {
       const failedNode = next.nodes.get(nodeId)!;
       failedNode.status = "pending";
        failedNode.blockerClass = blocker.classification;
-       failedNode.retryPolicy = {
-         ...failedNode.retryPolicy,
-         strategy: [recoveryActionToRetryStrategy(blocker.action), ...failedNode.retryPolicy.strategy.slice(1)],
-         currentRetry: failedNode.retryPolicy.currentRetry + 1,
-       };
+      // Blocker-aware recovery strategy for the NEXT attempt. Stored as an
+      // override field (not written into strategy[]) because getRetryStrategy
+      // indexes by currentRetry AFTER the increment — writing to index 0 (the
+      // already-consumed first-attempt slot) meant the classifier's strategy
+      // was never actually used, while mutating the array corrupts the static
+      // escalate-vs-block decision that reads strategy[last].
+      failedNode.retryPolicy = {
+        ...failedNode.retryPolicy,
+        currentRetry: failedNode.retryPolicy.currentRetry + 1,
+        nextRetryStrategy: recoveryActionToRetryStrategy(blocker.action),
+      };
+      // Clear the old execution lease: transitionNode only sets startedAt when
+      // it is absent, so keeping the pre-failure startedAt would make the
+      // re-dispatched node instantly stale again (stale churn loop — the node
+      // would burn its whole retry budget seconds after a fresh dispatch).
+      failedNode.startedAt = undefined;
       failedNode.completedAt = undefined;
 
-      const strategy = retryPolicy.strategy[retryPolicy.currentRetry] ?? "same";
       this.emit({
         type: "node.retrying",
         nodeId,
         timestamp: this.now(),
-        detail: `retry ${failedNode.retryPolicy.currentRetry}/${retryPolicy.maxRetries}, strategy: ${strategy}`,
+        detail: `retry ${failedNode.retryPolicy.currentRetry}/${retryPolicy.maxRetries}, strategy: ${this.getRetryStrategy(failedNode)}`,
       });
 
-      next = updateGraphStatus(next, this.now());
+      next = updateGraphStatus(promoteReadyNodes(next, this.now()), this.now());
       return { graph: next, action: "retry" };
     }
 
@@ -352,8 +362,11 @@ export class Scheduler {
 
   /**
    * Get the current retry strategy for a node.
+   * A blocker-aware override (set by onNodeFailed from the failure
+   * classification) takes precedence over the static strategy slot.
    */
   getRetryStrategy(node: TaskNode): string {
+    if (node.retryPolicy.nextRetryStrategy) return node.retryPolicy.nextRetryStrategy;
     const idx = Math.min(node.retryPolicy.currentRetry, node.retryPolicy.strategy.length - 1);
     return node.retryPolicy.strategy[idx] ?? "same";
   }

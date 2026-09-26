@@ -86,6 +86,33 @@ describe("phase-gate enforcement (Fix 2)", () => {
     expect(gate.canComplete).toBe(false);
     expect(gate.blockers.some((b) => b.includes("Phase-gate violation"))).toBe(true);
   });
+
+  test("REGRESSION (audit 2026-09-26): non-adjacent phase skips are also violations", () => {
+    // PLANNING pending, IMPLEMENTING done (satisfied), TESTING done.
+    // The old check compared only against phases[i-1], so TESTING's progress
+    // passed silently — only the IMPLEMENTING violation was reported.
+    let g = createTaskGraph({ id: "pg4", goal: "x", now: NOW });
+    g = addNode(g, { id: "plan", type: "research", title: "map", description: "", agent: "explorer", prompt: "p" }, NOW);
+    g = addNode(g, { id: "impl", type: "code", title: "build", description: "", agent: "self", prompt: "p" }, NOW);
+    g = addNode(g, { id: "test", type: "verify", title: "verify", description: "", agent: "self", prompt: "p" }, NOW);
+    for (const id of ["impl", "test"]) {
+      g = transitionNode(g, id, "pending", NOW);
+      g = transitionNode(g, id, "ready", NOW);
+      g = transitionNode(g, id, "running", NOW);
+      g = completeNode(g, id, { summary: "s", artifacts: [], evidence: [], newFacts: [], confidence: 0.9 }, NOW);
+    }
+    // plan-1 stays pending.
+
+    const report = evaluatePhaseGates(g);
+    expect(report.currentPhase).toBe("PLANNING");
+    expect(report.violations.some((v) => v.startsWith("TESTING has progress but PLANNING is not satisfied"))).toBe(true);
+    expect(report.blockedPhases).toContain("TESTING");
+
+    // The completion gate must stay blocked by the phase violation.
+    const gate = evaluateCompletionGate(g);
+    expect(gate.canComplete).toBe(false);
+    expect(gate.blockers.some((b) => b.includes("TESTING has progress but PLANNING"))).toBe(true);
+  });
 });
 
 describe("formatter coverage (Fix: untested formatters)", () => {

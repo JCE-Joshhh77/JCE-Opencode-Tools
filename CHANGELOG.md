@@ -6,6 +6,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.29] - 2026-09-27
+
+### Fixed — full-repo logic audit (13 bugs across 63 files)
+- **Skill routing confidence was inverted**: greetings injected ~120 lines of skills while genuine narrow-margin tasks were skipped. Confidence is now computed from real routing signal (intent/regex/file/bundle matches), not the priority baseline double-counted.
+- **Skill security scanner bypass**: lookalike domains (`github.com.attacker.io`) and trusted-host mentions in query strings were treated as trusted, letting exfiltration skills through. Host matching is now exact-hostname with subdomain support.
+- **Agent-override negation**: `jangan pakai oracle` / `don't use oracle` forced dispatch TO the rejected agent. Negated phrases are now ignored; contrast phrases (`use android instead`) pick the wanted agent.
+- **Duplicate-skill audit tautology**: accidental mapping collisions were always reported as "intentional workflow aliases" (the ok-check compared a map against itself). Accidental duplicates now fail the audit.
+- **Scalar frontmatter crash**: `intents: bugfix` (scalar on a list field) crashed the whole registry health audit with `TypeError`; it is now reported cleanly as drift.
+- **Prefer-corrections punished**: user corrections saying "pakai react" pushed react DOWN the routing ranking (counted as noise). Prefer events now feed the positive bucket.
+- **Phantom open todos**: example checklists inside code blocks (docs reviews) and inline JSON examples were detected as open TodoWrite items, blocking legitimate completion with a phantom BOULDER gate. Code blocks are stripped and bare-status matching is scoped to real TodoWrite JSON.
+- **Comment checker dead in production**: write/edit tool output embeds `cat -p` numbered lines, so the comment-density regexes never matched (ratio always 0). Numbered prefixes are now stripped before analysis.
+- **Scheduler stale-churn loop**: retried nodes kept their old `startedAt`, so a re-dispatched node was instantly stale again and burned its whole retry budget seconds after dispatch. Retries now get a fresh execution lease.
+- **Blocker-aware retry strategy never used**: the classifier's recovery strategy was written to the already-consumed first-attempt slot. It is now stored as a `nextRetryStrategy` override that the next attempt actually reads (e.g. `external_dependency` retries `same`, architecture uncertainty switches agent) — without mutating the static strategy array the escalate-vs-block decision reads.
+- **Phase-gate non-adjacent misses**: a phase running ahead of an earlier unsatisfied phase was only flagged when the immediately-preceding phase was unsatisfied (e.g. TESTING done with PLANNING pending and IMPLEMENTING done passed silently). Violations now compare against the earliest unsatisfied phase.
+- **Config-step self-deadlock**: the verification gate rejected the plugin's own recommended config-validation commands (`bun ./src/index.ts validate`, config-hardening tests) because their text lacks the words the matcher required. Both are now recognized, while generic checks stay rejected.
+- Orchestration support modules (22 files), plugin gates/policies, and android/flutter flows audited clean.
+
+### Changed
+- Version sync across package.json, install.ps1, install.sh, constants.ts, version.ts, context-keeper.ts, README badge, and ui.test.ts.
+
+---
+
 ## [3.8.28] - 2026-09-25
 
 ### Fixed

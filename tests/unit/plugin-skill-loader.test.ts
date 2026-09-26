@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { applySkillCorrection, applySkillHistoryAdjustments, determineSkillsForMessage, explainSkillRouting, explainSkillsForMessage, getLastBlockedSkills, getSubAgentSkillProfile, matchSkillBundles, parseSkillCorrection, resolveSubAgentSkills, SKILL_REGISTRY, SKILL_NAME_TO_FILE } from "../../src/plugin/lib/skill-loader.ts";
+import { applySkillCorrection, applySkillHistoryAdjustments, determineSkillsForMessage, explainSkillRouting, explainSkillsForMessage, getLastBlockedSkills, getSubAgentSkillProfile, matchSkillBundles, parseSkillCorrection, resolveSubAgentSkills, shouldSkipSkillInjection, SKILL_REGISTRY, SKILL_NAME_TO_FILE } from "../../src/plugin/lib/skill-loader.ts";
 
 describe("plugin skill loader", () => {
   test("routes native Android requests to Android Kotlin skill", () => {
@@ -140,6 +140,29 @@ describe("plugin skill loader", () => {
       prefer: expect.arrayContaining(["react"]),
       agent: "jce-researcher",
     }));
+  });
+
+  test("REGRESSION (audit 2026-09-26): negated agent phrases must not force dispatch TO the rejected agent", () => {
+    expect(parseSkillCorrection("jangan pakai oracle untuk task ini")?.agent).toBeUndefined();
+    expect(parseSkillCorrection("don't use oracle, it is too slow")?.agent).toBeUndefined();
+    // Contrast phrase picks the wanted agent, not the forbidden one.
+    expect(parseSkillCorrection("dont use frontend for this, use android instead")?.agent).toBe("android");
+    // Affirmative phrases still work.
+    expect(parseSkillCorrection("pakai oracle untuk review ini")?.agent).toBe("oracle");
+    expect(parseSkillCorrection("use frontend agent for this task")?.agent).toBe("frontend");
+  });
+
+  test("REGRESSION (audit 2026-09-26): routing confidence must be signal-based, not priority-baseline-based", () => {
+    // Greetings/ambiguous carry no routing signal — injection must be skipped.
+    for (const greeting of ["hello", "thanks!", "ok", "zzz qqq ambiguous maybe"]) {
+      expect(shouldSkipSkillInjection(greeting)).toBe(true);
+    }
+    // Genuine tasks carry real routing signal — must NOT be skipped, even when
+    // two candidates score closely (old formula skipped exactly these).
+    expect(shouldSkipSkillInjection("help me improve the rapid prototype UI look")).toBe(false);
+    expect(shouldSkipSkillInjection("Optimize SQL query schema migration index design")).toBe(false);
+    // Real work confidence stays healthy on the legacy 0-100 scale.
+    expect(explainSkillRouting("Fix React hooks bug in TSX component with frontend polish").confidence).toBeGreaterThan(50);
   });
 
   test("applies session correction override to skill list", () => {

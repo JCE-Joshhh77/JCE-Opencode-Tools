@@ -7,7 +7,7 @@ import { join } from "path";
 import { BackgroundManager } from "./background/manager.js";
 import { buildDispatchTool, buildStatusTool, buildCollectTool } from "./tools/dispatch.js";
 import { buildAgentConfigs } from "./config.js";
-import { analyzeCommentDensity, COMMENT_WARNING } from "./hooks/comment-checker.js";
+import { analyzeCommentDensity, COMMENT_WARNING, stripLineNumberPrefixes } from "./hooks/comment-checker.js";
 import { looksLikeCompletionClaim, looksLikeStopEarlyOrConfirmation, shouldWarnForMissingVerification, VERIFICATION_WARNING } from "./hooks/jce-worker-guard.js";
 import { shouldEnforceContinuation, detectPrematureStop, CONTINUATION_PROMPT } from "./hooks/todo-enforcer.js";
 import { evaluateSelfCritique } from "./lib/self-critique.js";
@@ -1026,7 +1026,9 @@ const jcePlugin: Plugin = async (input) => {
         const filePath = input.args?.filePath || input.args?.path || "";
         const content = output.output || "";
         if (filePath && content && typeof content === "string") {
-          const analysis = analyzeCommentDensity(content, filePath);
+          // Tool output embeds `cat -p`/diff-style numbered lines; strip the
+          // prefixes so the comment-density heuristics see real source lines.
+          const analysis = analyzeCommentDensity(stripLineNumberPrefixes(content), filePath);
           if (analysis.excessive) {
             output.output = `${output.output}\n\n${COMMENT_WARNING}`;
           }

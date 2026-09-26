@@ -29,6 +29,11 @@ export interface RetryPolicy {
   strategy: RetryStrategy[];
   currentRetry: number;
   backoffMs?: number;
+  /** Blocker-aware override for the NEXT retry attempt (set by the scheduler
+   * from the failure's blocker classification). Takes precedence over the
+   * static strategy[] slot. Kept separate so the static array — which the
+   * escalate-vs-block decision reads — is never mutated at runtime. */
+  nextRetryStrategy?: RetryStrategy;
 }
 
 export interface Compensation {

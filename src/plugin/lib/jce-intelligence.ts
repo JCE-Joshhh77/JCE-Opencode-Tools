@@ -483,7 +483,16 @@ export function summarizeSkillTelemetry(events: TelemetryEvent[]): SkillTelemetr
     if (event.kind === "skill_followup") summary.followups[skill] = (summary.followups[skill] ?? 0) + 1;
     if (event.kind === "delegation_accepted") summary.acceptedDelegations[skill] = (summary.acceptedDelegations[skill] ?? 0) + 1;
     if (event.kind === "delegation_rejected") summary.rejectedDelegations[skill] = (summary.rejectedDelegations[skill] ?? 0) + 1;
-    if (event.kind === "user_correction") summary.userCorrectionsBySkill[skill] = (summary.userCorrectionsBySkill[skill] ?? 0) + 1;
+    if (event.kind === "user_correction") {
+      // A "prefer" correction is the user ASKING FOR a skill — positive signal,
+      // not noise. Counting it as noise inverted the learning loop: preferred
+      // skills got pushed DOWN the routing ranking. Only forbid-style
+      // corrections (and unspecified ones, kept for backward compat with old
+      // telemetry files) count toward noise.
+      const action = String(event.metadata?.action ?? "");
+      if (action !== "prefer") summary.userCorrectionsBySkill[skill] = (summary.userCorrectionsBySkill[skill] ?? 0) + 1;
+      if (action === "prefer") summary.selectedByIntent[skill] = (summary.selectedByIntent[skill] ?? 0) + 1;
+    }
     if (event.kind === "verification_result") {
       const pass = Boolean(event.metadata?.passed);
       const bucket = pass ? summary.verificationPassBySkill : summary.verificationFailBySkill;

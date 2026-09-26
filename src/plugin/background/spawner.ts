@@ -80,7 +80,7 @@ export async function launchExistingBackgroundTask(manager: BackgroundManager, c
   const task = manager.getTask(taskId);
   if (!task) return false;
   if (task.status !== "pending") return true;
-  if (!manager.canLaunch()) return false;
+  if (!manager.reserveLaunch()) return false;
 
   try {
     const session = await withTimeout(
@@ -118,6 +118,8 @@ export async function launchExistingBackgroundTask(manager: BackgroundManager, c
   } catch (err) {
     manager.failTask(task.id, err instanceof Error ? err.message : String(err));
     return false;
+  } finally {
+    manager.releaseLaunch();
   }
 }
 

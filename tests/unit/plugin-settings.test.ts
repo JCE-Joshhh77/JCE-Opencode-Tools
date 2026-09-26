@@ -13,6 +13,7 @@ import {
   listAvailableModels,
   isModelAvailable,
 } from "../../src/plugin/lib/settings.ts";
+import { handleJceModelCommand } from "../../src/plugin/lib/slash-model-command.ts";
 
 const originalXdg = process.env.XDG_CONFIG_HOME;
 const originalPath = process.env.PATH;
@@ -148,6 +149,45 @@ describe("plugin settings", () => {
   test("exports the native JCE agent IDs", () => {
     expect(AGENT_IDS).toEqual(["jce-worker", "oracle", "jce-researcher", "explorer", "frontend", "android"]);
     expect(getJcePluginSettingsPath()).toContain("jce-plugin.json");
+  });
+
+  test("slash model command updates persisted and live native agent model", async () => {
+    const configDir = tempConfigDir("slash-model-command");
+    writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ provider: { openai: { models: { "gpt-5.5-fast": {} } } }, agent: {} }), "utf-8");
+    process.env.OPENCODE_JCE_OPENCODE_COMMAND = join(configDir, "missing-opencode");
+    const liveAgents: Record<string, { model?: string }> = { oracle: {} };
+    let updatedConfig: any;
+    const client = {
+      config: {
+        get: async () => ({ data: { agent: {} } }),
+        update: async (input: any) => {
+          updatedConfig = input.body;
+          return { data: input.body };
+        },
+      },
+    };
+
+    const result = await handleJceModelCommand("jce-agent-model", "oracle openai/gpt-5.5-fast", configDir, client, liveAgents);
+
+    expect(result).toBe("oracle now uses openai/gpt-5.5-fast.");
+    expect(loadJcePluginSettings().agents.oracle).toBe("openai/gpt-5.5-fast");
+    expect(liveAgents.oracle.model).toBe("openai/gpt-5.5-fast");
+    expect(updatedConfig.agent.oracle.model).toBe("openai/gpt-5.5-fast");
+  });
+
+  test("slash model command lists native agents and rejects agents.json-only agents", async () => {
+    const configDir = tempConfigDir("slash-model-list");
+    writeFileSync(join(configDir, "opencode.json"), JSON.stringify({ provider: { openai: { models: { "gpt-5.5-fast": {} } } } }), "utf-8");
+    writeFileSync(join(configDir, "agents.json"), JSON.stringify({ agents: [{ id: "debugger", name: "Debugger", role: "Debug", systemPrompt: "debug", preferredProfile: "quality", maxTokens: 1000, tools: ["read"] }] }), "utf-8");
+    process.env.OPENCODE_JCE_OPENCODE_COMMAND = join(configDir, "missing-opencode");
+
+    const list = await handleJceModelCommand("jce-models", "", configDir);
+    const rejected = await handleJceModelCommand("jce-agent-model", "debugger openai/gpt-5.5-fast", configDir);
+
+    expect(list).toContain("- oracle: active OpenCode model");
+    expect(list).toContain("- openai/gpt-5.5-fast");
+    expect(rejected).toContain("Unknown agent: debugger");
+    expect(rejected).toContain("jce-worker");
   });
 
 });

@@ -44,6 +44,8 @@ function routeBaseline(intent: JceWorkerIntent | "none"): { risk: DecisionRisk; 
     return { risk: "low", action: "Continue with lightweight planning and keep evidence proportional to risk." };
   case "none":
     return { risk: "low", action: "Start by routing the user intent before choosing execution mode." };
+  default:
+    return { risk: "low", action: "Re-route stale or unknown intent before choosing execution mode." };
   }
 }
 

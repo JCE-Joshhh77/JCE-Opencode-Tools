@@ -228,6 +228,34 @@ describe("workflow verification gate", () => {
     expect(result.reasons).toContain("Step step-1 requires passing config validation command evidence.");
   });
 
+  test("REGRESSION (audit 2026-09-26): the plugin's own recommended config-validation commands are accepted", () => {
+    // RECIPES.config.commands and inferSuggestedChecks recommend these exact
+    // commands for config work. The gate previously rejected them (no "config"
+    // word in the CLI validate command; no validation verb in the test path),
+    // deadlocking config steps that followed the plugin's own instructions.
+    for (const command of [
+      "bun ./src/index.ts validate",
+      "bun src/index.ts validate",
+      "bun test tests/unit/plugin-config-hardening.test.ts",
+    ]) {
+      let run = createWorkflowRun({ id: "wf-cfg", goal: "Config" });
+      run = addWorkflowStep(run, {
+        id: "step-1",
+        title: "Update config",
+        taskType: "config",
+        expectedOutput: "Valid config",
+        verification: [command],
+      });
+      run = attachStepEvidence(run, "step-1", {
+        kind: "command",
+        summary: `${command}: pass`,
+        command,
+        passed: true,
+      });
+      expect(evaluateWorkflowStepGate(run.steps[0], "balanced")).toEqual({ status: "pass", reasons: [] });
+    }
+  });
+
   test("requires shell command evidence to indicate syntax validation", () => {
     let run = createWorkflowRun({ id: "wf-1", goal: "Shell" });
     run = addWorkflowStep(run, {

@@ -44,6 +44,23 @@ describe("todo enforcer", () => {
     expect(state.openItems).toContain("Finish verification");
   });
 
+  test("REGRESSION (audit 2026-09-26): example checklists inside code blocks are NOT open todos", () => {
+    // A task output reviewing docs contains an EXAMPLE checklist in a fenced
+    // code block — it must not trigger the BOULDER continuation gate.
+    const taskOutput = "Here is my review:\n\n```markdown\n- [ ] example item in docs\n- [ ] another example\n```\n\nAll actual items are done.";
+    const state = extractTodoState(taskOutput);
+    expect(state.hasOpenTodos).toBe(false);
+    expect(state.openItems).toEqual([]);
+  });
+
+  test("REGRESSION (audit 2026-09-26): prose mentioning example JSON is not an open TodoWrite", () => {
+    const prose = 'The runner outputs `{"status": "pending"}` while queued.';
+    expect(extractTodoState(prose).hasOpenTodos).toBe(false);
+    // But a real all-completed TodoWrite stays closed too.
+    const completed = JSON.stringify([{ content: "A", status: "completed" }, { content: "B", status: "completed" }]);
+    expect(extractTodoState(completed).hasOpenTodos).toBe(false);
+  });
+
   test("open work blocks confirmation stop when todos remain", () => {
     const memory = createEmptyRuntimeState();
     const result = evaluateOpenWork(memory, "balanced", { hasOpenTodos: true, openItems: ["Run tests"] });

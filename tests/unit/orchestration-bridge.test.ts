@@ -86,6 +86,21 @@ describe("Orchestration Bridge — Full Loop", () => {
     expect(collectResult.result.status).toBe("success");
     expect(collectResult.result.confidence).toBeGreaterThan(0.3);
     expect(collectResult.message).toContain(firstTask.nodeId);
+    await expect(bridge.collectAndContinue(firstTask.taskId, task!.result!, "session-1", "msg-1")).rejects.toThrow("already collected");
+  });
+
+  test("requeues a restored running node that has no live background task", () => {
+    const root = tempRoot();
+    const orchestrator = new OrchestrationController({ projectRoot: root });
+    orchestrator.routeIntent("fix the login crash bug");
+    const graph = orchestrator.createPlan("fix the login crash");
+    const node = [...graph.nodes.values()][0];
+    graph.nodes.get(node.id)!.status = "running";
+
+    const reset = orchestrator.reconcileOrphanedRunningNodes();
+
+    expect(reset).toContain(node.id);
+    expect(orchestrator.getGraph()?.nodes.get(node.id)?.status).toBe("ready");
   });
 
   test("orchestration loop auto-dispatches downstream nodes after collection", async () => {
@@ -143,16 +158,14 @@ describe("Orchestration Bridge — Full Loop", () => {
     // Wait for failure
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    if (planResult.dispatched.length > 0) {
-      const firstTask = planResult.dispatched[0];
-      const task = manager.getTask(firstTask.taskId);
-
-      if (task?.status === "error") {
-        const recovery = bridge.handleTaskFailure(firstTask.taskId, task.error ?? "unknown");
-        // Should retry (default policy allows 2 retries)
-        expect(recovery.action).toBe("retry");
-      }
-    }
+    expect(planResult.dispatched.length).toBeGreaterThan(0);
+    const firstTask = planResult.dispatched[0];
+    const task = manager.getTask(firstTask.taskId);
+    expect(task?.status).toBe("error");
+    const recovery = await bridge.handleTaskFailure(firstTask.taskId, task?.error ?? "unknown", "session-1", "msg-1");
+    expect(recovery.action).toBe("retry");
+    const retried = orchestrator.getGraph()?.nodes.get(firstTask.nodeId)?.status;
+    expect(retried === "ready" || retried === "running").toBe(true);
   });
 
   test("hasActivePlan returns false when no plan exists", () => {

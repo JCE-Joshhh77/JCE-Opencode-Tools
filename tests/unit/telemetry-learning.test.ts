@@ -25,4 +25,30 @@ describe("telemetry learning loop", () => {
     expect(quality.noisySkills[0]).toEqual(expect.objectContaining({ skill: "frontend" }));
     expect(quality.failedTaskSkills[0]).toEqual(expect.objectContaining({ skill: "frontend" }));
   });
+
+  test("REGRESSION (audit 2026-09-26): prefer-corrections are positive signal, not noise", () => {
+    // User says "pakai react" — the skill must NOT be counted as noise
+    // (previously this pushed the preferred skill DOWN the ranking).
+    const preferEvents: TelemetryEvent[] = [
+      { kind: "user_correction", name: "react", at: "2026-06-10T00:00:00.000Z", metadata: { skill: "react", action: "prefer", reason: "pakai react" } },
+    ];
+    const preferSummary = summarizeSkillTelemetry(preferEvents);
+    expect(preferSummary.noisyBySkill["react"]).toBeUndefined();
+    expect(preferSummary.userCorrectionsBySkill["react"]).toBeUndefined();
+
+    // Forbid-style corrections still count as noise.
+    const forbidEvents: TelemetryEvent[] = [
+      { kind: "user_correction", name: "frontend", at: "2026-06-10T00:00:00.000Z", metadata: { skill: "frontend", action: "forbid", reason: "jangan frontend" } },
+    ];
+    const forbidSummary = summarizeSkillTelemetry(forbidEvents);
+    expect(forbidSummary.noisyBySkill["frontend"]).toBe(1);
+    expect(forbidSummary.userCorrectionsBySkill["frontend"]).toBe(1);
+
+    // Legacy events without an action field keep the old (noise) behavior.
+    const legacyEvents: TelemetryEvent[] = [
+      { kind: "user_correction", name: "oracle", at: "2026-06-10T00:00:00.000Z", metadata: { skill: "oracle" } },
+    ];
+    const legacySummary = summarizeSkillTelemetry(legacyEvents);
+    expect(legacySummary.noisyBySkill["oracle"]).toBe(1);
+  });
 });

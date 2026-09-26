@@ -14,8 +14,21 @@ function hasExplicitPassingEvidence(step: WorkflowStep, predicate: (evidence: Wo
   return step.evidence.some((evidence) => evidence.passed === true && predicate(evidence));
 }
 
+/** JCE CLI config validator: `bun [./]src/index.ts validate` — the plugin's own
+ *  recommended config-validation command (RECIPES.config, inferSuggestedChecks,
+ *  release recipe). The generic matcher below rejects it because the command
+ *  text contains neither "config" nor a config filename, which deadlocked
+ *  config steps: the assistant told agents to run it, then the gate refused
+ *  to accept it as evidence. */
+const JCE_CONFIG_VALIDATE = /(?:^|[\s/\\])(?:\.?\/?src\/)?index\.ts\s+validate\b/i;
+
+/** Running a config-focused test file IS config validation evidence (the
+ *  RECIPES.config.commands[0] recommendation). */
+const CONFIG_TEST_FILE = /[\w-]*config[\w-]*\.test\.[cm]?[jt]s\b/i;
+
 function commandMatchesConfigValidation(command: string): boolean {
   const normalized = command.toLowerCase();
+  if (JCE_CONFIG_VALIDATE.test(normalized) || CONFIG_TEST_FILE.test(normalized)) return true;
   const mentionsConfig = /\b(config|schema|startup|load)\b|(?:^|[/\\.-])(?:opencode|package|tsconfig|jsconfig|bunfig|vite|vitest|eslint|prettier|biome|tsup|rollup|webpack|babel|jest)\.config\.[cm]?[jt]s\b|(?:^|[/\\.-])(?:package|tsconfig|jsconfig|bunfig)\.(?:json|jsonc|toml)\b|\.(?:ya?ml|toml)\b/.test(normalized);
   const mentionsValidation = /\b(validate|validation|check|parse|schema|startup|load)\b|--check\b/.test(normalized);
   return mentionsConfig && mentionsValidation;

@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { createRuntimeTaskLearning, createRuntimeWisdomEntry, type RuntimeState, type TaskLearning, type WisdomEntry } from "../lib/runtime-state.js";
 import type { JceWorkerErrorCategory } from "../lib/error-taxonomy.js";
 import type { HandoffReportInput } from "../lib/handoff.js";
@@ -25,6 +26,7 @@ export class BackgroundManager {
   private wisdom: WisdomEntry[] = [];
   private taskLearnings: TaskLearning[] = [];
   private launchPending?: (taskId: string) => void;
+  private launching = 0;
 
   constructor(options: BackgroundManagerOptions) {
     this.maxConcurrency = options.maxConcurrency;
@@ -60,7 +62,7 @@ export class BackgroundManager {
   createTask(input: LaunchInput): BackgroundTask {
     const timestamp = this.now();
     const task: BackgroundTask = {
-      id: `bg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: `bg-${Date.now()}-${randomBytes(4).toString("hex")}`,
       description: input.description,
       prompt: input.prompt,
       agent: input.agent,
@@ -310,7 +312,18 @@ export class BackgroundManager {
   }
 
   getRunningCount(): number {
-    return this.listTasks().filter((t) => t.status === "running").length;
+    return Array.from(this.tasks.values()).filter((t) => t.status === "running").length + this.launching;
+  }
+
+  reserveLaunch(): boolean {
+    if (!this.canLaunch()) return false;
+    this.launching += 1;
+    return true;
+  }
+
+  releaseLaunch(): void {
+    this.launching = Math.max(0, this.launching - 1);
+    this.pumpPending();
   }
 
   canLaunch(): boolean {
@@ -344,7 +357,8 @@ export class BackgroundManager {
       version: 1,
       updatedAt,
       activeTasks: tasks.filter((task) => task.status === "pending" || task.status === "running"),
-      completedSummaries: tasks.filter((task) => task.status === "completed").map((task) => ({
+      // Prune to last 50 completed tasks to prevent unbounded memory growth.
+      completedSummaries: tasks.filter((task) => task.status === "completed").slice(-50).map((task) => ({
         id: task.id,
         description: task.description,
         result: task.result,

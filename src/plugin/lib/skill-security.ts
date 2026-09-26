@@ -44,7 +44,64 @@ export const SKILL_BLOCK_THRESHOLD = 60;
 
 // Trusted hosts that legit skills reference in docs/install examples. A URL to
 // one of these does NOT count as suspicious egress.
-const TRUSTED_HOST = /(?:^|\/\/|@|\.)(?:github\.com|githubusercontent\.com|npmjs\.com|nodejs\.org|astral\.sh|python\.org|pypi\.org|crates\.io|go\.dev|golang\.org|rust-lang\.org|docker\.com|kubernetes\.io|developer\.android\.com|kotlinlang\.org|gradle\.org|developer\.mozilla\.org|w3\.org|opencode\.ai|anthropic\.com|example\.com|example\.org|localhost|127\.0\.0\.1)/i;
+// The regex must only match a trusted host when the host label actually ENDS
+// there — anchored with (?=[/:?#]|$) — and must be extracted from the URL's
+// authority component, otherwise lookalike domains (github.com.attacker.io)
+// and trusted-host mentions in query strings (evil.io/?ref=github.com) would
+// be treated as trusted and bypass the exfiltration detector.
+const TRUSTED_HOSTS = new Set([
+  "github.com",
+  "githubusercontent.com",
+  "npmjs.com",
+  "nodejs.org",
+  "astral.sh",
+  "python.org",
+  "pypi.org",
+  "crates.io",
+  "go.dev",
+  "golang.org",
+  "rust-lang.org",
+  "docker.com",
+  "kubernetes.io",
+  "developer.android.com",
+  "kotlinlang.org",
+  "gradle.org",
+  "developer.mozilla.org",
+  "w3.org",
+  "opencode.ai",
+  "anthropic.com",
+  "example.com",
+  "example.org",
+  "localhost",
+  "127.0.0.1",
+]);
+
+/** Exact-host check (supports subdomains of trusted roots, e.g. raw.githubusercontent.com). */
+function isTrustedUrl(raw: string): boolean {
+  let host: string;
+  try {
+    host = new URL(raw).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (TRUSTED_HOSTS.has(host)) return true;
+  const dot = host.lastIndexOf(".");
+  if (dot <= 0) return false;
+  const parent = host.slice(dot + 1);
+  const rest = host.slice(0, dot);
+  // Allow any subdomain of a trusted root (githubusercontent.com etc.), but
+  // NOT lookalikes such as github.com.attacker.io (that is a subdomain of
+  // attacker.io, not of a trusted root).
+  const labels = rest.split(".");
+  for (let i = 0; i < labels.length; i++) {
+    if (TRUSTED_HOSTS.has(labels.slice(i).join(".") + "." + parent)) return true;
+  }
+  return false;
+}
+
+const TRUSTED_HOST = {
+  test: (url: string): boolean => isTrustedUrl(url),
+};
 
 function truncate(value: string, max = 120): string {
   const flat = value.replace(/\s+/g, " ").trim();
@@ -123,9 +180,11 @@ function findObfuscation(text: string): { executable: string[]; passive: string[
     /\b(?:IEX|Invoke-Expression)\b[^\n]{0,60}(?:DownloadString|FromBase64String|New-Object\s+Net\.WebClient|http)/i,
   ];
   // Passive obfuscation: long encoded blob with no obvious execution (weaker signal).
+  // Threshold is 300 chars (not 120) to avoid false-positives on legitimate base64
+  // content such as embedded fonts, JWT examples, or image data URIs in skill docs.
   const passivePatterns: RegExp[] = [
-    /[A-Za-z0-9+/]{120,}={0,2}/,
-    /(?:\\x[0-9a-f]{2}){10,}/i,
+    /[A-Za-z0-9+/]{300,}={0,2}/,
+    /(?:\\x[0-9a-f]{2}){20,}/i,
   ];
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();

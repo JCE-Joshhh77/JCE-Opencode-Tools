@@ -793,11 +793,16 @@ export function evaluatePhaseGates(graph: TaskGraph): PhaseGateReport {
       earliestUnsatisfied = p.phase;
     }
     // A phase with progress while an earlier phase is unsatisfied is a violation.
+    // Compare against the EARLIEST unsatisfied phase, not merely phases[i-1]:
+    // gating only on the immediately-preceding phase let a later phase run
+    // ahead of an earlier gap whenever the phase in between was satisfied
+    // (e.g. TESTING done while PLANNING pending and IMPLEMENTING done passed
+    // silently — only IMPLEMENTING was flagged).
     if (earliestUnsatisfied && p.phase !== earliestUnsatisfied && (p.done > 0)) {
-      const earlier = phases[i - 1];
-      if (earlier && !earlier.satisfied) {
+      const earliest = phases.find((q) => q.phase === earliestUnsatisfied);
+      if (earliest && !earliest.satisfied) {
         blockedPhases.push(p.phase);
-        violations.push(`${p.phase} has progress but ${earlier.phase} is not satisfied (${earlier.done}/${earlier.total} done, ${earlier.failed} failed)`);
+        violations.push(`${p.phase} has progress but ${earliest.phase} is not satisfied (${earliest.done}/${earliest.total} done, ${earliest.failed} failed)`);
       }
     }
   }

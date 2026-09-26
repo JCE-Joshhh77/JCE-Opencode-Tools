@@ -15,7 +15,7 @@ import {
 } from "../plugin/lib/session-store.js";
 import { clearSessionPolicyProfile, isPolicyProfile, resolvePolicyProfile, saveProjectPolicyProfile, saveSessionPolicyProfile } from "../plugin/lib/policy-profile.js";
 import type { PolicyProfile } from "../plugin/lib/verification-gate.js";
-import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace, formatPlannerExplain, getPlannerRationaleSummary } from "../plugin/lib/jce-worker-report.js";
+import { formatJceWorkerReport, formatJceWorkerStatus, formatJceWorkerTrace, formatJceWorkerWhy, formatPlannerExplain, getPlannerRationaleSummary } from "../plugin/lib/jce-worker-report.js";
 import { summarizeToolDiscipline } from "../plugin/lib/tool-discipline.js";
 import { buildProjectBrain } from "../plugin/lib/project-brain.js";
 import { isRecord } from "../plugin/lib/shared-predicates.js";
@@ -454,6 +454,20 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
       exitIfEnabled(options, EXIT_SUCCESS);
     });
 
+  const whyCommand = new Command("why")
+    .description("Explain why JCE-Worker blocked, asked, or chose the next action")
+    .option("--json", "Print JSON")
+    .action((opts: { json?: boolean }) => {
+      const loaded = loadSessionState(cwd());
+      const policy = resolvePolicyProfile(cwd());
+      if (opts.json) {
+        write(JSON.stringify({ runtime: loaded.state.runtime, policy, orchestration: loaded.state.orchestration }, null, 2));
+      } else {
+        write(formatJceWorkerWhy(loaded.state.runtime, policy, loaded.state.orchestration));
+      }
+      exitIfEnabled(options, EXIT_SUCCESS);
+    });
+
   const failureRememberCommand = new Command("failure-remember")
     .description("Store failure memory with automatic signature generation")
     .argument("<summary>", "Failure summary")
@@ -514,6 +528,7 @@ export function createJceWorkerCommand(options: CreateJceWorkerCommandOptions = 
     .addCommand(explainLastCommand)
     .addCommand(whyBlockedCommand)
     .addCommand(whyAskedCommand)
+    .addCommand(whyCommand)
     .addCommand(nextActionCommand)
     .addCommand(failureRememberCommand)
     .addCommand(taskLearnCommand);

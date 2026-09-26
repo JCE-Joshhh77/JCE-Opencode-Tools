@@ -70,6 +70,14 @@ describe("background manager", () => {
     expect(manager.canLaunch()).toBe(true);
   });
 
+  test("reserves launch slots before tasks become running", () => {
+    const manager = new BackgroundManager({ maxConcurrency: 1 });
+    expect(manager.reserveLaunch()).toBe(true);
+    expect(manager.reserveLaunch()).toBe(false);
+    manager.releaseLaunch();
+    expect(manager.canLaunch()).toBe(true);
+  });
+
   test("stale running task becomes error and frees launch slot on status read", () => {
     let now = "2026-05-06T00:00:00.000Z";
     const manager = new BackgroundManager({ maxConcurrency: 1, staleAfterMs: 1000, now: () => now });

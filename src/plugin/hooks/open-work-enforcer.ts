@@ -18,11 +18,42 @@ const TODO_JSON_STATUS = /"status"\s*:\s*"(pending|in_progress)"/;
 const TODO_JSON_CONTENT = /"content"\s*:\s*"([^"]+)"\s*,\s*"status"\s*:\s*"(pending|in_progress)"/g;
 const TODO_MARKDOWN = /^[\s]*-\s*\[\s\]\s*(.+)$/gm;
 
+/** Remove fenced code blocks and inline code so example checklists / JSON
+ * snippets inside code (docs, reviews, explanations) don't register as open
+ * todos. Parity with todo-enforcer.stripCode — previously extractTodoState
+ * flagged EXAMPLE "- [ ]" items in code-blocks as real open work, blocking
+ * legitimate completion with a phantom BOULDER gate. */
+function stripCode(content: string): string {
+  if (typeof content !== "string") return "";
+  return content
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`[^`\n]*`/g, "");
+}
+
+/** True when `text` is a bare TodoWrite-style JSON array (or a single object):
+ * starts with `[`/`{` and parses as JSON whose top-level items are objects.
+ * Prose that merely MENTIONS `{"status": "pending"}` inline must not match. */
+function isTodoWriteJson(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return false;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    const items = Array.isArray(parsed) ? parsed : [parsed];
+    return items.length > 0 && items.every((item) => isRecord(item));
+  } catch {
+    return false;
+  }
+}
+
 export function extractTodoState(text: string): TodoState {
+  const cleaned = stripCode(text);
   const openItems: string[] = [];
-  for (const match of text.matchAll(TODO_JSON_CONTENT)) openItems.push(match[1] ?? "open TodoWrite item");
-  for (const match of text.matchAll(TODO_MARKDOWN)) openItems.push(match[1]?.trim() || "open markdown todo");
-  return { hasOpenTodos: openItems.length > 0 || TODO_JSON_STATUS.test(text), openItems: [...new Set(openItems)].slice(0, 8) };
+  for (const match of cleaned.matchAll(TODO_JSON_CONTENT)) openItems.push(match[1] ?? "open TodoWrite item");
+  for (const match of cleaned.matchAll(TODO_MARKDOWN)) openItems.push(match[1]?.trim() || "open markdown todo");
+  // TODO_JSON_STATUS (bare pending/in_progress status) is only meaningful for
+  // actual TodoWrite JSON output — never for prose mentioning example JSON.
+  const hasOpenStatus = TODO_JSON_STATUS.test(cleaned) && isTodoWriteJson(cleaned);
+  return { hasOpenTodos: openItems.length > 0 || hasOpenStatus, openItems: [...new Set(openItems)].slice(0, 8) };
 }
 
 function hasOpenDelegatedReview(memory: RuntimeState): boolean {

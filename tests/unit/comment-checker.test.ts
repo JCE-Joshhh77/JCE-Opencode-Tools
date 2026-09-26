@@ -56,4 +56,34 @@ y = 2`;
   test("COMMENT_WARNING mentions self-documenting", () => {
     expect(COMMENT_WARNING).toContain("self-documenting");
   });
+
+  test("REGRESSION (audit 2026-09-26): numbered tool-output lines are analyzed as code", () => {
+    // The write/edit tool output embeds `cat -p`/diff-style numbered lines.
+    // Without prefix stripping the comment regexes never matched (ratio 0) and
+    // the excessive-comment warning could not fire in production.
+    const numbered = [
+      "1\t// validate input",
+      "2\tconst x = 1;",
+      "3\t// sanitize",
+      "4\tconst y = 2;",
+      "5\t// log it",
+      "6\tconst z = 3;",
+      "7\t// cleanup",
+      "8\tconst w = 4;",
+      "9\t// finalize",
+      "10\tconst v = 5;",
+    ].join("\n");
+    const result = analyzeCommentDensity(numbered, "test.ts");
+    expect(result.commentLines).toBe(5);
+    expect(result.ratio).toBeGreaterThan(0.4);
+    expect(result.excessive).toBe(true);
+  });
+
+  test("REGRESSION: files without number prefixes are left untouched", () => {
+    // Fewer than 3 numbered lines => no stripping; raw code still analyzed.
+    const raw = "// one\n// two\nconst a = 1;\nconst b = 2;\nconst c = 3;";
+    const result = analyzeCommentDensity(raw, "test.ts");
+    expect(result.commentLines).toBe(2);
+    expect(result.excessive).toBe(false);
+  });
 });

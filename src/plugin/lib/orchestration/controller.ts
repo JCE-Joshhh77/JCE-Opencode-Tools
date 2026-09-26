@@ -377,6 +377,7 @@ export class OrchestrationController {
 
     const { graph, toDispatch } = this.scheduler.tick(this.graph);
     this.graph = graph;
+    this.graphRegistry.update(graph);
 
     // Build the file-risk heatmap once for this dispatch batch (cheap; derived
     // from persisted failure patterns). Nodes touching high-risk files get a
@@ -501,6 +502,28 @@ export class OrchestrationController {
       if (tid === taskId) return nodeId;
     }
     return undefined;
+  }
+
+  getTaskForNode(nodeId: string): string | undefined {
+    return this.nodeToTaskMap.get(nodeId);
+  }
+
+  reconcileOrphanedRunningNodes(): string[] {
+    const reset: string[] = [];
+    for (const graph of this.listGraphs()) {
+      let next = graph;
+      for (const node of [...next.nodes.values()]) {
+        if (node.status !== "running" || this.nodeToTaskMap.has(node.id)) continue;
+        const failed = transitionNodeWithReason(next, node.id, "failed", "Orphaned running node restored without live background task", this.now());
+        next = transitionNodeWithReason(failed, node.id, "pending", "Requeued after process restart", this.now());
+        reset.push(node.id);
+      }
+      next = updateGraphStatus(promoteReadyNodes(next, this.now()), this.now());
+      this.graphRegistry.update(next);
+      if (this.graph?.id === next.id) this.graph = next;
+    }
+    if (reset.length) this.persist();
+    return reset;
   }
 
   /**

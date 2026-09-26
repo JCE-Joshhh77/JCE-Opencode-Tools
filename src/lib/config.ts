@@ -14,6 +14,7 @@ import { FILETYPE_EXTENSIONS } from "./utils.js";
  * Falls back to ~/.config/opencode/ (OpenCode standard on all platforms).
  */
 export function getConfigDir(): string {
+  const home = homedir();
   const candidates: string[] = [];
 
   // 1. XDG_CONFIG_HOME (if set)
@@ -23,7 +24,7 @@ export function getConfigDir(): string {
   }
 
   // 2. ~/.config/opencode (OpenCode standard on all platforms)
-  candidates.push(join(homedir(), ".config", "opencode"));
+  candidates.push(join(home, ".config", "opencode"));
 
   // Search for existing config (opencode.json is the marker)
   for (const path of candidates) {
@@ -32,8 +33,8 @@ export function getConfigDir(): string {
     }
   }
 
-  // Default: ~/.config/opencode/
-  return candidates[0] || join(homedir(), ".config", "opencode");
+  // Default: first candidate (XDG) or ~/.config/opencode/
+  return candidates[0] ?? join(home, ".config", "opencode");
 }
 
 /**
@@ -120,18 +121,21 @@ export async function loadOpenCodeConfig(): Promise<Record<string, any>> {
       return template as Record<string, any>;
     }
     
-    // JSON parse error — backup before auto-creating (preserve user's broken config)
+    // JSON parse error — backup the broken config before replacing it so the
+    // user can recover their settings. Log clearly before overwriting.
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const backupPath = `${configPath}.backup-${timestamp}`;
-    await writeFile(backupPath, await readFile(configPath, "utf-8"), "utf-8");
-    
+    const brokenContent = await readFile(configPath, "utf-8");
+    await writeFile(backupPath, brokenContent, "utf-8");
+    console.warn(`⚠️  opencode.json has invalid JSON.`);
+    console.warn(`   Backup saved to: ${backupPath}`);
+    console.warn(`   A fresh default config will be written. Copy your settings from the backup.`);
+
     const { buildDefaultOpenCodeJson } = await import("./opencode-json-template.js");
     const { buildAgentConfigs } = await import("../plugin/config.js");
     const configDir = getConfigDir();
     const template = buildDefaultOpenCodeJson(configDir, buildAgentConfigs());
     await writeFile(configPath, JSON.stringify(template, null, 2) + "\n", "utf-8");
-    console.warn(`⚠️  opencode.json had invalid JSON — backup saved to ${backupPath}`);
-    console.warn(`   Fix your config or copy settings from the backup.`);
     return template as Record<string, any>;
   }
 }

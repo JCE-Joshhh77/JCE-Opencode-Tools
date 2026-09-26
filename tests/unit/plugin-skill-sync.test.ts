@@ -67,4 +67,35 @@ describe("skill sync", () => {
     const block = parseSkillFrontmatter("---\nname: demo\nsignals:\n  - eslint\n  - prettier\n---\n");
     expect(block?.signals).toEqual(["eslint", "prettier"]);
   });
+
+  test("REGRESSION (audit 2026-09-26): scalar intents must not crash the registry health audit", () => {
+    const root = mkdtempSync(join(tmpdir(), "opencode-jce-med2-"));
+    try {
+      mkdirSync(join(root, "config", "skills", "security"), { recursive: true });
+      writeFileSync(join(root, "config", "skills", "security", "SKILL.md"), "---\nname: security\nintents: bugfix\n---\n# Security\n", "utf-8");
+      const report = auditSkillRegistryHealth(root);
+      expect(report.frontmatterDrift).toEqual([expect.objectContaining({ skill: "security", field: "intents" })]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("REGRESSION (audit 2026-09-26): accidental duplicate mapping fails the startup audit", () => {
+    // Simulate an accidental collision without touching the real repo tree:
+    // auditSkillStartup reads SKILL_NAME_TO_FILE live, so plant a duplicate.
+    const { SKILL_NAME_TO_FILE } = require("../../src/plugin/lib/skill-loader.ts");
+    const planted = "fake-accidental-dup";
+    (SKILL_NAME_TO_FILE as Record<string, string>)[planted] = "software-engineering.md";
+    try {
+      const audit = auditSkillStartup(process.cwd());
+      const group = audit.duplicateTargets.find((d) => d.target === "software-engineering.md");
+      expect(group).toBeDefined();
+      expect(group?.reason).toBeUndefined();
+      expect(audit.ok).toBe(false);
+    } finally {
+      delete (SKILL_NAME_TO_FILE as Record<string, string>)[planted];
+    }
+    // Clean repo state stays green.
+    expect(auditSkillStartup(process.cwd()).ok).toBe(true);
+  });
 });

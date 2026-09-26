@@ -63,8 +63,18 @@ export function auditSkillStartup(projectRoot: string): SkillStartupAudit {
   }
   const duplicateTargets = [...byTarget.entries()]
     .filter(([, mappings]) => mappings.length > 1)
-    .map(([target, mappings]) => ({ target, mappings: mappings.sort(), reason: mappings.every((name) => name in INTENTIONAL_SKILL_ALIASES || target === SKILL_NAME_TO_FILE[name]) ? "intentional workflow aliases" : undefined }))
-    .filter((item) => !item.reason || !item.mappings.every((name) => name in INTENTIONAL_SKILL_ALIASES || name === item.target.replace(/\.md$/, "")));
+    .map(([target, mappings]) => {
+      // A duplicate target group is intentional only when every non-canonical
+      // mapping is a declared workflow alias. The previous check compared
+      // `target === SKILL_NAME_TO_FILE[name]` — always true because byTarget
+      // is BUILT from SKILL_NAME_TO_FILE — so every duplicate, accidental or
+      // not, was marked intentional and the ok-predicate could never fail.
+      const targetName = target.replace(/\.md$/, "");
+      const intentional = mappings.every((name) => name === targetName || name in INTENTIONAL_SKILL_ALIASES);
+      return { target, mappings: mappings.sort(), reason: intentional ? "intentional workflow aliases" : undefined };
+    })
+    // Report only duplicates that are NOT explained (accidental collisions).
+    .filter((item) => !item.reason);
 
   const docs = [join(projectRoot, "config", "AGENTS.md"), join(projectRoot, "README.md")];
   const docsSkillCounts = docs.flatMap((file) => {
@@ -199,8 +209,14 @@ export function auditSkillRegistryHealth(projectRoot: string): RegistryHealthRep
     if (front.routingMode && front.routingMode !== registry.routingMode) {
       frontmatterDrift.push({ skill: folder, field: "routingMode", frontmatter: front.routingMode, registry: registry.routingMode });
     }
-    if (front.intents && front.intents.length && front.intents.sort().join(",") !== [...registry.intents].sort().join(",")) {
-      frontmatterDrift.push({ skill: folder, field: "intents", frontmatter: front.intents.join("|"), registry: registry.intents.join("|") });
+    if (front.intents && front.intents.length) {
+      // Frontmatter may declare a scalar on a list field (`intents: bugfix`) —
+      // the parser stores it as a plain string, and .sort()/.join() on it
+      // would crash the whole audit (or join characters). Normalize first.
+      const frontIntents = Array.isArray(front.intents) ? front.intents : [String(front.intents)];
+      if (frontIntents.sort().join(",") !== [...registry.intents].sort().join(",")) {
+        frontmatterDrift.push({ skill: folder, field: "intents", frontmatter: frontIntents.join("|"), registry: registry.intents.join("|") });
+      }
     }
   }
 

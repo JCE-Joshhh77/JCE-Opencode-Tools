@@ -244,8 +244,10 @@ export class TokenTracker {
 
   /**
    * Convert DB messages to legacy TokenUsageEntry format, filtered by time.
+   * Capped at MAX_ROWS to prevent OOM on very large databases.
    */
   private queryEntries(since?: Date): TokenUsageEntry[] {
+    const MAX_ROWS = 50_000;
     const db = this.openDB();
     try {
       let rows: { time_created: number; data: string }[];
@@ -253,12 +255,13 @@ export class TokenTracker {
       if (since) {
         const sinceMs = since.getTime();
         rows = db
-          .query("SELECT time_created, data FROM message WHERE time_created >= ? ORDER BY time_created ASC")
-          .all(sinceMs) as any[];
+          .query("SELECT time_created, data FROM message WHERE time_created >= ? ORDER BY time_created ASC LIMIT ?")
+          .all(sinceMs, MAX_ROWS) as any[];
       } else {
         rows = db
-          .query("SELECT time_created, data FROM message ORDER BY time_created ASC")
-          .all() as any[];
+          .query("SELECT time_created, data FROM message ORDER BY time_created DESC LIMIT ?")
+          .all(MAX_ROWS) as any[];
+        rows.reverse();
       }
 
       const entries: TokenUsageEntry[] = [];

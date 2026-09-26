@@ -43,6 +43,12 @@ export interface CollectLoopResult {
   message: string;
 }
 
+export interface ReconciledTaskFailure {
+  taskId: string;
+  nodeId: string;
+  reason: string;
+}
+
 // ─── Bridge ───────────────────────────────────────────────────────────────────
 
 export class OrchestrationBridge {
@@ -50,6 +56,7 @@ export class OrchestrationBridge {
   private client: OpenCodeClient;
   private orchestrator: OrchestrationController;
   private onPersist?: () => void;
+  private collectedTasks = new Set<string>();
 
   constructor(config: OrchestrationBridgeConfig) {
     this.manager = config.manager;
@@ -113,6 +120,9 @@ export class OrchestrationBridge {
    * After collection, automatically dispatches next ready nodes.
    */
   async collectAndContinue(taskId: string, rawResult: string, parentSessionId: string, parentMessageId: string): Promise<CollectLoopResult> {
+    if (this.collectedTasks.has(taskId)) {
+      throw new Error(`Task already collected: ${taskId}`);
+    }
     // Find the node for this task
     const nodeId = this.orchestrator.getNodeForTask(taskId);
     if (!nodeId) {
@@ -133,9 +143,16 @@ export class OrchestrationBridge {
     // shared budget. Otherwise fall back to the single-graph loop.
     const owningGraphId = this.orchestrator.getGraphForNode(nodeId);
     const isMultiGraph = owningGraphId !== undefined;
-    const collectResult = isMultiGraph
-      ? this.orchestrator.collectResultForGraph(owningGraphId, nodeId, rawResult)
-      : this.orchestrator.collectResult(nodeId, rawResult);
+    let collectResult: CollectResult;
+    try {
+      collectResult = isMultiGraph
+        ? this.orchestrator.collectResultForGraph(owningGraphId, nodeId, rawResult)
+        : this.orchestrator.collectResult(nodeId, rawResult);
+      this.collectedTasks.add(taskId);
+    } catch (error) {
+      this.onPersist?.();
+      throw error;
+    }
 
     // Auto-dispatch next ready nodes (the orchestration loop)
     const nextToDispatch = isMultiGraph
@@ -177,13 +194,41 @@ export class OrchestrationBridge {
     };
   }
 
+  reconcileTaskFailures(): ReconciledTaskFailure[] {
+    const reconciled: ReconciledTaskFailure[] = [];
+    for (const task of this.manager.listTasks()) {
+      if (task.status !== "error") continue;
+      const nodeId = this.orchestrator.getNodeForTask(task.id);
+      if (!nodeId) continue;
+      const reason = task.error || task.failureReason || "Background task failed";
+      void this.handleTaskFailure(task.id, reason, task.parentSessionId, task.parentMessageId);
+      reconciled.push({ taskId: task.id, nodeId, reason });
+    }
+    if (reconciled.length) this.onPersist?.();
+    return reconciled;
+  }
+
+  reconcileRestoredTasks(): string[] {
+    const reset = this.orchestrator.reconcileOrphanedRunningNodes();
+    if (reset.length) this.onPersist?.();
+    return reset;
+  }
+
   /**
    * Handle a failed task and decide recovery action.
    */
-  handleTaskFailure(taskId: string, reason: string): { action: string; retryStrategy?: string } {
+  async handleTaskFailure(taskId: string, reason: string, parentSessionId = "", parentMessageId = ""): Promise<{ action: string; retryStrategy?: string }> {
     const nodeId = this.orchestrator.getNodeForTask(taskId);
     if (!nodeId) return { action: "not_orchestrated" };
-    return this.orchestrator.handleFailure(nodeId, reason);
+    const result = this.orchestrator.handleFailure(nodeId, reason);
+    if (result.action === "retry") {
+      const next = this.orchestrator.getGraphForNode(nodeId)
+        ? this.orchestrator.getNextDispatchAll()
+        : this.orchestrator.getNextDispatch();
+      if (next.length) await this.dispatchNodes(next, parentSessionId, parentMessageId);
+      this.onPersist?.();
+    }
+    return result;
   }
 
   /**

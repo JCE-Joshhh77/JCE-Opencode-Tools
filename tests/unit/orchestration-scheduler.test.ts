@@ -209,7 +209,7 @@ describe("Scheduler", () => {
 
       const result = scheduler.onNodeFailed(graph, "n1", "timeout");
       expect(result.action).toBe("retry");
-      expect(result.graph.nodes.get("n1")?.status).toBe("pending");
+      expect(result.graph.nodes.get("n1")?.status).toBe("ready");
       expect(result.graph.nodes.get("n1")?.retryPolicy.currentRetry).toBe(1);
     });
 
@@ -224,9 +224,8 @@ describe("Scheduler", () => {
       // First failure uses the retry
       const first = scheduler.onNodeFailed(graph, "n1", "first error");
       expect(first.action).toBe("retry");
-      // Now node is pending with currentRetry=1, run it again
+      // Retry now returns the node ready for another dispatch.
       graph = first.graph;
-      graph = transitionNode(graph, "n1", "ready", NOW);
       graph = transitionNode(graph, "n1", "running", NOW);
       // Second failure should exhaust budget
       const second = scheduler.onNodeFailed(graph, "n1", "persistent error");
@@ -269,6 +268,67 @@ describe("Scheduler", () => {
       const result = scheduler.detectStaleNodes(graph);
       expect(result.staleNodes).toHaveLength(1);
       expect(result.staleNodes[0].id).toBe("n1");
+    });
+
+    test("REGRESSION (audit 2026-09-26): retried node gets a fresh execution lease (no stale churn)", () => {
+      // A stale node is failed+retried, then re-dispatched. startedAt must be
+      // reset by the retry — otherwise the re-dispatched node is instantly
+      // stale again and burns its whole retry budget seconds after dispatch.
+      const staleMs = 1000;
+      let fakeMs = Date.parse(NOW);
+      const scheduler = new Scheduler({ staleAfterMs: staleMs }, () => new Date(fakeMs).toISOString());
+      let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
+      graph = addNode(graph, makeNode({ id: "n1" }), NOW);
+      graph = transitionNode(graph, "n1", "ready", NOW);
+      graph = transitionNode(graph, "n1", "running", NOW);
+
+      // Advance past the stale threshold → node is failed and retried.
+      fakeMs += staleMs + 1;
+      const stale = scheduler.detectStaleNodes(graph);
+      graph = stale.graph;
+      expect(stale.staleNodes).toHaveLength(1);
+
+      // Re-dispatch immediately (no additional time advance).
+      const tick = scheduler.tick(graph);
+      graph = tick.graph;
+      expect(graph.nodes.get("n1")?.status).toBe("running");
+
+      // The fresh lease means it is NOT stale again right away.
+      const immediate = scheduler.detectStaleNodes(graph);
+      expect(immediate.staleNodes).toHaveLength(0);
+      // And the lease timestamp is the re-dispatch time, not the original.
+      expect(Date.parse(graph.nodes.get("n1")!.startedAt!)).toBe(fakeMs);
+    });
+  });
+
+  describe("REGRESSION (audit 2026-09-26): blocker-aware retry strategy is actually used", () => {
+    test("external_dependency failure retries with 'same' per classifier", () => {
+      const scheduler = new Scheduler({}, () => NOW);
+      let graph = createTaskGraph({ id: "g1", goal: "Test", now: NOW });
+      graph = addNode(graph, makeNode({ id: "n1", retryPolicy: { maxRetries: 2, strategy: ["same", "different_approach", "escalate_user"], currentRetry: 0 } }), NOW);
+      graph = transitionNode(graph, "n1", "ready", NOW);
+      graph = transitionNode(graph, "n1", "running", NOW);
+
+      const result = scheduler.onNodeFailed(graph, "n1", "network unavailable: github api limit");
+      expect(result.action).toBe("retry");
+      const node = result.graph.nodes.get("n1")!;
+      // Classifier: external_dependency → retry_same → "same".
+      expect(scheduler.getRetryStrategy(node)).toBe("same");
+      // The static strategy array must NOT be mutated (the escalate-vs-block
+      // decision reads strategy[last]).
+      expect(node.retryPolicy.strategy).toEqual(["same", "different_approach", "escalate_user"]);
+    });
+
+    test("architecture_uncertainty failure retries with 'different_agent' per classifier", () => {
+      const scheduler = new Scheduler({}, () => NOW);
+      let graph = createTaskGraph({ id: "g2", goal: "Test", now: NOW });
+      graph = addNode(graph, makeNode({ id: "n2", retryPolicy: { maxRetries: 2, strategy: ["same", "different_approach", "escalate_user"], currentRetry: 0 } }), NOW);
+      graph = transitionNode(graph, "n2", "ready", NOW);
+      graph = transitionNode(graph, "n2", "running", NOW);
+
+      const result = scheduler.onNodeFailed(graph, "n2", "design uncertainty: rethink the trade-off");
+      expect(result.action).toBe("retry");
+      expect(scheduler.getRetryStrategy(result.graph.nodes.get("n2")!)).toBe("different_agent");
     });
   });
 

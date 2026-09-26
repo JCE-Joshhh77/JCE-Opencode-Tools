@@ -585,8 +585,33 @@ export function parseSkillCorrection(text: string): SkillCorrection | null {
     if (new RegExp(`\\b(salah route|wrong route|wrong skill)\\b[^.\n]{0,40}\\b${spaced}\\b`, "i").test(lower)) forbid.add(skill);
   }
 
-  const agentMatch = lower.match(/\b(should be|harusnya|prefer|pakai|use)\b[^.\n]{0,20}\b(researcher|jce-researcher|oracle|frontend|android|explorer)\b/i);
-  if (agentMatch) agent = agentMatch[2] === "researcher" ? "jce-researcher" : agentMatch[2];
+  // Agent override: an affirmative "use/pakai X" phrase maps to agent X. A
+  // preceding negator ("jangan pakai oracle" / "don't use oracle") must NOT
+  // select the agent — it forbids it. Without this guard the override forced
+  // dispatch TO the agent the user explicitly rejected.
+  const agentNounRe = /\b(researcher|jce-researcher|oracle|frontend|android|explorer)\b/gi;
+  const agentPhraseRe = /\b(should be|harusnya|prefer|pakai|use)\b[^.\n]{0,20}?(\b(?:researcher|jce-researcher|oracle|frontend|android|explorer)\b)/gi;
+  // Negation window must NOT cross clause separators (comma/semicolon/period),
+  // otherwise "dont use frontend for this, use android instead" would wrongly
+  // negate the second clause too. "instead" is affirmative-contrast, not a negator.
+  const negatorBefore = /\b(jangan|janganlah|dont|don't|do not|must not|no need|skip|bukan)\b[^,.;:!?\n]{0,25}$/i;
+  for (const match of lower.matchAll(agentPhraseRe)) {
+    const agentToken = match[2] ?? "";
+    const before = lower.slice(0, match.index ?? 0);
+    const phrase = match[0];
+    if (negatorBefore.test(before)) continue;
+    const tokens = [...phrase.matchAll(agentNounRe)].map((m) => m[0].toLowerCase());
+    // No contrast marker: take the FIRST agent noun of the affirmative phrase.
+    if (!/(?:\binstead\b|\bbukan\b)/i.test(phrase)) {
+      agent = agentToken === "researcher" ? "jce-researcher" : agentToken.toLowerCase();
+      break;
+    }
+    // Contrast phrase ("use X instead" / "bukan Y"): pick the LAST agent noun —
+    // the one the user actually wants.
+    const chosen = tokens.length ? tokens[tokens.length - 1]! : agentToken.toLowerCase();
+    agent = chosen === "researcher" ? "jce-researcher" : chosen;
+    break;
+  }
 
   if (forbid.size === 0 && prefer.size === 0 && !agent) return null;
   return { forbid: [...forbid], prefer: [...prefer], agent, reason: text.trim().slice(0, 200) };
@@ -673,11 +698,41 @@ export function scoreSkillCandidates(text: string, agent?: string): SkillScoreBr
   return breakdowns.sort((a, b) => b.total - a.total || (SKILL_REGISTRY[a.skill]?.priority ?? 99) - (SKILL_REGISTRY[b.skill]?.priority ?? 99) || a.skill.localeCompare(b.skill));
 }
 
+/**
+ * Routing confidence measures how much *actual routing signal* (intent, regex,
+ * file, bundle, agent match) the top candidates carry — NOT the unconditional
+ * priority baseline every skill gets for free. The old formula summed the
+ * priority baseline into confidence twice (top + margin), so greetings scored
+ * 50 (skills injected) while genuine narrow-margin tasks scored <30 (skipped)
+ * — the exact inverse of the documented intent.
+ *
+ * Signal strength is the max non-priority/non-history contribution total among
+ * candidates; the dominance margin (top signal − second signal) only refines
+ * it. Confidence 0 => pure-baseline routing (greeting/ambiguous) => skip.
+ */
+function signalStrength(item: SkillScoreBreakdown): number {
+  const total = item.contributions
+    .filter((entry) => entry.source !== "priority" && entry.source !== "history")
+    .reduce((sum, entry) => sum + entry.score, 0);
+  return Math.max(0, total);
+}
+
 function computeRoutingConfidence(ranked: SkillScoreBreakdown[]): number {
-  const top = ranked[0]?.total ?? 0;
-  const second = ranked[1]?.total ?? 0;
+  // Signal strength of the STRONGEST ROUTED SKILL, not the top-total skill:
+  // software-engineering (and other generic cores) carry a 25-point priority
+  // baseline with zero signal, and would otherwise mask a strong domain match
+  // (e.g. sql-database regex 24) ranked just below it.
+  const strengths = ranked.map(signalStrength);
+  const top = strengths.length ? Math.max(...strengths) : 0;
   if (top <= 0) return 0;
-  return Math.max(0, Math.min(100, top + Math.max(0, top - second)));
+  // Dominance margin between the two strongest routed signals.
+  const sorted = strengths.sort((a, b) => b - a);
+  const second = sorted[1] ?? 0;
+  const margin = Math.max(0, top - second);
+  // Preserve the legacy 0-100 scale: raw signal alone maps to ~0-100;
+  // margin bonus tops out at +25 so confidence stays comparable to the
+  // historical range (real tasks scored 27-97 under the old formula).
+  return Math.max(0, Math.min(100, top + Math.min(25, margin)));
 }
 
 const LOW_CONFIDENCE_THRESHOLD = 20;

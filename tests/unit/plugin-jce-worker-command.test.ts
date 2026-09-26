@@ -14,7 +14,7 @@ function createTempRoot(): string {
 describe("JCE-Worker CLI command", () => {
   test("registers operator subcommands", () => {
     expect(jceWorkerCommand.name()).toBe("jce-worker");
-    expect(jceWorkerCommand.commands.map((command) => command.name()).sort()).toEqual(["brain", "clear", "commit-check", "doctor", "eval", "explain-last", "failure-remember", "learn", "next-action", "planner-explain", "preferences", "profile", "release-check", "release-commander", "report", "status", "task-learn", "trace", "why-asked", "why-blocked"]);
+    expect(jceWorkerCommand.commands.map((command) => command.name()).sort()).toEqual(["brain", "clear", "commit-check", "doctor", "eval", "explain-last", "failure-remember", "learn", "next-action", "planner-explain", "preferences", "profile", "release-check", "release-commander", "report", "status", "task-learn", "trace", "why", "why-asked", "why-blocked"]);
   });
 
   test("shows operator subcommands in command help", () => {
@@ -35,6 +35,7 @@ describe("JCE-Worker CLI command", () => {
     expect(help).toContain("explain-last");
     expect(help).toContain("why-blocked");
     expect(help).toContain("why-asked");
+    expect(help).toContain("why");
     expect(help).toContain("next-action");
     expect(help).toContain("planner-explain");
     expect(help).toContain("failure-remember");
@@ -214,6 +215,26 @@ describe("JCE-Worker CLI command", () => {
 
       expect(output.join("\n")).toContain("Policy profile: fast (command)");
       expect(resolvePolicyProfile(root)).toEqual({ profile: "balanced", source: "default" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("why command explains blocker in plain language", async () => {
+    const root = createTempRoot();
+    const output: string[] = [];
+    try {
+      const path = getRuntimeStatePath(root);
+      mkdirSync(join(root, ".opencode-jce"), { recursive: true });
+      writeFileSync(path, JSON.stringify({ ...createEmptyRuntimeState("2026-05-06T00:00:00.000Z"), blockers: [{ reason: "verification evidence missing" }] }), "utf-8");
+      const command = createJceWorkerCommand({ exitProcess: false, cwd: () => root, write: (text) => output.push(text) });
+
+      await command.parseAsync(["why"], { from: "user" });
+
+      const text = output.join("\n");
+      expect(text).toContain("JCE-Worker Why");
+      expect(text).toContain("Blocking reason: verification evidence missing");
+      expect(text).toContain("Next action:");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
