@@ -287,8 +287,8 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "9router",
       "options": {
-        "apiKey": "sk-b775860a7ae2e32b-55mrxw-29416fa3",
-        "baseURL": "https://r6ylt8r.abc-tunnel.us/v1"
+        "apiKey": "sk-9router-YOUR_API_KEY_HERE",
+        "baseURL": "https://your-9router-endpoint.example.com/v1"
       },
       "models": {
         "gcli/grok-4.5-high": {
@@ -429,7 +429,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "bai",
       "options": {
-        "apiKey": "sk-7tmvn7to10sivnkhdvezqiazyoom3048",
+        "apiKey": "sk-bai-YOUR_API_KEY_HERE",
         "baseURL": "http://127.0.0.1:20128/v1"
       },
       "models": {
@@ -571,7 +571,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "enowxai",
       "options": {
-        "apiKey": "enx-2d42904e2161615b6475cacd7a19ca8effde6722a74c5d4b",
+        "apiKey": "enx-enowxai-YOUR_API_KEY_HERE",
         "baseURL": "http://localhost:1430/v1"
       },
       "models": {

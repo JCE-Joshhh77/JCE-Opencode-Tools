@@ -6,7 +6,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
-## [3.8.30] - 2026-10-02
+## [3.8.31] - 2026-10-02
+
+### Fixed
+- **Critical: redacted leaked API keys from `opencode.txt`**: three real provider API keys (9router `sk-b775...`, bai `sk-7tmv...`, enowxai `enx-2d4...`) and a private tunnel URL were committed to the public repo. Replaced all with `YOUR_API_KEY_HERE` placeholders. **Action required**: rotate the three leaked keys immediately.
+- **CI `test-cli` (windows-latest) failure**: the bash `|| exit_code=$?` logic in the CLI validate step produced unexpected behavior on Windows Git Bash. Replaced with a cross-platform `set +e` + explicit exit-code check (0 and 1 are OK, anything else fails).
+
+### Changed
+- **Rewrote `README.md`** (337 → 241 lines, ~28% shorter): cleaner structure, shorter bullets, no walls of text. All factual counts verified accurate (42 agents, 81 skills, 19 profiles, 6 MCP tools, 28 LSP servers). New users can now quickly understand what the plugin is and how to install it.
+- Version synced to 3.8.31 across all sites.
+
+### Verification
+- `tsc --noEmit` exit 0.
+- `bun test`: 1403 pass, 0 fail.
+
+---
+
+ - 2026-10-02
 
 ### Changed — codebase audit & refactoring
 - **Decomposed `src/plugin/index.ts`** (1201 ? 1107 lines): extracted 13 pure helper functions (`delegatedReviewStrings`, `hasDelegatedWork`, `isJceWorkerAgentHint`, `boundHook`, `shouldTranslateToolOutput`, `shouldInspectCompletionOutput`, `shouldApplyDirectContextBudget`, `normalizeToolName`, `ensureProjectContextFile`, `textPart`, `extractFactsFromToolOutput`, `dropStaleWorkflowAtLoad`, `HOOK_TIMEOUT_MS`) into new module `src/plugin/hooks/plugin-helpers.ts`. Removed now-unused imports (`existsSync`, `writeFileSync`, `CONTEXT_FILENAME`, `isRecord`, `withTimeout`, `shouldDropPersistedWorkflow`, `extractProjectFacts`) from index.ts.
