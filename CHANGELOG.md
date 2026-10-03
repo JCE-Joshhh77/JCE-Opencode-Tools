@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.33] - 2026-10-03
+
+### Fixed
+- **CI `install-smoke` (Linux + Windows) still failing after package name fix**: Bun 1.3+ blocked `@opencode-ai/cli`'s required `postinstall` script (`node ./postinstall.mjs`) due to trusted-scripts security policy. CI log showed: `Blocked 1 postinstall`. Added `--trust` flag to `bun install -g --trust @opencode-ai/cli` in both installers so the CLI's lifecycle scripts run correctly.
+
+### Changed
+- Version synced to 3.8.33 across all sites.
+
+### Verification
+- `tsc --noEmit` exit 0.
+- `bash -n install.sh` exit 0.
+
+---
+
 ## [3.8.32] - 2026-10-03
 
 ### Fixed
