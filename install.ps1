@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.33"
+$Version = "3.8.34"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -455,16 +455,32 @@ function Install-OpenCode {
     Write-Info "Installing OpenCode CLI..."
     try {
         bun install -g --trust @opencode-ai/cli
-        $bunPath = Join-Path $env:USERPROFILE ".bun\bin"
-        if (Test-Path $bunPath) { $env:Path += ";$bunPath" }
+        $bunBin = Join-Path $env:USERPROFILE ".bun\bin"
+        if (Test-Path $bunBin) { $env:Path += ";$bunBin" }
 
         if (Test-Command "opencode") {
             Write-Ok "OpenCode CLI installed"
             $script:OpenCodeStatus = "installed"
+        } elseif (Test-Command "opencode2") {
+            # @opencode-ai/cli beta registers the binary as "opencode2".
+            # Create an "opencode.cmd" shim -> "opencode2" for compatibility.
+            if (-not (Test-Path $bunBin)) { New-Item -ItemType Directory -Path $bunBin -Force | Out-Null }
+            $shim = Join-Path $bunBin "opencode.cmd"
+            "@echo off`r`nopencode2 %*" | Set-Content -Path $shim -Encoding ascii
+            Write-Info "Created 'opencode.cmd' shim -> 'opencode2' for compatibility"
+            if (Test-Command "opencode") {
+                Write-Ok "OpenCode CLI installed"
+                $script:OpenCodeStatus = "installed"
+            } else {
+                Write-Warn "OpenCode CLI installed as 'opencode2' (shim creation failed). Use 'opencode2' command."
+                $script:OpenCodeStatus = "installed"
+            }
         } else {
+            $script:OpenCodeStatus = "failed"
             Write-Err "OpenCode CLI installation failed"
         }
     } catch {
+        $script:OpenCodeStatus = "failed"
         Write-Err "Failed to install OpenCode CLI: $_"
     }
 }

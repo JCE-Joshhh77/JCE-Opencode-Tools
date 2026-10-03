@@ -6,6 +6,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.34] - 2026-10-03
+
+### Fixed
+- **CI `install-smoke` (Linux + Windows) still failing**: `@opencode-ai/cli` beta registers its binary as `opencode2`, not `opencode`. Installer checked `command -v opencode` and reported failure even though the package installed successfully. Both installers now detect `opencode2` and create a compatibility symlink (Linux: `ln -sf opencode2 opencode`) or shim (Windows: `opencode.cmd` calling `opencode2 %*`) so the `opencode` command works as expected.
+
+### Changed
+- Version synced to 3.8.34 across all sites.
+
+### Verification
+- `tsc --noEmit` exit 0.
+- `bash -n install.sh` exit 0.
+
+---
+
 ## [3.8.33] - 2026-10-03
 
 ### Fixed

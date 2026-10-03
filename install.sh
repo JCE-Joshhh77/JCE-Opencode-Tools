@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.33"
+VERSION="3.8.34"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -319,18 +319,30 @@ install_opencode() {
     bun install -g --trust @opencode-ai/cli || true
     ensure_fish_bun_path
 
+    # Ensure bun global bin is in PATH for the checks below
+    export PATH="${HOME}/.bun/bin:${PATH}"
+
     if command -v opencode &>/dev/null; then
         success "OpenCode CLI installed"
         OPENCODE_STATUS="installed"
-    else
-        # Try adding bun global bin to PATH
-        export PATH="${HOME}/.bun/bin:${PATH}"
+    elif command -v opencode2 &>/dev/null; then
+        # @opencode-ai/cli beta registers the binary as "opencode2".
+        # Create a symlink "opencode" -> "opencode2" for compatibility.
+        local opencode2_path
+        opencode2_path="$(command -v opencode2 2>/dev/null || true)"
+        if [ -n "$opencode2_path" ] && [ -w "$(dirname "$opencode2_path")" ]; then
+            ln -sf "$opencode2_path" "$(dirname "$opencode2_path")/opencode"
+            info "Created 'opencode' symlink -> 'opencode2' for compatibility"
+        fi
         if command -v opencode &>/dev/null; then
             success "OpenCode CLI installed"
             OPENCODE_STATUS="installed"
         else
-            error "OpenCode CLI installation failed"
+            info "OpenCode CLI installed as 'opencode2' (symlink creation failed). Use 'opencode2' command."
+            OPENCODE_STATUS="installed"
         fi
+    else
+        error "OpenCode CLI installation failed"
     fi
 }
 
