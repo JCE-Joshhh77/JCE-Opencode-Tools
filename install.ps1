@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.31"
+$Version = "3.8.32"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -454,7 +454,7 @@ function Install-OpenCode {
 
     Write-Info "Installing OpenCode CLI..."
     try {
-        bun install -g opencode
+        bun install -g @opencode-ai/cli
         $bunPath = Join-Path $env:USERPROFILE ".bun\bin"
         if (Test-Path $bunPath) { $env:Path += ";$bunPath" }
 

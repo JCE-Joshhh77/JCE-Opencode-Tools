@@ -6,6 +6,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.8.32] - 2026-10-03
+
+### Fixed
+- **CI `dependency-audit` failure**: OSV Scanner command `--lockfile=bun://./bun.lock` resolved path as `/bun.lock` (not found). Fixed to `--lockfile ./bun.lock` which is the correct syntax for current OSV Scanner versions.
+- **CI `install-smoke` failure (Linux + Windows)**: installer ran `bun install -g opencode` which 404s on npm registry (package does not exist). Fixed to `bun install -g @opencode-ai/cli` (the correct package name, confirmed via npm registry).
+
+### Changed
+- Version synced to 3.8.32 across all sites.
+
+### Verification
+- `tsc --noEmit` exit 0.
+- `bash -n install.sh` exit 0.
+- `bun test tests/unit/audit-fixes.test.ts`: 56 pass, 0 fail.
+
+---
+
 ## [3.8.31] - 2026-10-02
 
 ### Fixed
