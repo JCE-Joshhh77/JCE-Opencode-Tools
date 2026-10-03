@@ -379,7 +379,7 @@ async function verifyNpmCache(cleanNpmCache: boolean, keep: boolean): Promise<bo
   }
 }
 
-async function removeLspServers(force: boolean, keep: boolean): Promise<{ removed: string[]; skipped: string[] }> {
+async function removeLspServers(force: boolean, yes: boolean, keep: boolean): Promise<{ removed: string[]; skipped: string[] }> {
   console.log();
   heading("3. LSP Servers");
 
@@ -414,12 +414,12 @@ async function removeLspServers(force: boolean, keep: boolean): Promise<{ remove
   console.log();
 
   warn("LSP servers may have been installed independently of opencode-jce.");
-  if (force) {
+  if (force && !yes) {
     warn("Skipping global LSP removal in --force mode. Run without --force to remove them interactively.");
     return { removed: [], skipped: installed.map((s) => s.name) };
   }
 
-  const confirmed = await askConfirmation("  Hapus LSP servers global yang terdeteksi? Ini bisa menghapus tool yang Anda install sendiri. (y/N): ");
+  const confirmed = yes || await askConfirmation("  Hapus LSP servers global yang terdeteksi? Ini bisa menghapus tool yang Anda install sendiri. (y/N): ");
   if (!confirmed) {
     info("LSP servers dipertahankan.");
     return { removed: [], skipped: installed.map((s) => s.name) };
@@ -558,17 +558,17 @@ async function removeOpenCodeJceCli(_force: boolean): Promise<boolean> {
   return removed;
 }
 
-async function removeOpenCodeCli(force: boolean): Promise<boolean> {
+async function removeOpenCodeCli(force: boolean, yes: boolean): Promise<boolean> {
   console.log();
   heading("5. OpenCode CLI");
 
-  if (force) {
+  if (force && !yes) {
     warn("Skipping OpenCode CLI removal in --force mode to avoid deleting a user-installed CLI.");
     warn("Run without --force and confirm this step if you want to remove OpenCode itself.");
     return false;
   }
 
-  const confirmed = await askConfirmation("  Hapus OpenCode CLI? Ini bisa menghapus instalasi OpenCode milik user. (y/N): ");
+  const confirmed = yes || await askConfirmation("  Hapus OpenCode CLI? Ini bisa menghapus instalasi OpenCode milik user. (y/N): ");
   if (!confirmed) {
     info("OpenCode CLI dipertahankan.");
     return false;
@@ -783,7 +783,7 @@ export const uninstallCommand = new Command("uninstall")
     result.npmCacheVerified = await verifyNpmCache(cleanNpmCache, keepMcp);
 
     // Step 3: LSP servers
-    const lspResult = await removeLspServers(force || yes, keepLsp);
+    const lspResult = await removeLspServers(force, yes, keepLsp);
     result.lspRemoved = lspResult.removed;
     result.lspSkipped = lspResult.skipped;
 
@@ -791,7 +791,7 @@ export const uninstallCommand = new Command("uninstall")
     result.opencodejceRemoved = willRemoveCli ? await removeOpenCodeJceCli(force || yes) : false;
 
     // Step 5: OpenCode CLI
-    result.opencodeRemoved = await removeOpenCodeCli(force || yes);
+    result.opencodeRemoved = await removeOpenCodeCli(force, yes);
 
     // Summary
     printSummary(result);

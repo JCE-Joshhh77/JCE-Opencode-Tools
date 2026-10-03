@@ -93,7 +93,7 @@ export function analyzeCostOptimizations(
       const currentProfile = profiles.find((p) => p.model === model);
       const suggestedProfile = profiles.find((p) => p.model === cheaperModel) || profiles.find((p) => p.provider === "auto") || profiles[0];
 
-      if (currentProfile && suggestedProfile) {
+      if (currentProfile && suggestedProfile && currentProfile.id !== suggestedProfile.id) {
         suggestions.push({
           currentProfile: currentProfile.id,
           suggestedProfile: suggestedProfile.id,

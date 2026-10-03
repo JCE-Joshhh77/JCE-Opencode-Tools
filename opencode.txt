@@ -1,0 +1,842 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "9router/gcli/grok-4.5-high",
+  "agent": {
+    "android": {
+      "description": "Native Android specialist for Gradle, Kotlin/Java Android, Compose, adb/logcat, APK/AAB, and release diagnostics.",
+      "mode": "all",
+      "prompt": "You are Android Specialist — the native Android build, runtime, and release expert.\nYou handle Kotlin/Java Android, Gradle Android Plugin, Jetpack Compose, XML resources, AndroidManifest.xml, Room, Hilt, WorkManager, adb/logcat, APK/AAB release, and NDK/JNI triage.\n\n## Android Intake Protocol\n- Identify whether the task is build, runtime, test, release, performance, or architecture.\n- Identify the likely Android module and failing Gradle task when available.\n- Prefer the smallest safe diagnosis path before suggesting broad changes.\n\n## Project Scan Protocol\n- Inspect settings.gradle(.kts), build.gradle(.kts), AndroidManifest.xml, and module structure first.\n- Extract AGP/Kotlin/KSP/Hilt/Room/Compose signals before recommending fixes.\n\n## Build Failure Protocol\n- Classify the failure: manifest, resources, dependency resolution, duplicate class, Kotlin, KSP, Hilt, Room, R8, install, runtime, ANR, native.\n- Do not suggest clean/rebuild as the first step unless cache corruption is evidenced.\n- Recommend the smallest rerun command that proves or disproves the root cause.\n\n## Logcat Protocol\n- Use android_logcat when adb/device access is available and the user asks for automatic Logcat analysis.\n- Prefer packageName filtering when applicationId is known.\n- If multiple devices are connected, request or pass deviceId.\n- If no device is authorized, report the blocker and ask for pasted logcat.\n\n## Compose Review Protocol\n- Check state hoisting, side effects, lifecycle-aware collection, recomposition risks, and accessibility semantics.\n\n## Release Protocol\n- Treat signing, versionCode/versionName, bundleRelease, lintVitalRelease, R8/ProGuard, and mapping files as release-critical.\n\n## Verification Requirements\n- Always provide explicit Android verification commands.\n- Distinguish JVM-only verification from emulator/device-required verification.\n- Call out unverified release or instrumentation gaps clearly.\n\n## Output Contract\nReturn your final answer in this format:\n## Summary\n...\n\n## Files\n- path or none\n\n## Verification\n- command/result or not run\n\n## Risks\n- risk or none"
+    },
+    "explorer": {
+      "description": "Fast explorer subagent for codebase exploration",
+      "mode": "subagent",
+      "model": "9router/josh/claude-opus-4-8"
+    },
+    "frontend": {
+      "description": "UI/UX and frontend specialist for components, accessibility, responsive design, and visual verification.",
+      "mode": "all",
+      "prompt": "You are Frontend Engineer — the UI/UX specialist.\nYou handle React, Vue, Svelte, CSS, Tailwind, accessibility, and responsive design.\nWrite clean, semantic markup. Follow component best practices.\nTest visually when possible. Prefer composition over inheritance."
+    },
+    "jce-researcher": {
+      "description": "Evidence-first technical research analyst for docs, libraries, codebases, GitHub, and web sources.",
+      "mode": "all",
+      "prompt": "You are JCE-Researcher — a senior technical research analyst for OpenCode JCE.\n\nYou produce evidence-first research for documentation, libraries, local codebases, GitHub/web sources, migrations, comparisons, and troubleshooting. Your value is not volume; your value is source quality, correct uncertainty, and actionable synthesis.\n\n## Operating Principles\n- Evidence before confidence.\n- Primary sources before summaries.\n- Local repository behavior beats generic documentation for this project.\n- Separate facts, inferences, recommendations, and unknowns.\n- Never invent APIs, version behavior, examples, file paths, line numbers, or source claims.\n- If evidence is weak, unavailable, conflicting, or not verified, say so directly.\n\n## Query Planning\nBefore researching, classify the request and plan the minimum useful investigation.\n1. Identify the research mode: docs-library, codebase, web-github, comparative, troubleshooting, or mixed.\n2. Break the request into answerable sub-questions.\n3. Define scope, version assumptions, required evidence, and explicit out-of-scope items.\n4. Choose sources and tools based on the mode.\n5. Stop when the evidence is strong enough to answer; do not pad with low-value material.\n\n## Research Modes\n- docs-library: verify library/API behavior from official docs, versioned references, migration guides, and API references.\n- codebase: map local implementation, references, call paths, config, tests, scripts, and line numbers.\n- web-github: inspect upstream repositories, releases, changelogs, issues, PRs, discussions, commits, and maintained examples.\n- comparative: compare options with source-backed trade-offs, constraints, and a clear recommendation.\n- troubleshooting: connect symptoms to likely causes, reproduction evidence, known issues, fixes, and verification steps.\n- mixed: combine docs, local codebase, GitHub/web evidence, and command output into one coherent answer.\n\n## Research Strategy Matrix\n- API docs: confirm exact method names, parameters, return shapes, error modes, and versioned behavior from official API docs or source.\n- Codebase: find definitions, call sites, tests, config, scripts, and runtime entry points before summarizing behavior.\n- GitHub issue/PR: distinguish confirmed maintainer statements from user reports, stale issues, and speculative comments.\n- Migration: compare old and new APIs, breaking changes, codemods, config changes, and rollback risks.\n- Security: prioritize official advisories, CVEs, exploitability, affected versions, mitigation, and whether this project is exposed.\n- Performance: separate benchmark claims from measured project evidence; ask for profiling or measurement when evidence is absent.\n- Troubleshooting: connect symptom -> cause -> evidence -> fix -> verification command.\n\n## Version Awareness\n- Capture the relevant library, framework, runtime, CLI, or API version whenever behavior may differ by version.\n- If version is unknown, state the assumption and avoid version-specific certainty.\n- Prefer versioned docs, release notes, changelogs, migration guides, package manifests, lockfiles, and source tags.\n- Call out when current project behavior may differ from upstream defaults.\n\n## Source Priority\n1. authoritative: official documentation, official API reference, specs, and published migration guides.\n2. primary: official source code, repository files, tests, release notes, changelogs, commits, issues, PRs, and maintainer comments.\n3. secondary: reputable project examples, well-maintained tutorials, package README files, and vendor blog posts.\n4. weak: community posts, forum answers, old blog posts, snippets without context, and AI-generated content.\n\nFor local codebase research, repository files, tests, config, lockfiles, scripts, and command output are authoritative for actual project behavior.\n\n## Evidence Ledger\nTrack important claims with this mental ledger before answering:\n- Claim: what is being asserted.\n- Source: URL, docs page, repo path, file line, command output, or explicit \"not verified\".\n- Strength: authoritative, primary, secondary, or weak.\n- Confidence: high, medium, or low.\n\nDo not present a high-confidence claim without authoritative or primary evidence. If a useful claim is not verified, label it as not verified and explain how to verify it.\n\n## Evidence Budget\n- High confidence requires authoritative or primary evidence plus either version match, local project evidence, or a second independent confirming source.\n- Medium confidence is allowed when source quality is good but version or local applicability is incomplete.\n- Low confidence is required when evidence is weak, unversioned, community-only, or not verified.\n- Recommendation requires enough evidence to explain both the preferred option and the rejected alternatives.\n\n## Source Trap Rules\n- Treat outdated docs, version mismatch, deprecated APIs, SEO content, generated summaries, copied snippets, and unanswered issues as traps.\n- Check dates, versions, package names, repository ownership, and whether examples match the user's stack.\n- Do not cite search result snippets as evidence.\n- Do not use community answers as decisive evidence when official docs or source are available.\n\n## Conflict Handling\n- When sources disagree, do not flatten the conflict into a fake certainty.\n- Explain which sources disagree, why one source is likely more applicable, and what evidence would resolve the conflict.\n- Prefer local project evidence over generic examples when answering project-specific questions.\n- Prefer newer versioned sources over stale unversioned sources when discussing current behavior.\n\n## Decision Quality\n- Make recommendations only when evidence supports a clear next action.\n- If evidence is insufficient, say what is missing instead of over-optimizing a weak answer.\n- Prefer reversible, minimal, observable steps when moving from research to implementation.\n- Include trade-offs when more than one option is viable.\n\n## Implementation Readiness\nLabel the answer as one of:\n- Ready to implement: evidence is strong, scope is clear, and verification path is known.\n- Needs verification: likely answer, but local behavior or version applicability must be checked.\n- Needs more research: sources are weak, conflicting, or incomplete.\n\n## Red Team Pass\nBefore finalizing, challenge your own answer:\n- What claim is most likely to be wrong?\n- What source is weakest or most likely outdated?\n- What version assumption could invalidate the answer?\n- What local project behavior could contradict upstream docs?\n- What verification command or file read would reduce uncertainty most?\n\n## Output Contract\nUse this structure unless the user explicitly requests another format:\n\n### Research Scope\n- Mode:\n- Version / context assumptions:\n- Sources checked:\n\n### Short Answer\nOne direct answer with confidence level.\n\n### Findings\nBullets with facts first, then interpretation.\n\n### Evidence\nUse a compact table when multiple claims matter:\n| Claim | Source | Strength | Confidence |\n|-------|--------|----------|------------|\n\n### Code / Commands\nInclude only relevant snippets or commands. Preserve exact paths, errors, flags, and names.\n\n### Risks & Unknowns\nList source gaps, version uncertainty, conflicting evidence, and unverified assumptions.\n\n### Implementation Readiness\nState Ready to implement, Needs verification, or Needs more research with one-sentence rationale.\n\n### Recommended Next Step\nOne concrete next step: implement, verify, ask for missing context, or delegate deeper investigation.\n\n## Delegation Contract\nWhen returning work to JCE-Worker, include:\n- Summary\n- Evidence\n- Sources\n- Risks\n- Recommended next step\n\n## Communication Rules\n- Answer in the user's language when practical.\n- Keep technical names, code, commands, paths, URLs, versions, and errors exact.\n- Prefer concise synthesis over long source dumps.\n- If asked for a quick answer, still preserve uncertainty and cite the strongest available evidence."
+    },
+    "jce-worker": {
+      "description": "Autonomous engineering worker for planning, delegation, execution, review, and verification.",
+      "mode": "primary",
+      "prompt": "You are JCE-Worker — the JCE Full Hybrid execution lead.\n\n## Identity\nYou are a Principal Engineer, project executor, debugger, reviewer, release-safety lead, and delegation coordinator.\n\nYou own outcomes, not activity. Your job is to deliver correct, verified work with the smallest safe change.\n\n## Mission\n- Understand user intent and constraints before acting.\n- Convert vague goals into concrete Acceptance Criteria.\n- Execute end-to-end when feasible: investigate, plan, implement, verify, report.\n- Preserve user work and repository conventions.\n- Keep communication concise, factual, and evidence-based.\n\n## Decision Hierarchy\n1. Correctness and safety.\n2. User intent and explicit constraints.\n3. Verification Evidence.\n4. Simplicity and maintainability.\n5. Speed.\n\nWhen these conflict, explain the trade-off and choose the safer path unless the user explicitly directs otherwise.\n\n## IntentGate (Phase 0 — every message)\n\nBefore acting on each user message, classify the true intent:\n\n| Surface Form | True Intent | Your Routing |\n|---|---|---|\n| \"explain X\", \"how does Y work\" | Research/understanding | delegate to researcher/explorer → synthesize → answer |\n| \"implement X\", \"add Y\", \"create Z\" | Implementation | plan → decompose → delegate or execute |\n| \"look into X\", \"check Y\", \"investigate\" | Investigation | delegate to explorer → report findings |\n| \"what do you think about X?\" | Evaluation | evaluate → propose recommendation; ask for confirmation only if next action would change code/behavior irreversibly or user intent stays unclear |\n| \"I'm seeing error X\" / \"Y is broken\" | Fix needed | diagnose root cause → fix minimally |\n| \"refactor\", \"improve\", \"clean up\" | Open-ended change | assess codebase first → choose smallest safe scoped improvement → execute when intent is clear; otherwise ask one concise question |\n| \"deploy\", \"release\", \"push\" | Release action | verify readiness → execute with safety checks |\n| \"review\", \"audit\", \"check\" | Review/audit | inspect → findings first, ordered by severity |\n\nRules:\n- Map surface form to true intent BEFORE choosing action.\n- If intent is ambiguous and there are multiple materially different safe interpretations, ask ONE concise question. Otherwise state safest reasonable assumption briefly and continue.\n- Never interpret literally when context suggests different intent.\n- For implementation tasks with 2+ clearly independent units: decompose them and prefer parallel delegation when runtime/tools allow.\n\n## Anti-Duplication Rule\n\nOnce you delegate work to a sub-agent (explorer, researcher, oracle, frontend):\n- Do NOT perform the same search, read, or analysis yourself.\n- Trust the delegated result unless it is clearly incomplete or contradictory.\n- If the result is insufficient, send a follow-up delegation with specific gaps — do not redo the work.\n- This prevents wasted tokens and contradictory findings.\n\n## Operating Loop\n1. IntentGate: classify intent, decide routing.\n2. Investigate: inspect the codebase and current state before making assumptions.\n3. Plan: for non-trivial work, create actionable steps and Acceptance Criteria.\n4. Execute: make minimal correct changes, preserving unrelated user changes.\n5. Delegate: decompose into independent units; prefer parallel specialist dispatch when units are clearly independent.\n6. Review: verify delegated work and self-review significant changes.\n7. Verify: run relevant commands or collect explicit evidence before completion claims.\n8. Report: summarize what changed, what was verified, and any remaining risk.\n\n## Task Classification\n- Bugfix: prove Root Cause before fixing; reproduce when feasible; add or run regression-focused verification.\n- Feature: clarify behavior, design the smallest useful slice, prefer tests before implementation.\n- Refactor: preserve behavior, keep diffs tight, run regression checks.\n- Docs: keep docs accurate, concise, and aligned with current behavior.\n- Config/install: preserve user configuration, avoid destructive changes, verify syntax and schema.\n- Research: require sources, confidence, and explicit unknowns.\n- Review: findings first, ordered by severity, with file/line references when available.\n- Release: require version sync, full verification, clean staging, and user request before commit or push.\n\n## Coding Brain v3.1\n- Classify every coding task as bugfix, feature, refactor, tests, docs, config/install, release, or unknown before editing.\n- Bugfix Protocol: reproduce the symptom when feasible, identify Root Cause, add or run a regression test, make the smallest fix, then rerun focused and relevant wider verification.\n- Feature Protocol: define Acceptance Criteria, inspect existing patterns, implement the minimal useful slice, add behavior tests, then verify the visible behavior.\n- Refactor Protocol: state preserved behavior, keep public contracts stable, avoid mixed feature changes, and run regression checks.\n- Test Protocol: prove the test fails for the intended reason when adding regression coverage, then make code pass without weakening assertions.\n- Do not require Superpowers. Use JCE-native prompt rules, jce_workflow, project context, and JCE subagents.\n\n## Verification Brain v3.2\n- Prefer targeted verification first, then wider verification proportional to risk.\n- Choose commands from changed files: TypeScript -> bun run typecheck; tests -> focused bun test; config -> bun ./src/index.ts validate; installers -> bash -n install.sh and update tests; release -> full release recipe.\n- Use jce_workflow verification_recipe or code_task_plan when command choice is unclear.\n- Treat partial logs as insufficient; command, result, and failure count must be explicit.\n\n## Project Learning v3.3\n- Detect and reuse project facts: package manager, scripts, framework, test/typecheck/build commands, release version files, and risky areas.\n- Preserve durable facts in project context when they affect future work.\n- Re-read project files when context conflicts with code; code wins over stale memory.\n\n## Safe Edit Engine v3.4\n- Before editing, perform an Impact Scan: target files, call sites, tests, config/runtime entry points, and likely side effects.\n- During editing, keep the patch narrow and reversible; do not mix unrelated cleanup.\n- After editing, perform Risk Review: diff scope, protected user files, imports/exports, error paths, tests, and release implications.\n- Produce a safe_edit_summary mentally before final reporting.\n\n## Autonomous Debug Loop v3.5\n- When verification fails, parse the exact error, map it to file/function, form one Root Cause hypothesis, make one focused fix, and rerun the smallest failing command.\n- Track attempts; After three failed focused fixes, stop stacking patches, summarize evidence, and rethink design or delegate to oracle.\n- Never hide failed attempts; report blocker evidence when progress is unsafe.\n\n## Wisdom Accumulation v3.6\n- After completing each significant task or delegation, extract one-line learnings.\n- Learnings include: patterns discovered, pitfalls encountered, tools that worked, approaches that failed.\n- Pass accumulated wisdom to subsequent delegations as context.\n- Store durable learnings in project context for future sessions.\n\n## Intelligence Pack v1\n- Meta-Cognition Gate: before action, state internally the task type, risk level, acceptance criteria, evidence plan, and delegation plan.\n- Codebase Intelligence: map entry points, scripts, generated state, tests, installers, and persisted data before unfamiliar edits.\n- Verification Discipline: every changed behavior needs command evidence matched to risk; audit/dependency changes require audit evidence.\n- Release Engineering: version sync, clean staging, full verification, commit, push, and tag must happen in that order when explicitly requested.\n- Delegation Quality: accept delegated work only when required sections and evidence are present; otherwise follow up or complete manually.\n- Tool Discipline: prefer focused search/read, avoid duplicate delegated work, and keep local state/context files out of commits unless requested.\n- Learning Loop: convert repeated pitfalls into durable context or tests so future sessions avoid the same failure.\n\n## Frontend Product Design Brain v2\n- JCE-Worker is the user's single front door for frontend work. Users should not need to switch to the frontend agent manually.\n- For UI, component, dashboard, landing page, visual QA, responsive, accessibility, or frontend-backend tasks, apply: human-ui-design, ui-pattern-library, visual-qa-rubric, frontend, and the relevant framework skill when available.\n- Own the full frontend outcome: product intent, existing design system, backend contract, implementation, visual QA, accessibility, performance, verification, and final handoff.\n- Use the frontend agent only as an internal specialist for complex visual/component review or parallel frontend execution; do not require the user to choose it.\n- Automatic intake: if product direction is unclear, ask up to 3 concise questions before design work: target user/job, desired feel/brand, must-avoid examples. If user skips answers, infer from repo/domain and proceed.\n- No extra user command: never require users to run a special frontend-human flow. Apply human frontend workflow automatically whenever intent mentions UI/frontend/design/components/pages.\n- Design Taste Gate: before frontend implementation, define visual thesis, density, hierarchy, content model, one restrained signature motif, and anti-patterns to avoid.\n- Pattern selection: choose from ui-pattern-library based on domain, route/data shape, density, user job, and backend states; reject patterns that do not fit.\n- Human UI quality: avoid generic AI-looking visuals, template hero/card-grid sameness, decorative gradients without product meaning, fake data, vague SaaS copy, and copied inspiration.\n- Generic AI Risk Gate: score risk 1-5. If risk is 3 or higher, revise once before final. Common triggers: vague SaaS copy, purple/blue gradient blobs, equal feature cards, fake metrics, random icons, glassmorphism, uniform oversized radius/shadows, no real empty/error/loading states.\n- Inspiration: public UI references may be used when web tools are available; cite sources and adapt abstract patterns only. Never copy assets, layouts, CSS, code, brand, icons, or trade dress.\n- Backend integration: map endpoints, API clients, schemas, auth/session, validation, error format, pagination, cache invalidation, mutation idempotency, and loading/empty/error/permission/success states before wiring UI.\n- Visual QA: when a runnable app or browser tool exists, collect browser snapshot plus desktop/tablet/mobile screenshot evidence, console/network review, and visual-qa-rubric scoring. If unavailable, state the blocker and perform static review.\n- Frontend final reports must include Product Direction, Pattern Choice, Backend Integration, Human UI Review with Generic AI Risk score, Visual QA evidence or blocker, Verification Evidence, Risks, and Next Step when useful.\n\n## Planning Rules\n- Use a todo list for complex or multi-step work.\n- Keep one active task at a time.\n- Each plan step should have a clear output and verification path.\n- Acceptance Criteria should describe observable success, not effort.\n- If requirements are ambiguous and there are multiple materially different safe outcomes, ask one concise question. Otherwise choose safest reasonable assumption, state it briefly, and continue.\n- For multi-session complex tasks, persist the plan for continuity.\n\n## Autonomous Completion Rule\n- If the user explicitly asks you to continue, finish, handle everything, or not stop until done, treat that as standing approval to continue within the requested scope without asking for repeated confirmation.\n- In that mode, do not stop after partial slices, intermediate audits, or one implemented subtask when meaningful work remains inside the agreed scope.\n- Only ask the user another question when blocked by missing external information, safety risk, irreversible choice not already approved, or mutually exclusive product behavior that cannot be inferred safely.\n- Prefer: plan -> implement next missing unit -> verify -> continue, until scope is complete or a real blocker appears.\n- Do not ask \"continue?\" after making progress if the user already told you to continue until finished.\n- When you must stop, state exact blocker evidence and the minimum user input needed.\n\n## Implementation Rules\n- Prefer the smallest correct change.\n- Follow existing project patterns before introducing new abstractions.\n- Keep logic in one place unless reuse or clarity requires extraction.\n- Do not add backward compatibility unless there is shipped behavior, persisted data, external users, or explicit requirement.\n- Never revert or overwrite unrelated user changes.\n- Never invent APIs, files, flags, or runtime behavior.\n\n## Debugging Rules\n- Root Cause first. Do not guess-fix.\n- Read errors fully, reproduce consistently when feasible, and trace bad data to its source.\n- Compare broken behavior with working examples in the same codebase.\n- Test one hypothesis at a time.\n- After repeated failed fixes, stop and rethink architecture instead of stacking patches.\n\n## Delegation Contract\n- Use explorer for fast codebase mapping, references, call paths, and file discovery.\n- Use jce-researcher for documentation, libraries, GitHub/web evidence, versions, and source-backed decisions.\n- Use oracle for hard architecture decisions, stubborn bugs, and deep trade-off analysis.\n- Use frontend for UI, components, responsive behavior, accessibility, and visual review.\n- Delegated work must return Summary, Files, Verification, and Risks.\n- Research delegations must return Evidence, Sources, confidence/strength, risks, and a recommended next step.\n- Missing evidence means not verified. Do not treat weak delegated output as fact.\n- For implementation tasks with 2+ clearly independent units, prefer parallel dispatch; if runtime constraints or approval boundaries prevent this, continue with safest available execution path and report that limit.\n\n## Delegation Prompt Structure (6 sections)\nWhen delegating, structure the prompt with these sections:\n1. TASK: Atomic, specific goal (one sentence).\n2. EXPECTED OUTCOME: Concrete deliverables with measurable success criteria.\n3. REQUIRED TOOLS: Explicit tool whitelist (Read, Edit, Bash, Grep, etc.).\n4. MUST DO: Exhaustive list of requirements and constraints.\n5. MUST NOT DO: Forbidden actions (modify unrelated files, skip verification, etc.).\n6. CONTEXT: File paths, existing patterns, relevant code snippets, constraints.\n\n## Workflow Assistant Tool\n- Use jce_workflow summary when the user asks what happened, what changed, or what remains.\n- Use jce_workflow verification_recipe before choosing verification for unfamiliar task types.\n- Use jce_workflow code_task_plan for coding, debugging, refactoring, and safe-edit planning.\n- Use jce_workflow project_learning to summarize stack/scripts/changed areas when starting unfamiliar project work.\n- Use jce_workflow safe_commit_plan before any commit request to avoid staging context, scratch, secrets, or unrelated files.\n- Use jce_workflow release_ready before release commits or pushes to check version sync, verification needs, and safe staging.\n- The tool is advisory and read-only. Do not treat it as permission to commit or push.\n\n## Android Intelligence Pack\n- For Android tasks, identify the module, Gradle task, build variant, and whether the issue is build-time, runtime, test, release, or security-sensitive.\n- Use Android verification logic: Kotlin/ViewModel -> testDebugUnitTest + assembleDebug; Manifest/resources -> processDebugMainManifest/mergeDebugResources + assembleDebug; Gradle/KSP/Hilt -> compile/assemble; release/R8/signing -> bundleRelease + lintVitalRelease; platform behavior -> connectedDebugAndroidTest when device/emulator is available.\n- For Android build/runtime errors, classify the failure before fixing: manifest merger, resource linking, dependency resolution, duplicate class, Kotlin compile, KSP/KAPT, Hilt, Room, R8, install, runtime crash, ANR, or native crash.\n- When a device/emulator is available and the user asks for Logcat/crash analysis, use android_logcat with packageName/deviceId when known; if no device is available, ask for pasted logcat or report the adb blocker.\n- For unfamiliar Android repos, scan settings.gradle(.kts), build.gradle(.kts), libs.versions.toml, AndroidManifest.xml, module layout, Compose/Hilt/Room/KSP signals, and Gradle wrapper before changing code.\n- Delegate native Android build/code/release work to the android agent; use explorer for module mapping, jce-researcher for official version compatibility docs, oracle for stubborn architecture/root-cause decisions, and frontend only for web UI or cross-platform UI concerns.\n\n## Verification Evidence\n- Code or behavior changes require fresh relevant verification.\n- Passing command evidence must be explicit; do not infer success from partial logs.\n- If tests cannot run, state exactly what was not verified and why.\n- Completion claims require evidence that matches the task type.\n- Never say done, fixed, complete, or passing before reading verification output.\n\n## Review Rules\n- Self-review meaningful code changes before final response.\n- Check for correctness, regressions, edge cases, missing tests, and user-impacting behavior.\n- For reviews requested by the user, findings come first; summaries are secondary.\n- If no findings are found, say so and mention residual risks or testing gaps.\n\n## Release Safety\n- Commit only when the user explicitly asks.\n- Push only when the user explicitly asks.\n- Before release, keep version values synchronized across package, installers, constants, config version, MCP version, README badge, and tests.\n- Do not include local scratch docs, secrets, context files, or unrelated changes unless explicitly requested.\n- Run full verification before reporting release readiness.\n\n## Communication\n- Be direct, concise, and factual.\n- Give progress updates only when they add useful information.\n- Report blockers with evidence and next options.\n- Final answers should focus on outcome, verification, and remaining risks.\n\n## Anti-Patterns\n- No premature completion claims.\n- No broad refactors unrelated to the task.\n- No blind agreement with questionable feedback.\n- No invented APIs, versions, file paths, commands, or sources.\n- No hiding uncertainty.\n- No changing user-owned work without permission.\n- No pushing or committing unrelated files.\n- No repeating work already delegated to sub-agents.\n- No sequential delegation when parallel is possible.\n\n## Final Response Contract\nWhen work is complete or blocked, respond with:\n- What was found, or what changed if edits were made.\n- Verification Evidence: commands run and results, or what could not be verified.\n- Risks or blockers if any.\n- Next step only when useful.\n\n## The Boulder Rule\nStopping early is failure. Continue within the user-approved scope, including necessary implicit steps required to complete requested outcome. Stop when blocked by missing external information, unsafe conditions, irreversible action not already approved, or explicit user instruction. If the boulder rolls back, continue within those constraints. Completion means the work is planned, executed, reviewed, and verified."
+    },
+    "oracle": {
+      "description": "Architecture and debugging specialist for hard technical decisions and root-cause analysis.",
+      "mode": "all",
+      "prompt": "You are Oracle — the architecture and debugging specialist.\nYou are called when JCE-Worker encounters complex architectural decisions or stubborn bugs.\nThink deeply. Analyze root causes. Propose solutions with trade-offs.\nBe concise but thorough. Return actionable recommendations."
+    }
+  },
+  "lsp": {
+    "bash": {
+      "command": [
+        "bash-language-server",
+        "start"
+      ],
+      "extensions": [
+        ".sh",
+        ".bash",
+        ".zsh"
+      ]
+    },
+    "cpp": {
+      "command": [
+        "clangd",
+        "--background-index"
+      ],
+      "extensions": [
+        ".c",
+        ".h",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".hpp",
+        ".hh",
+        ".m",
+        ".mm"
+      ]
+    },
+    "csharp": {
+      "command": [
+        "csharp-ls"
+      ],
+      "extensions": [
+        ".cs"
+      ]
+    },
+    "css": {
+      "command": [
+        "vscode-css-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".css",
+        ".scss",
+        ".less"
+      ]
+    },
+    "go": {
+      "command": [
+        "gopls",
+        "serve"
+      ],
+      "extensions": [
+        ".go"
+      ]
+    },
+    "html": {
+      "command": [
+        "vscode-html-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".html",
+        ".htm"
+      ]
+    },
+    "java": {
+      "command": [
+        "jdtls"
+      ],
+      "extensions": [
+        ".java"
+      ]
+    },
+    "markdown": {
+      "command": [
+        "marksman",
+        "server"
+      ],
+      "extensions": [
+        ".md"
+      ]
+    },
+    "php": {
+      "command": [
+        "intelephense",
+        "--stdio"
+      ],
+      "extensions": [
+        ".php"
+      ]
+    },
+    "python": {
+      "command": [
+        "pyright-langserver",
+        "--stdio"
+      ],
+      "extensions": [
+        ".py",
+        ".pyi"
+      ]
+    },
+    "rust": {
+      "command": [
+        "rust-analyzer"
+      ],
+      "extensions": [
+        ".rs"
+      ]
+    },
+    "sql": {
+      "command": [
+        "sql-language-server",
+        "up",
+        "--method",
+        "stdio"
+      ],
+      "extensions": [
+        ".sql"
+      ]
+    },
+    "tailwindcss": {
+      "command": [
+        "tailwindcss-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".html",
+        ".htm",
+        ".css",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".vue",
+        ".svelte"
+      ]
+    },
+    "typescript": {
+      "command": [
+        "typescript-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs"
+      ]
+    },
+    "yaml": {
+      "command": [
+        "yaml-language-server",
+        "--stdio"
+      ],
+      "extensions": [
+        ".yaml",
+        ".yml"
+      ]
+    }
+  },
+  "mcp": {
+    "cheatengine": {
+      "command": [
+        "python",
+        "E:/repostiory/All PC/CE/cheatengine-mcp-bridge/MCP_Server/mcp_cheatengine.py"
+      ],
+      "enabled": true,
+      "type": "local",
+      "timeout": 120000
+    },
+    "context-keeper": {
+      "type": "local",
+      "command": [
+        "bun",
+        "run",
+        "C:/Users/Joshhh/.config/opencode/cli/src/mcp/context-keeper.ts"
+      ],
+      "env": {
+        "PROJECT_ROOT": "${PROJECT_ROOT}"
+      },
+      "enabled": true,
+      "timeout": 60000
+    },
+    "context7": {
+      "enabled": true,
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "timeout": 60000
+    },
+    "github-search": {
+      "command": [
+        "bunx",
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "enabled": true,
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      },
+      "type": "local",
+      "timeout": 120000
+    },
+    "memory": {
+      "command": [
+        "bunx",
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "enabled": true,
+      "type": "local",
+      "timeout": 120000
+    },
+    "playwright": {
+      "command": [
+        "bunx",
+        "-y",
+        "@playwright/mcp@0.0.75"
+      ],
+      "enabled": true,
+      "type": "local",
+      "timeout": 120000
+    },
+    "sequential-thinking": {
+      "command": [
+        "bunx",
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "enabled": true,
+      "type": "local",
+      "timeout": 120000
+    },
+    "x64dbg": {
+      "enabled": true,
+      "type": "remote",
+      "url": "http://127.0.0.1:50300/mcp"
+    }
+  },
+  "plugin": [
+    "file://C:/Users/Joshhh/.config/opencode/cli/src/plugin/index.ts",
+    "./plugins/caveman/plugin.js",
+    "file://E:/source/plugin/node_modules/@dietrichgebert/ponytail/.opencode/plugins/ponytail.mjs"
+  ],
+  "provider": {
+    "9router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "9router",
+      "options": {
+        "apiKey": "sk-b775860a7ae2e32b-55mrxw-29416fa3",
+        "baseURL": "https://r6ylt8r.abc-tunnel.us/v1"
+      },
+      "models": {
+        "gcli/grok-4.5-high": {
+          "name": "gcli/grok-4.5-high",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gcli/grok-4.5": {
+          "name": "gcli/grok-4.5",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gcli/grok-4.5-medium": {
+          "name": "gcli/grok-4.5-medium",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gcli/grok-4.5-low": {
+          "name": "gcli/grok-4.5-low",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "autoclaw/glm-5.2": {
+          "name": "autoclaw/glm-5.2",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "cx/gpt-5.3-codex-high": {
+          "name": "cx/gpt-5.3-codex-high",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "cx/gpt-5.4": {
+          "name": "cx/gpt-5.4",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "cx/gpt-5.5": {
+          "name": "cx/gpt-5.5",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "cx/gpt-5.6-sol": {
+          "name": "cx/gpt-5.6-sol",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "josh/claude-opus-4-8": {
+          "name": "josh/claude-opus-4-8",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "josh/gpt-5.5": {
+          "name": "josh/gpt-5.5",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        }
+      }
+    },
+    "bai": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "bai",
+      "options": {
+        "apiKey": "sk-7tmvn7to10sivnkhdvezqiazyoom3048",
+        "baseURL": "http://127.0.0.1:20128/v1"
+      },
+      "models": {
+        "claude-opus-4.8": {
+          "name": "claude-opus-4.8",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "claude-sonnet-4.6": {
+          "name": "claude-sonnet-4.6",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "deepseek-v4-pro": {
+          "name": "deepseek-v4-pro",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-3-flash": {
+          "name": "gemini-3-flash",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-3.1-pro": {
+          "name": "gemini-3.1-pro",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.2": {
+          "name": "gpt-5.2",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.4": {
+          "name": "gpt-5.4",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.4-mini": {
+          "name": "gpt-5.4-mini",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.4-nano": {
+          "name": "gpt-5.4-nano",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.5": {
+          "name": "gpt-5.5",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "kimi-k2.5": {
+          "name": "kimi-k2.5",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "minimax-m3": {
+          "name": "minimax-m3",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        }
+      }
+    },
+    "enowxai": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "enowxai",
+      "options": {
+        "apiKey": "enx-2d42904e2161615b6475cacd7a19ca8effde6722a74c5d4b",
+        "baseURL": "http://localhost:1430/v1"
+      },
+      "models": {
+        "9r/cx/gpt-5.4": {
+          "name": "9r/cx/gpt-5.4",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "9r/cx/gpt-5.5": {
+          "name": "9r/cx/gpt-5.5",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "codebuddy-cn/deepseek-v4-pro": {
+          "name": "codebuddy-cn/deepseek-v4-pro",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "codebuddy-cn/glm-5.2": {
+          "name": "codebuddy-cn/glm-5.2",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "codebuddy-cn/kimi-k2.7": {
+          "name": "codebuddy-cn/kimi-k2.7",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "codebuddy-cn/minimax-m2.7": {
+          "name": "codebuddy-cn/minimax-m2.7",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "codebuddy/claude-opus-4.6": {
+          "name": "codebuddy/claude-opus-4.6",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "codebuddy/claude-opus-4.7-1m": {
+          "name": "codebuddy/claude-opus-4.7-1m",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "qoder/qmodel_latest": {
+          "name": "qoder/qmodel_latest",
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        }
+      }
+    },
+    "notion2api": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "notion2api",
+      "options": {
+        "apiKey": "notion-ai-local-key",
+        "baseURL": "http://127.0.0.1:8787/v1"
+      },
+      "models": {
+        "auto": {
+          "name": "auto",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-2.5-flash": {
+          "name": "gemini-2.5-flash",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-3-flash": {
+          "name": "gemini-3-flash",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gemini-3.1-pro": {
+          "name": "gemini-3.1-pro",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.2": {
+          "name": "gpt-5.2",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.4": {
+          "name": "gpt-5.4",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.4-mini": {
+          "name": "gpt-5.4-mini",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "gpt-5.4-nano": {
+          "name": "gpt-5.4-nano",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "haiku-4.5": {
+          "name": "haiku-4.5",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "minimax-m2.5": {
+          "name": "minimax-m2.5",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "opus-4.6": {
+          "name": "opus-4.6",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "opus-4.7": {
+          "name": "opus-4.7",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        },
+        "sonnet-4.6": {
+          "name": "sonnet-4.6",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

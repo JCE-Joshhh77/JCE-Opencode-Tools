@@ -62,9 +62,6 @@ function runSessionPrompt(client: OpenCodeClient, sessionId: string, input: Laun
   if (typeof client.session?.prompt === "function") {
     return withTimeout(client.session.prompt(buildPromptRequest(sessionId, input, prompt, model)), DEFAULT_PROMPT_TIMEOUT_MS, label, { envOverride });
   }
-  if (typeof client.session?.promptAsync === "function") {
-    return withTimeout(client.session.promptAsync(buildPromptRequest(sessionId, input, prompt, model)), DEFAULT_PROMPT_TIMEOUT_MS, label, { envOverride });
-  }
   if (typeof client.session?.chat === "function") {
     return withTimeout(
       client.session.chat({ params: { id: sessionId }, body: { content: prompt, agent: input.agent } }),
@@ -73,7 +70,7 @@ function runSessionPrompt(client: OpenCodeClient, sessionId: string, input: Laun
       { envOverride },
     );
   }
-  return Promise.reject(new Error("No supported session prompt method found: expected session.prompt, session.promptAsync, or session.chat"));
+  return Promise.reject(new Error("No supported session prompt method found: expected session.prompt or session.chat; session.promptAsync only acknowledges acceptance and cannot provide a task result"));
 }
 
 export async function launchExistingBackgroundTask(manager: BackgroundManager, client: OpenCodeClient, taskId: string): Promise<boolean> {
@@ -81,6 +78,7 @@ export async function launchExistingBackgroundTask(manager: BackgroundManager, c
   if (!task) return false;
   if (task.status !== "pending") return true;
   if (!manager.reserveLaunch()) return false;
+  const generation = manager.getSessionGeneration();
 
   try {
     const session = await withTimeout(
@@ -91,6 +89,7 @@ export async function launchExistingBackgroundTask(manager: BackgroundManager, c
     );
 
     const sessionId = session?.id ?? session?.data?.id;
+    if (!manager.isCurrentSession(generation)) return false;
     if (!sessionId) {
       manager.failTask(task.id, "Failed to create child session");
       return false;
@@ -119,7 +118,7 @@ export async function launchExistingBackgroundTask(manager: BackgroundManager, c
     manager.failTask(task.id, err instanceof Error ? err.message : String(err));
     return false;
   } finally {
-    manager.releaseLaunch();
+    manager.releaseLaunch(generation);
   }
 }
 

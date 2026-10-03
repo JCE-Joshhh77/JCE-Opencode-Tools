@@ -1,8 +1,6 @@
-// TODO(decompose): This module is 1100+ lines. Extract hook handlers into src/plugin/hooks/
-// modules (e.g. system-transform.ts, tool-execute-after.ts, compaction.ts) and keep this
-// file as a thin wiring layer. See audit-2026-06-13.
+// Refactored (audit-2026-06-13): pure helpers extracted to src/plugin/hooks/plugin-helpers.ts.
 import type { Plugin, Hooks } from "@opencode-ai/plugin";
-import { existsSync, writeFileSync, appendFileSync, mkdirSync } from "fs";
+import { appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { BackgroundManager } from "./background/manager.js";
 import { buildDispatchTool, buildStatusTool, buildCollectTool } from "./tools/dispatch.js";
@@ -16,7 +14,6 @@ import { loadSessionState, mergeRuntimeStateSnapshot, saveSessionState } from ".
 import type { RuntimeState } from "./lib/session-store.js";
 import { filterChineseOutput } from "./lib/chinese-output-filter.js";
 import { buildChineseTranslator } from "./lib/chinese-translator.js";
-import { CONTEXT_FILENAME, getContextTemplate } from "../lib/context-template.js";
 import { evaluateExecutionPolicy, formatExecutionPolicyDecision } from "./lib/execution-policy.js";
 import type { ExecutionPolicyDecision } from "./lib/execution-policy.js";
 import { evaluateFinalReviewGate } from "./lib/final-review-gate.js";
@@ -26,18 +23,14 @@ import type { WorkflowIntentRouteSource } from "./lib/workflow.js";
 import { buildWorkflowTool } from "./tools/workflow.js";
 import { buildAndroidLogcatTool } from "./tools/android-logcat.js";
 import { createWorkflowRun } from "./lib/workflow.js";
-import { isRecord } from "./lib/shared-predicates.js";
 import { determineSkillsForMessage, shouldSkipSkillInjection, explainSkillRouting, parseSkillCorrection, applySkillCorrection, applySkillHistoryAdjustments, applySubAgentTelemetryQuality, resolveSkills, getLastBlockedSkills, type SkillCorrection } from "./lib/skill-loader.js";
 import { handleJceModelCommand } from "./lib/slash-model-command.js";
 import { applyContextBudget } from "./lib/context-budget.js";
 import { POST_COMPACTION_NO_TASK_GUARD, shouldSuppressCompactionAutocontinue } from "./lib/compaction-loop-guard.js";
 import { resolveContextLimit, extractTokensUsed, computeUsage, crossedThreshold, buildCompactionPreservation, formatUsage, DEFAULT_COMPACTION_THRESHOLD } from "./lib/context-window-monitor.js";
 import { scoreIntent, toLegacyRoute } from "./lib/orchestration/intent-router.js";
-import { withTimeout } from "../lib/timeout.js";
 import { OrchestrationController } from "./lib/orchestration/controller.js";
 import { OrchestrationBridge } from "./lib/orchestration/bridge.js";
-import { shouldDropPersistedWorkflow } from "./lib/orchestration/staleness.js";
-import { extractProjectFacts } from "./lib/orchestration/fact-extraction.js";
 import { detectWorkstreams } from "./lib/orchestration/workstream-detector.js";
 import { decideAutoActivation } from "./lib/auto-activation.js";
 import { extractChangedFilesFromTool } from "./lib/changed-files.js";
@@ -59,108 +52,21 @@ import {
   runHealthCheck,
   formatHealthCheck,
 } from "./lib/orchestration/reliability.js";
+import {
+  delegatedReviewStrings,
+  hasDelegatedWork,
+  isJceWorkerAgentHint,
+  boundHook,
+  shouldTranslateToolOutput,
+  shouldInspectCompletionOutput,
+  shouldApplyDirectContextBudget,
+  normalizeToolName,
+  ensureProjectContextFile,
+  textPart,
+  extractFactsFromToolOutput,
+  dropStaleWorkflowAtLoad,
+} from "./hooks/plugin-helpers.js";
 
-function delegatedReviewStrings(memory: RuntimeState): string[] {
-  return [...memory.completedSummaries, ...memory.verificationEvidence]
-    .filter(isRecord)
-    .map((entry) => {
-      const status = typeof entry.reviewStatus === "string" ? entry.reviewStatus : "unknown";
-      const notes = Array.isArray(entry.reviewNotes) ? entry.reviewNotes.filter((note): note is string => typeof note === "string").join("; ") : "";
-      const summary = typeof entry.verificationSummary === "string" ? entry.verificationSummary : "";
-      return `status=${status}${notes ? `; ${notes}` : ""}${summary ? `; ${summary}` : ""}`;
-    });
-}
-
-function hasDelegatedWork(memory: RuntimeState): boolean {
-  return [...memory.completedSummaries, ...memory.verificationEvidence].some((entry) => isRecord(entry) && typeof entry.reviewStatus === "string" && entry.reviewStatus !== "not_applicable");
-}
-
-function isJceWorkerAgentHint(value: string): value is "oracle" | "jce-researcher" | "explorer" | "frontend" | "android" {
-  return value === "oracle" || value === "jce-researcher" || value === "explorer" || value === "frontend" || value === "android";
-}
-
-const HOOK_TIMEOUT_MS = 8000;
-
-/** Bound a hook await so a stalled skill read or dispatch cannot freeze the turn. */
-function boundHook<T>(promise: Promise<T>, label: string, fallback: T): Promise<T> {
-  return withTimeout(promise, HOOK_TIMEOUT_MS, label, { envOverride: "JCE_HOOK_TIMEOUT_MS" }).catch(() => fallback);
-}
-
-// NOTE: the `tool` argument to these helpers MUST already be normalized to
-// lowercase via normalizeToolName(). Normalization happens once at the hook
-// boundary (tool.execute.after) so tool-name casing can never drift again (L1).
-function shouldTranslateToolOutput(tool: string): boolean {
-  return tool === "task" || tool === "bg_collect" || tool === "jce_workflow";
-}
-
-const COMPLETION_INSPECTION_TOOLS = new Set(["task", "jce_workflow"]);
-
-function shouldInspectCompletionOutput(tool: string): boolean {
-  return COMPLETION_INSPECTION_TOOLS.has(tool);
-}
-
-/** Tools whose output must NOT be compressed — model needs exact bytes for correctness. */
-const CONTEXT_BUDGET_EXCLUDED_TOOLS = new Set([
-  "read",        // file contents can be large; skip expensive post-processing to avoid worker instability on low-memory VPS
-  "write",       // confirmation only — already tiny
-  "edit",        // confirmation only — already tiny
-  "todowrite",   // parsed downstream for state extraction
-  "skill",       // skill content must be exact (instructions)
-  "bash",        // verification parser needs the raw pass/fail lines
-]);
-
-function shouldApplyDirectContextBudget(tool: string): boolean {
-  // Apply compression to all tools EXCEPT those requiring exact output.
-  // Short outputs (<100 chars) are auto-skipped by applyContextBudget itself.
-  return !CONTEXT_BUDGET_EXCLUDED_TOOLS.has(tool);
-}
-
-/** Single source of truth for tool-name normalization. */
-function normalizeToolName(tool: unknown): string {
-  return typeof tool === "string" ? tool.toLowerCase() : "";
-}
-
-function ensureProjectContextFile(projectRoot: string): boolean {
-  const contextPath = join(projectRoot, CONTEXT_FILENAME);
-  if (existsSync(contextPath)) return false;
-  writeFileSync(contextPath, getContextTemplate(), "utf-8");
-  return true;
-}
-
-function textPart(text: string) {
-  return { type: "text" as const, text } as any;
-}
-
-/**
- * Extract facts from tool outputs into orchestration shared memory.
- * Delegates to the precision-tuned extractor (execution-output only) to avoid
- * false positives from file contents that merely mention tool names.
- */
-function extractFactsFromToolOutput(orchestrator: OrchestrationController, tool: string, output: string): void {
-  for (const fact of extractProjectFacts(tool, output)) {
-    orchestrator.addFact(fact.key, fact.value, fact.source, fact.confidence);
-  }
-}
-
-/**
- * Drop a stale/terminal persisted activeWorkflow at (re)load using the shared
- * staleness authority. Pure helper so init AND new-session rehydration apply
- * identical logic (root cause of month-old workflows resurrecting was that this
- * only ran once at process init, never on subsequent sessions).
- */
-function dropStaleWorkflowAtLoad(memory: RuntimeState): RuntimeState {
-  if (memory.activeWorkflow && shouldDropPersistedWorkflow(
-    {
-      status: memory.activeWorkflow.status,
-      updatedAt: memory.activeWorkflow.updatedAt,
-      hasActiveTasks: memory.activeTasks.length > 0,
-    },
-    Date.now(),
-  )) {
-    return { ...memory, activeWorkflow: undefined };
-  }
-  return memory;
-}
 
 const jcePlugin: Plugin = async (input) => {
   const { client } = input;
@@ -179,6 +85,7 @@ const jcePlugin: Plugin = async (input) => {
   // Tracks the last TOP-LEVEL session id so we can detect a genuine new session
   // (vs. a sub-agent child session, which must NOT reset parent memory).
   let lastTopLevelSessionId: string | undefined;
+  const childSessionIds = new Set<string>();
   let lastUserMessage = "";
   let workflowRuntimeActive = currentMemory.activeTasks.length > 0;
   let lastTodoState: TodoState | undefined;
@@ -414,6 +321,11 @@ const jcePlugin: Plugin = async (input) => {
     // The very first top-level session uses the process-init snapshot (already
     // fresh), so only REHYDRATE on a true session switch, not the first one.
     if (!isFirst) rehydrateForNewSession(sessionId);
+    if (!isFirst) {
+      childSessionIds.clear();
+      manager.resetSession();
+      bridge.resetSession();
+    }
     return !isFirst;
   };
 
@@ -435,7 +347,13 @@ const jcePlugin: Plugin = async (input) => {
       // sessions of the same project within a long-lived OpenCode process.
       if (event?.type === "session.created") {
         const info = (event as any)?.properties?.info;
+        if (info?.id && info?.parentID) childSessionIds.add(info.id);
         withErrorBoundary(() => maybeBeginNewSession(info?.id, info?.parentID), false, orchestrationLogger);
+      }
+
+      if (event?.type === "session.deleted") {
+        const info = (event as any)?.properties?.info;
+        childSessionIds.delete(info?.id ?? (event as any)?.properties?.sessionID);
       }
 
       if (event?.type === "session.idle" || event?.type === "message.updated") {
@@ -774,7 +692,8 @@ const jcePlugin: Plugin = async (input) => {
       // (or this hook fires first), detect a session switch via sessionID here.
       // parentID is unavailable on this hook input, but child sub-agent sessions
       // do not invoke the parent's system.transform, so sessionID alone is safe.
-      withErrorBoundary(() => maybeBeginNewSession((_input as any)?.sessionID, undefined), false, orchestrationLogger);
+      const sessionId = (_input as any)?.sessionID;
+      withErrorBoundary(() => maybeBeginNewSession(sessionId, childSessionIds.has(sessionId) ? "child" : undefined), false, orchestrationLogger);
       output.system.push(POST_COMPACTION_NO_TASK_GUARD);
       const preFinalGuard = buildPreFinalGuard(currentMemory);
       if (preFinalGuard) output.system.push(preFinalGuard);

@@ -433,6 +433,16 @@ describe("plugin tools", () => {
     expect(memory.contextBudgetSummary!.byTool?.bg_collect?.tasks).toBe(1);
   });
 
+  test("status and collect hide tasks owned by another top-level session", async () => {
+    const manager = new BackgroundManager({ maxConcurrency: 3 });
+    const task = manager.createTask({ description: "old task", prompt: "p", agent: "explorer", parentSessionId: "old", parentMessageId: "m" });
+    manager.completeTask(task.id, "old result");
+    const context = { sessionID: "new", messageID: "m", agent: "explorer", directory: "/tmp", worktree: "/tmp", abort: new AbortController().signal, metadata: () => {}, ask: () => {} } as any;
+
+    expect(await buildStatusTool(manager).execute({} as any, context)).toBe("No background tasks.");
+    expect(await buildCollectTool(manager).execute({ taskId: task.id } as any, context)).toBe(`Task not found: ${task.id}`);
+  });
+
   test("collect tool records learning for accepted delegated evidence", async () => {
     const manager = new BackgroundManager({ maxConcurrency: 3, now: () => "2026-05-06T00:00:00.000Z" });
     const task = manager.createTask({ description: "Review release", prompt: "review", agent: "explorer", parentSessionId: "s", parentMessageId: "m" });

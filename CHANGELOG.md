@@ -6,7 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
-## [3.8.29] - 2026-09-27
+## [3.8.30] - 2026-10-02
+
+### Changed — codebase audit & refactoring
+- **Decomposed `src/plugin/index.ts`** (1201 ? 1107 lines): extracted 13 pure helper functions (`delegatedReviewStrings`, `hasDelegatedWork`, `isJceWorkerAgentHint`, `boundHook`, `shouldTranslateToolOutput`, `shouldInspectCompletionOutput`, `shouldApplyDirectContextBudget`, `normalizeToolName`, `ensureProjectContextFile`, `textPart`, `extractFactsFromToolOutput`, `dropStaleWorkflowAtLoad`, `HOOK_TIMEOUT_MS`) into new module `src/plugin/hooks/plugin-helpers.ts`. Removed now-unused imports (`existsSync`, `writeFileSync`, `CONTEXT_FILENAME`, `isRecord`, `withTimeout`, `shouldDropPersistedWorkflow`, `extractProjectFacts`) from index.ts.
+- **Decomposed `src/commands/update.ts`** (1345 ? 1285 lines): extracted process-cleanup and CLI payload verification helpers (`assertCliPayloadComplete`, `resolveCliPayloadManifestForInstalledBase`, `ProcessSnapshot` interface, `isUpdateProcessCommand`, `isStaleOpenCodeCommand`, `planStaleOpenCodeProcessKills`, `parseUnixProcessList`, `listUnixProcesses`, `terminateStaleOpenCodeProcesses`) into new module `src/commands/update-process-cleanup.ts`. Re-exports added to update.ts for backward compatibility (tests import these directly).
+- **Updated `controller.ts` TODO note**: replaced the stale decompose TODO with an accurate architectural rationale — the class is intentionally a single cohesive unit because all methods share tightly-coupled instance state and 30+ tests assert the class as one unit.
+- **Removed all `TODO(decompose)` markers**: zero remaining across the codebase.
+
+### Fixed — repository hygiene
+- Removed stale temporary file `.opencode-context.md.tmp-3892-1781683117822` (orphaned context archive).
+- Removed empty placeholder file `ins_lf.sh` (0 bytes, no references anywhere).
+
+### Verification
+- `tsc --noEmit` exit 0 (0 type errors).
+- `bun test`: 1403 pass, 0 fail (5735 expect() calls across 119 files).
+- All version-sync sites updated to 3.8.30 (package.json, install.ps1, install.sh, constants.ts, version.ts, context-keeper.ts, README.md, ui.test.ts, plugin-workflow-tool.test.ts, CHANGELOG.md).
+
+---
+
+ - 2026-09-27
 
 ### Fixed — full-repo logic audit (13 bugs across 63 files)
 - **Skill routing confidence was inverted**: greetings injected ~120 lines of skills while genuine narrow-margin tasks were skipped. Confidence is now computed from real routing signal (intent/regex/file/bundle matches), not the priority baseline double-counted.

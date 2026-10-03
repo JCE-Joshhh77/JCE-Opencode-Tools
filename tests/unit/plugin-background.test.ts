@@ -182,7 +182,7 @@ describe("background manager reliability metadata", () => {
     expect(requests[0].body.parts[0].text.match(/same low value context line repeated/g)).toHaveLength(1);
   });
 
-  test("spawner uses promptAsync fallback with prompt parts request shape", async () => {
+  test("spawner never treats promptAsync acknowledgement as completion", async () => {
     const manager = new BackgroundManager({ maxConcurrency: 3, now: () => "2026-05-06T00:00:00.000Z" } as any);
     const requests: unknown[] = [];
     const client = {
@@ -203,17 +203,10 @@ describe("background manager reliability metadata", () => {
     });
     await Promise.resolve();
 
-    expect(requests).toEqual([
-      {
-        path: { id: "child-session" },
-        body: { agent: "explorer", parts: [{ type: "text", text: "p" }] },
-      },
-    ]);
-    expect(requests[0]).not.toHaveProperty("params");
-    expect((requests[0] as any).body).not.toHaveProperty("prompt");
-    expect((requests[0] as any).body).not.toHaveProperty("content");
-    expect(manager.getTask(taskId)?.status).toBe("completed");
-    expect(manager.getTask(taskId)?.result).toBe("Task completed");
+    expect(requests).toEqual([]);
+    expect(manager.getTask(taskId)?.status).toBe("error");
+    expect(manager.getTask(taskId)?.error).toContain("promptAsync only acknowledges acceptance");
+    expect(manager.getTask(taskId)?.result).toBeUndefined();
   });
 
   test("spawner fails task when no supported prompt method exists", async () => {

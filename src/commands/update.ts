@@ -1,11 +1,7 @@
-// TODO(decompose): This module is 1200+ lines. Consider splitting into:
-// - update-download.ts (fetch, verify, stage)
-// - update-install.ts (atomic swap, rollback, cleanup)
-// - update-config.ts (config merge, backup, migration)
-// See audit-2026-06-13.
+// Refactored (audit-2026-06-13): process-cleanup & payload helpers extracted to update-process-cleanup.ts.
 import { Command } from "commander";
-import { existsSync, readdirSync } from "fs";
-import { dirname, join } from "path";
+import { existsSync, lstatSync, readdirSync, realpathSync } from "fs";
+import { dirname, join, resolve } from "path";
 import { homedir } from "os";
 import { cp, mkdir, writeFile, readFile, chmod, rename, rm } from "fs/promises";
 import { platform } from "os";
@@ -22,8 +18,8 @@ import {
 } from "../lib/version.js";
 import { EXIT_SUCCESS, EXIT_ERROR } from "../types.js";
 import { GITHUB_RAW_BASE, GITHUB_REPO, VERSION } from "../lib/constants.js";
-import { getRequiredCliPayloadFiles, resolveCliPayloadManifestPath } from "../lib/cli-payload.js";
 import { exportFactoryDroidPlugin, syncFactoryDroidPersonalConfig } from "../lib/factory-droid.js";
+import { assertCliPayloadComplete, resolveCliPayloadManifestForInstalledBase, planStaleOpenCodeProcessKills, terminateStaleOpenCodeProcesses, type ProcessSnapshot } from "./update-process-cleanup.js";
 
 async function retryFs<T>(label: string, action: () => Promise<T>, attempts = 5): Promise<T> {
   let last: unknown;
@@ -39,34 +35,6 @@ async function retryFs<T>(label: string, action: () => Promise<T>, attempts = 5)
   }
   const detail = last instanceof Error ? last.message : String(last);
   throw new Error(`${label} failed after ${attempts} attempt(s): ${detail}`);
-}
-
-export function assertCliPayloadComplete(dir: string): void {
-  const REQUIRED_CLI_PAYLOAD_FILES = getRequiredCliPayloadFiles(dir);
-  const missing = REQUIRED_CLI_PAYLOAD_FILES.filter((file) => !existsSync(join(dir, file)));
-  if (missing.length > 0) throw new Error(`Downloaded CLI source is incomplete; missing: ${missing.join(", ")}`);
-}
-
-export function resolveCliPayloadManifestForInstalledBase(baseDir: string): string {
-  return resolveCliPayloadManifestPath(baseDir);
-}
-
-export interface ProcessSnapshot {
-  pid: number;
-  ppid: number;
-  command: string;
-}
-
-function isUpdateProcessCommand(command: string): boolean {
-  return /\bopencode-jce(?:\.cmd|\.ps1|\.exe)?\b[\s\S]*\bupdate\b/i.test(command) || /src[\\/]index\.ts[\s\S]*\bupdate\b/i.test(command);
-}
-
-function isStaleOpenCodeCommand(command: string): boolean {
-  const normalized = command.replace(/\\/g, "/");
-  if (isUpdateProcessCommand(normalized)) return false;
-  return /(^|[\s/])opencode(\s|$)/i.test(normalized)
-    || /\.config\/opencode\/cli\/src\/(plugin\/index|mcp\/context-keeper)\.ts/i.test(normalized)
-    || /src\/(plugin\/index|mcp\/context-keeper)\.ts/i.test(normalized);
 }
 
 async function runCommand(command: string, args: string[]): Promise<{ code: number; output: string }> {
@@ -134,37 +102,6 @@ async function exportAndOfferFactoryDroidInstall(configDir: string): Promise<voi
     if (updateResult.code === 0) success("Factory Droid plugin already installed; updated existing install.");
     else warn(`Factory Droid plugin update failed: ${updateResult.output || `exit ${updateResult.code}`}`);
   } else warn(`Factory Droid plugin install failed: ${installResult.output || `exit ${installResult.code}`}`);
-}
-
-export function planStaleOpenCodeProcessKills(processes: ProcessSnapshot[], currentPid = process.pid): ProcessSnapshot[] {
-  return processes
-    .filter((entry) => entry.pid > 0 && entry.pid !== currentPid)
-    .filter((entry) => isStaleOpenCodeCommand(entry.command));
-}
-
-function parseUnixProcessList(output: string): ProcessSnapshot[] {
-  return output.split(/\r?\n/).map((line) => {
-    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
-    if (!match) return undefined;
-    return { pid: Number(match[1]), ppid: Number(match[2]), command: match[3] ?? "" };
-  }).filter((entry): entry is ProcessSnapshot => Boolean(entry));
-}
-
-async function listUnixProcesses(): Promise<ProcessSnapshot[]> {
-  const proc = Bun.spawn(["ps", "-axo", "pid=,ppid=,command="], { stdout: "pipe", stderr: "pipe" });
-  const [exitCode, stdout] = await Promise.all([proc.exited, new Response(proc.stdout).text()]);
-  if (exitCode !== 0) return [];
-  return parseUnixProcessList(stdout);
-}
-
-async function terminateStaleOpenCodeProcesses(): Promise<ProcessSnapshot[]> {
-  if (process.env.OPENCODE_JCE_SKIP_PROCESS_CLEANUP === "1") return [];
-  if (process.platform === "win32") return [];
-  const targets = planStaleOpenCodeProcessKills(await listUnixProcesses());
-  for (const target of targets) {
-    try { process.kill(target.pid, "SIGTERM"); } catch { /* Process may already have exited. */ }
-  }
-  return targets;
 }
 
 // ─── Types ───────────────────────────────────────────────────
@@ -349,7 +286,7 @@ function resolveHandoffCommand(): string[] {
  * Fetch the commit SHA for a git ref (tag or branch) from GitHub.
  * Returns null if the ref doesn't exist or fetch fails.
  */
-export async function fetchRefSha(repo: string, ref: string): Promise<string | null> {
+export async function fetchRefSha(repo: string, ref: string, preferTag = false): Promise<string | null> {
   try {
     const proc = Bun.spawn(
       ["git", "ls-remote", `https://github.com/${repo}.git`, `refs/tags/${ref}`, `refs/tags/${ref}^{}`, `refs/heads/${ref}`],
@@ -372,10 +309,11 @@ export async function fetchRefSha(repo: string, ref: string): Promise<string | n
     const peeledTagRef = `refs/tags/${ref}^{}`;
     const tagRef = `refs/tags/${ref}`;
 
-    return refs.find((entry) => entry.name === branchRef)?.sha
-      ?? refs.find((entry) => entry.name === peeledTagRef)?.sha
-      ?? refs.find((entry) => entry.name === tagRef)?.sha
-      ?? null;
+    const tagSha = refs.find((entry) => entry.name === peeledTagRef)?.sha
+      ?? refs.find((entry) => entry.name === tagRef)?.sha;
+    return preferTag
+      ? tagSha ?? null
+      : refs.find((entry) => entry.name === branchRef)?.sha ?? tagSha ?? null;
   } catch {
     return null;
   }
@@ -424,46 +362,28 @@ async function updateLocalCliFolder(latestVersion: string): Promise<void> {
       await rm(tempDir, { recursive: true, force: true });
     }
 
-    // Clone latest — try tag first, fallback to main branch
+    // Production updates only install the immutable release tag.
     const releaseRef = `v${latestVersion}`;
-    let cloneRef = releaseRef;
-    
-    // Fetch expected SHA before clone (TOCTOU protection)
-    let expectedSha = await fetchRefSha(GITHUB_REPO, releaseRef);
-    let cloneProc = Bun.spawn(
-      ["git", "clone", "--depth", "1", "--branch", cloneRef, `https://github.com/${GITHUB_REPO}.git`, tempDir],
+    const expectedSha = await fetchRefSha(GITHUB_REPO, releaseRef, true);
+    if (!expectedSha) throw new Error(`Integrity check failed: release tag ${releaseRef} has no resolvable commit SHA.`);
+    const cloneProc = Bun.spawn(
+      ["git", "clone", "--depth", "1", "--branch", releaseRef, `https://github.com/${GITHUB_REPO}.git`, tempDir],
       { stdout: "pipe", stderr: "pipe" }
     );
-    let cloneExit = await cloneProc.exited;
-
-    // If tag clone fails, try main branch (tag might not be updated yet)
-    if (cloneExit !== 0) {
-      if (existsSync(tempDir)) await rm(tempDir, { recursive: true, force: true });
-      cloneRef = "main";
-      expectedSha = await fetchRefSha(GITHUB_REPO, cloneRef);
-      cloneProc = Bun.spawn(
-        ["git", "clone", "--depth", "1", "--branch", cloneRef, `https://github.com/${GITHUB_REPO}.git`, tempDir],
-        { stdout: "pipe", stderr: "pipe" }
-      );
-      cloneExit = await cloneProc.exited;
-    }
+    const cloneExit = await cloneProc.exited;
 
     if (cloneExit !== 0) {
       const stderr = await new Response(cloneProc.stderr).text();
-      throw new Error(`Could not clone release ${releaseRef} or main from GitHub.${stderr ? ` ${stderr}` : ""}`);
+      throw new Error(`Could not clone release ${releaseRef} from GitHub.${stderr ? ` ${stderr}` : ""}`);
     }
 
     // Verify cloned repo matches expected commit (integrity check)
-    if (expectedSha) {
-      const verified = await verifyClonedRepoSha(tempDir, expectedSha);
-      if (!verified) {
-        await rm(tempDir, { recursive: true, force: true });
-        throw new Error(`Integrity check failed: cloned repository does not match expected commit ${expectedSha.slice(0, 7)}`);
-      }
-      info(`Integrity verified: ${cloneRef} @ ${expectedSha.slice(0, 7)}`);
-    } else {
-      warn("Could not verify commit integrity — proceeding without SHA check");
+    const verified = await verifyClonedRepoSha(tempDir, expectedSha);
+    if (!verified) {
+      await rm(tempDir, { recursive: true, force: true });
+      throw new Error(`Integrity check failed: cloned repository does not match expected commit ${expectedSha.slice(0, 7)}`);
     }
+    info(`Integrity verified: ${releaseRef} @ ${expectedSha.slice(0, 7)}`);
 
     for (const dir of [stagingDir, backupDir]) {
       if (existsSync(dir)) {
@@ -1000,6 +920,21 @@ async function backupConfigForUpdate(configDir: string): Promise<void> {
   info(`Backed up config to: ${backupDir}`);
 }
 
+export function assertSafeUpdateConfigRoot(configDir: string): void {
+  let current = resolve(configDir);
+  while (true) {
+    if (existsSync(current)) {
+      const resolved = realpathSync(current);
+      if (lstatSync(current).isSymbolicLink() || resolved.toLowerCase() !== current.toLowerCase()) {
+        throw new Error(`Refusing symlinked config directory component: ${current}`);
+      }
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+}
+
 // ─── Main Merge Orchestrator ─────────────────────────────────
 
 /**
@@ -1203,6 +1138,7 @@ export const updateCommand = new Command("update")
 
     const configDir = getConfigDir();
     try {
+      assertSafeUpdateConfigRoot(configDir);
       await backupConfigForUpdate(configDir);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1344,3 +1280,6 @@ export const updateCommand = new Command("update")
     logCommandSuccess("update", `synced to ${latestVersion}, added ${totalChanges} item(s)`);
     process.exit(EXIT_SUCCESS);
   });
+
+// Re-export extracted helpers for backward compatibility (tests import these from update.ts).
+export { assertCliPayloadComplete, resolveCliPayloadManifestForInstalledBase, planStaleOpenCodeProcessKills, type ProcessSnapshot } from "./update-process-cleanup.js";

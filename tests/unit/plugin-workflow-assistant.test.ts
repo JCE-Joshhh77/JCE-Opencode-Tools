@@ -217,6 +217,33 @@ describe("workflow assistant", () => {
     expect(result).toContain("- weak");
   });
 
+  test("parses quoted rename paths containing the rename separator", () => {
+    expect(parseGitStatusPorcelain('R  "old -> name.ts" -> "new -> name.ts"\n')).toEqual([
+      { status: "R", path: "new -> name.ts" },
+    ]);
+  });
+
+  test("parses NUL-delimited porcelain rename destinations", () => {
+    expect(parseGitStatusPorcelain("R  new -> name.ts\0old -> name.ts\0 M regular.ts\0")).toEqual([
+      { status: "R", path: "new -> name.ts" },
+      { status: "M", path: "regular.ts" },
+    ]);
+  });
+
+  test("preserves filename whitespace in NUL-delimited porcelain", () => {
+    expect(parseGitStatusPorcelain("??  leading and trailing  \0")).toEqual([
+      { status: "??", path: " leading and trailing  " },
+    ]);
+  });
+
+  test("decodes quoted porcelain paths", () => {
+    expect(parseGitStatusPorcelain(' M "src/file name.ts"\n?? "docs/caf\\303\\251 notes.md"\nR  "old name.ts" -> "new name.ts"\n')).toEqual([
+      { status: "M", path: "src/file name.ts" },
+      { status: "??", path: "docs/café notes.md" },
+      { status: "R", path: "new name.ts" },
+    ]);
+  });
+
   test("release readiness is ready when versions sync and verification passes", () => {
     const result = buildReleaseReadyReport({
       targetVersion: "2.0.16",

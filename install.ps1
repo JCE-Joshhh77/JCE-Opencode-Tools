@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.29"
+$Version = "3.8.30"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -144,10 +144,11 @@ function Stop-StaleOpenCodeProcesses {
     if ($env:OPENCODE_JCE_SKIP_PROCESS_CLEANUP -eq "1") { return }
     try {
         $currentPid = $PID
+        $canonicalCli = if (Test-Path (Join-Path $ConfigDir "cli")) { (Resolve-Path (Join-Path $ConfigDir "cli")).Path } else { $null }
         $targets = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
             $_.ProcessId -ne $currentPid -and $_.CommandLine -and
             $_.CommandLine -notmatch 'opencode-jce(\.cmd|\.ps1|\.exe)?\s+.*\bupdate\b' -and
-            ($_.Name -match '^opencode(\.exe)?$' -or $_.CommandLine -match '\.config[\\/]opencode[\\/]cli[\\/]src[\\/](plugin[\\/]index|mcp[\\/]context-keeper)\.ts')
+            $canonicalCli -and ($_.CommandLine -like "*$canonicalCli\src\plugin\index.ts*" -or $_.CommandLine -like "*$canonicalCli\src\mcp\context-keeper.ts*")
         }
         foreach ($target in $targets) {
             try { Stop-Process -Id $target.ProcessId -Force:$false -ErrorAction SilentlyContinue } catch {}
@@ -471,21 +472,26 @@ function Install-OpenCode {
 function Deploy-Config {
     Write-Info "Deploying configuration..."
 
-    # Clone config repo — try tag first, fallback to main branch
+    if ((Test-Path $ConfigDir) -and ((Get-Item $ConfigDir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        Write-Err "Refusing to install through symlinked config directory: $ConfigDir"
+    }
+
+    # Install immutable release tag and verify its commit before writing config.
     if (Test-Path $TempDir) { Remove-Item $TempDir -Recurse -Force }
     Write-Info "Downloading configuration from GitHub..."
     $prevErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    $releaseRefs = @(git ls-remote $RepoUrl "refs/tags/v$Version^{}" "refs/tags/v$Version" 2>$null)
+    $peeledRef = $releaseRefs | Where-Object { $_ -match '\^\{\}$' } | Select-Object -First 1
+    $releaseSha = if ($peeledRef) { ($peeledRef -split "\s+")[0] } elseif ($releaseRefs.Count -gt 0) { ($releaseRefs[0] -split "\s+")[0] } else { $null }
+    if (-not $releaseSha) { Write-Err "Release tag v$Version has no resolvable commit SHA; refusing unverified install." }
     git clone --depth 1 --branch "v$Version" $RepoUrl $TempDir 2>$null
-    if (!(Test-Path (Join-Path $TempDir "config"))) {
-        Write-Info "Tag v$Version not found, trying main branch..."
-        if (Test-Path $TempDir) { Remove-Item $TempDir -Recurse -Force }
-        git clone --depth 1 --branch "main" $RepoUrl $TempDir 2>$null
-    }
     $ErrorActionPreference = $prevErrorAction
     if (!(Test-Path (Join-Path $TempDir "config"))) {
-        Write-Err "Failed to clone config repository. Check your internet connection."
+        Write-Err "Failed to clone release v$Version. Check your internet connection."
     }
+    $actualSha = (git -C $TempDir rev-parse HEAD 2>$null).Trim()
+    if ($actualSha -ne $releaseSha) { Write-Err "Release integrity check failed for v$Version." }
     Write-Ok "Repository downloaded"
 
     # Ensure config directory exists
@@ -724,6 +730,11 @@ function Register-ContextKeeper {
     $cliDir = Join-Path $ConfigDir "cli"
     $contextKeeperPath = Join-Path $cliDir "src\mcp\context-keeper.ts"
 
+    if ((Test-Path $opencodeJson) -and ((Get-Item $opencodeJson -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        Write-Warn "Refusing to write symlinked opencode.json: $opencodeJson"
+        return
+    }
+
     # Verify context-keeper.ts exists
     if (-not (Test-Path $contextKeeperPath)) {
         Write-Warn "context-keeper.ts not found at: $contextKeeperPath"
@@ -739,15 +750,8 @@ function Register-ContextKeeper {
             try {
                 $config = Get-Content $opencodeJson -Raw | ConvertFrom-Json
             } catch {
-                $backupPath = "$opencodeJson.invalid-$(Get-Date -Format 'yyyy-MM-ddTHH-mm-ss')"
-                Move-Item $opencodeJson $backupPath -Force
-                Write-Warn "Malformed opencode.json backed up to $backupPath and rebuilt."
-                $config = [PSCustomObject]@{
-                    '$schema' = "https://opencode.ai/config.json"
-                    plugin = @("file://$($ConfigDir -replace '\\','/')/cli/src/plugin/index.ts")
-                    mcp = [PSCustomObject]@{}
-                    lsp = [PSCustomObject]@{}
-                }
+                Write-Warn "Malformed opencode.json preserved unchanged. Fix it, then rerun installer."
+                return
             }
         } else {
             Write-Info "opencode.json not found. Creating with default MCP servers..."

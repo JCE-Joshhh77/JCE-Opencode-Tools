@@ -13,7 +13,16 @@ describe("update stale OpenCode process cleanup", () => {
       { pid: 103, ppid: 1, command: "bun run /Users/me/.config/opencode/cli/src/index.ts -- update" },
       { pid: 104, ppid: 1, command: "node unrelated.js" },
     ];
-    expect(planStaleOpenCodeProcessKills(processes, 999).map((entry) => entry.pid)).toEqual([100, 101]);
+    expect(planStaleOpenCodeProcessKills(processes, 999, "/Users/me/.config/opencode").map((entry) => entry.pid)).toEqual([101]);
+  });
+
+  test("does not kill plugin processes outside the canonical installed CLI path", () => {
+    const processes: ProcessSnapshot[] = [
+      { pid: 100, ppid: 1, command: "bun run /tmp/project/src/plugin/index.ts" },
+      { pid: 101, ppid: 1, command: "bun run /Users/me/.config/opencode-other/cli/src/plugin/index.ts" },
+      { pid: 102, ppid: 1, command: "bun run /Users/me/.config/opencode/cli/src/plugin/index.ts" },
+    ];
+    expect(planStaleOpenCodeProcessKills(processes, 999, "/Users/me/.config/opencode").map((entry) => entry.pid)).toEqual([102]);
   });
 
   test("installers invoke stale process cleanup after CLI installation", () => {

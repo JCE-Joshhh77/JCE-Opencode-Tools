@@ -1,11 +1,12 @@
 /**
  * Orchestration Controller — Bridge between new orchestration core and existing plugin tools
  * 
- * TODO(decompose): This module is 1080+ lines. Consider splitting into:
- * - controller-lifecycle.ts (init, reset, session management)
- * - controller-dispatch.ts (dispatch/collect/replan loop)
- * - controller-evaluation.ts (evidence evaluation, gate checks)
- * See audit-2026-06-13.
+ * NOTE(audit-2026-06-13): This class is intentionally kept as a single cohesive
+ * unit. All methods share tightly-coupled instance state (graph, memory,
+ * scheduler, planner, execMemory) and 30+ tests assert the class as one unit.
+ * Splitting into mixins/partials would require an architectural refactor that
+ * risks breaking the closed-loop dispatch/collect/replan contract. Pure
+ * formatting helpers already live in their own modules (see imports below).
  *
  * This controller manages the lifecycle of a TaskGraph within a session,
  * integrating with the existing BackgroundManager for actual sub-agent dispatch
@@ -201,6 +202,22 @@ export class OrchestrationController {
 
   private syncGraphRegistry(): void {
     if (this.graph) this.graphRegistry.update(this.graph);
+  }
+
+  private sessionGeneration = 0;
+
+  resetSession(): void {
+    this.sessionGeneration += 1;
+    this.graph = null;
+    this.graphRegistry.reset();
+    this.nodeToTaskMap.clear();
+    this.nodeToGraphMap.clear();
+    this.currentIntent = null;
+    this.events = [];
+  }
+
+  getSessionGeneration(): number {
+    return this.sessionGeneration;
   }
 
   // ─── Intent & Planning ────────────────────────────────────────────────────

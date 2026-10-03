@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.29"
+VERSION="3.8.30"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -227,7 +227,9 @@ terminate_stale_opencode_processes() {
         [ -n "$pid" ] || continue
         [ "$pid" = "$current_pid" ] && continue
         printf '%s' "$command" | grep -Eq 'opencode-jce(.cmd|.ps1|.exe)? .*update|src/index\.ts .*update' && continue
-        if printf '%s' "$command" | grep -Eq '(^|[ /])opencode( |$)|\.config/opencode/cli/src/(plugin/index|mcp/context-keeper)\.ts'; then
+        local canonical_cli
+        canonical_cli="$(cd "$CONFIG_DIR/cli" 2>/dev/null && pwd -P || true)"
+        if { [ -n "$canonical_cli" ] && printf '%s' "$command" | grep -Fq "$canonical_cli/src/plugin/index.ts"; } || { [ -n "$canonical_cli" ] && printf '%s' "$command" | grep -Fq "$canonical_cli/src/mcp/context-keeper.ts"; }; then
             pids+=("$pid")
         fi
     done < <(ps -axo pid=,ppid=,command= 2>/dev/null || true)
@@ -362,17 +364,16 @@ download_repo_tarball() {
 deploy_config() {
     info "Deploying configuration..."
 
-    # Clone config repo — try tag first, fallback to main branch
+    [ ! -L "$CONFIG_DIR" ] || error "Refusing to install through symlinked config directory: $CONFIG_DIR"
+
+    # Install immutable release tag and verify its commit before writing config.
     rm -rf "$TEMP_DIR"
-    if ! git clone --depth 1 --branch "v${VERSION}" "$REPO_URL" "$TEMP_DIR" 2>/dev/null; then
-        info "Tag v${VERSION} not found, trying main branch..."
-        rm -rf "$TEMP_DIR"
-        if ! git clone --depth 1 --branch "main" "$REPO_URL" "$TEMP_DIR" 2>/dev/null; then
-            warn "Main branch clone failed. Falling back to GitHub release archive download..."
-            rm -rf "$TEMP_DIR"
-            download_repo_tarball || error "Failed to download config repository. Check your internet connection."
-        fi
-    fi
+    local release_sha actual_sha
+    release_sha="$(git ls-remote "$REPO_URL" "refs/tags/v${VERSION}^{}" "refs/tags/v${VERSION}" 2>/dev/null | awk '/\^\{\}$/ {print $1; found=1} !found && $2 !~ /\^\{\}$/ {fallback=$1} END {if (!found) print fallback}' | tail -n1)"
+    [ -n "$release_sha" ] || error "Release tag v${VERSION} has no resolvable commit SHA; refusing unverified install."
+    git clone --depth 1 --branch "v${VERSION}" "$REPO_URL" "$TEMP_DIR" 2>/dev/null || error "Failed to clone release v${VERSION}."
+    actual_sha="$(git -C "$TEMP_DIR" rev-parse HEAD 2>/dev/null || true)"
+    [ "$actual_sha" = "$release_sha" ] || error "Release integrity check failed for v${VERSION}."
 
     # Ensure config directory exists
     mkdir -p "$CONFIG_DIR"
@@ -565,11 +566,11 @@ const defaults = {
 };
 let config = { "$schema": "https://opencode.ai/config.json", plugin: [pluginPath], mcp: {}, lsp: {} };
 if (fs.existsSync(opencodeJson)) {
+  if (fs.lstatSync(opencodeJson).isSymbolicLink()) throw new Error("Refusing to write symlinked opencode.json");
   try {
     config = JSON.parse(fs.readFileSync(opencodeJson, "utf8"));
   } catch {
-    const backup = `${opencodeJson}.invalid-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}`;
-    fs.renameSync(opencodeJson, backup);
+    throw new Error("Refusing to rebuild malformed opencode.json");
   }
 }
 if (!Array.isArray(config.plugin)) config.plugin = [];
@@ -1317,14 +1318,11 @@ const installed = process.env.INSTALLED_LSPS.split(' ').filter(Boolean);
 // Load or create opencode.json
 let config = {};
 if (fs.existsSync(path)) {
+    if (fs.lstatSync(path).isSymbolicLink()) throw new Error('Refusing to write symlinked opencode.json');
     try {
         config = JSON.parse(fs.readFileSync(path, 'utf8'));
     } catch {
-        // Malformed existing config: back it up before rebuilding so we never
-        // silently destroy plugin/mcp/agent settings (mirrors register_context_keeper).
-        const backup = path + '.invalid-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-        fs.renameSync(path, backup);
-        console.error('Existing opencode.json was malformed; backed up to ' + backup);
+        throw new Error('Refusing to rebuild malformed opencode.json');
     }
 }
 

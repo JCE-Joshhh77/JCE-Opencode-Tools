@@ -1234,6 +1234,68 @@ describe("plugin integration", () => {
     expect(out2.system.join("\n")).toContain("Restored Project Memory");
   });
 
+  test("child system.transform does not reset parent session", async () => {
+    const root = tempRoot();
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
+    memory.wisdom = [{ id: "w1", learning: "keep parent state", source: "task", createdAt: "2026-05-06T00:00:00.000Z" }];
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
+
+    const parentOutput = { system: [] as string[] };
+    await hooks["experimental.chat.system.transform"]!({ sessionID: "parent" } as any, parentOutput as any);
+    expect(parentOutput.system.join("\n")).toContain("Restored Project Memory");
+    await hooks.event!({ event: { type: "session.created", properties: { info: { id: "child", parentID: "parent" } } } } as any);
+
+    const childOutput = { system: [] as string[] };
+    await hooks["experimental.chat.system.transform"]!({ sessionID: "child" } as any, childOutput as any);
+    expect(childOutput.system.join("\n")).not.toContain("Restored Project Memory");
+    const parentAgain = { system: [] as string[] };
+    await hooks["experimental.chat.system.transform"]!({ sessionID: "parent" } as any, parentAgain as any);
+    expect(parentAgain.system.join("\n")).not.toContain("Restored Project Memory");
+  });
+
+  test("session deletion removes child classification", async () => {
+    const root = tempRoot();
+    const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");
+    memory.wisdom = [{ id: "w1", learning: "rehydrate after child deletion", source: "task", createdAt: "2026-05-06T00:00:00.000Z" }];
+    saveRuntimeState(root, memory, "2026-05-06T00:01:00.000Z");
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, directory: root, worktree: root });
+
+    await hooks["experimental.chat.system.transform"]!({ sessionID: "parent" } as any, { system: [] } as any);
+    await hooks.event!({ event: { type: "session.created", properties: { info: { id: "reused", parentID: "parent" } } } } as any);
+    await hooks.event!({ event: { type: "session.deleted", properties: { info: { id: "reused" } } } } as any);
+    const output = { system: [] as string[] };
+    await hooks["experimental.chat.system.transform"]!({ sessionID: "reused" } as any, output as any);
+
+    expect(output.system.join("\n")).toContain("Restored Project Memory");
+  });
+
+  test("new top-level session cannot access background tasks from the previous session", async () => {
+    const root = tempRoot();
+    let finishPrompt: ((value: unknown) => void) | undefined;
+    const client = {
+      session: {
+        create: async () => ({ id: "child-session" }),
+        prompt: () => new Promise((resolve) => { finishPrompt = resolve; }),
+      },
+    } as any;
+    const mod = await import("../../src/plugin/index.ts");
+    const hooks = await mod.default.server({ ...mockInput, client, directory: root, worktree: root });
+    const context = { sessionID: "s1", messageID: "m1", agent: "jce-worker", directory: root, worktree: root, abort: new AbortController().signal, metadata: () => {}, ask: () => {} } as any;
+    await hooks["experimental.chat.system.transform"]!({ sessionID: "s1" } as any, { system: [] } as any);
+    const launched = String(await hooks.tool!.dispatch.execute({ description: "old task", prompt: "inspect one file", agent: "explorer" } as any, context));
+    const taskId = launched.match(/Background task launched: (bg-[^\n]+)/)?.[1];
+    expect(taskId).toBeDefined();
+
+    await hooks.event!({ event: { type: "session.created", properties: { info: { id: "s2" } } } } as any);
+    const nextContext = { ...context, sessionID: "s2", messageID: "m2" };
+    expect(await hooks.tool!.bg_status.execute({} as any, nextContext)).toBe("No background tasks.");
+    expect(await hooks.tool!.bg_collect.execute({ taskId } as any, nextContext)).toBe(`Task not found: ${taskId}`);
+    finishPrompt?.({ parts: [{ type: "text", text: "late result" }] });
+  });
+
   test("child sub-agent session.created does not reset parent memory injection", async () => {
     const root = tempRoot();
     const memory = createEmptyRuntimeState("2026-05-06T00:00:00.000Z");

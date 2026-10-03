@@ -168,6 +168,94 @@ describe("Orchestration Bridge — Full Loop", () => {
     expect(retried === "ready" || retried === "running").toBe(true);
   });
 
+  test("reconciles each failed task only once", () => {
+    const orchestrator = new OrchestrationController({ projectRoot: tempRoot() });
+    const graph = orchestrator.createPlan("fix bug");
+    const node = [...graph.nodes.values()][0];
+    const manager = new BackgroundManager({ maxConcurrency: 5 });
+    const task = manager.createTask({ description: "fail", prompt: "p", agent: "explorer", parentSessionId: "s", parentMessageId: "m" });
+    orchestrator.mapNodeToTask(node.id, task.id);
+    manager.failTask(task.id, "same error");
+    let calls = 0;
+    (orchestrator as any).handleFailure = () => { calls += 1; return { action: "abort" }; };
+    const bridge = new OrchestrationBridge({ manager, client: {} as any, orchestrator });
+
+    expect(bridge.reconcileTaskFailures()).toHaveLength(1);
+    expect(bridge.reconcileTaskFailures()).toHaveLength(0);
+    expect(calls).toBe(1);
+  });
+
+  test("reconcile retries after rejected recovery without unhandled rejection", async () => {
+    const orchestrator = new OrchestrationController({ projectRoot: tempRoot() });
+    const node = [...orchestrator.createPlan("fix bug").nodes.values()][0];
+    const manager = new BackgroundManager({ maxConcurrency: 5 });
+    const task = manager.createTask({ description: "fail", prompt: "p", agent: "explorer", parentSessionId: "s", parentMessageId: "m" });
+    orchestrator.mapNodeToTask(node.id, task.id);
+    manager.failTask(task.id, "same error");
+    let calls = 0;
+    const bridge = new OrchestrationBridge({ manager, client: {} as any, orchestrator });
+    (bridge as any).handleTaskFailure = async () => { calls += 1; throw new Error("recovery rejected"); };
+
+    expect(bridge.reconcileTaskFailures()).toHaveLength(1);
+    expect(bridge.reconcileTaskFailures()).toHaveLength(0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(bridge.reconcileTaskFailures()).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toBe(2);
+  });
+
+  test("pending reconciliation cannot mutate or persist after resetSession", async () => {
+    const orchestrator = new OrchestrationController({ projectRoot: tempRoot() });
+    const node = [...orchestrator.createPlan("fix bug").nodes.values()][0];
+    const manager = new BackgroundManager({ maxConcurrency: 5 });
+    const task = manager.createTask({ description: "fail", prompt: "p", agent: "explorer", parentSessionId: "s", parentMessageId: "m" });
+    orchestrator.mapNodeToTask(node.id, task.id);
+    manager.failTask(task.id, "same error");
+    let release!: () => void;
+    let persists = 0;
+    const bridge = new OrchestrationBridge({ manager, client: {} as any, orchestrator, onPersist: () => { persists += 1; } });
+    (bridge as any).handleTaskFailure = () => new Promise<void>((resolve) => { release = resolve; });
+
+    expect(bridge.reconcileTaskFailures()).toHaveLength(1);
+    expect(persists).toBe(1);
+    bridge.resetSession();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect([...(bridge as any).reconciledFailures]).toEqual([]);
+    expect([...(bridge as any).reconcilingFailures]).toEqual([]);
+    expect(persists).toBe(1);
+  });
+
+  test("delayed stale dispatch cannot map into reset session", async () => {
+    const orchestrator = new OrchestrationController({ projectRoot: tempRoot() });
+    const manager = new BackgroundManager({ maxConcurrency: 5 });
+    let releaseCreate!: (value: unknown) => void;
+    const client = { session: { create: () => new Promise((resolve) => { releaseCreate = resolve; }), prompt: async () => ({}) } } as any;
+    const bridge = new OrchestrationBridge({ manager, client, orchestrator });
+
+    const dispatch = bridge.planAndDispatch("fix bug", "s1", "m1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    manager.resetSession();
+    bridge.resetSession();
+    releaseCreate({ id: "stale-child" });
+
+    expect((await dispatch).dispatched).toEqual([]);
+    expect(manager.listTasks()).toEqual([]);
+    expect(orchestrator.getGraph()).toBeNull();
+  });
+
+  test("resetSession drops orchestration state from the previous top-level session", () => {
+    const orchestrator = new OrchestrationController({ projectRoot: tempRoot() });
+    orchestrator.createPlan("old session work");
+    const bridge = new OrchestrationBridge({ manager: new BackgroundManager({ maxConcurrency: 5 }), client: {} as any, orchestrator });
+
+    bridge.resetSession();
+
+    expect(bridge.hasActivePlan()).toBe(false);
+    expect(orchestrator.getGraph()).toBeNull();
+  });
+
   test("hasActivePlan returns false when no plan exists", () => {
     const root = tempRoot();
     const orchestrator = new OrchestrationController({ projectRoot: root });

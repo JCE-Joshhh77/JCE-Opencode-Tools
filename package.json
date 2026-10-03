@@ -1,6 +1,6 @@
 {
   "name": "opencode-jce",
-  "version": "3.8.29",
+  "version": "3.8.30",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -16,14 +16,14 @@
     "postinstall": "bun run scripts/postinstall.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@opencode-ai/plugin": "^1.14.48",
     "@opencode-ai/sdk": "^1.14.48",
     "@opentui/solid": "^0.2.8",
     "ajv": "^8.20.0",
     "chalk": "^5.6.2",
     "commander": "^12.1.0",
-    "zod": "^4.4.3"
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -31,16 +31,23 @@
   },
   "overrides": {
     "@babel/core": "^8.0.1",
-    "fast-uri": "^3.1.2",
-    "hono": "^4.12.25",
-    "ip-address": "^10.1.1",
-    "qs": "^6.15.2"
+    "@hono/node-server": "^1.19.15",
+    "baseline-browser-mapping": "^2.11.0",
+    "body-parser": "^2.3.0",
+    "brace-expansion": "^2.1.7",
+    "browserslist": "^4.29.3",
+    "fast-uri": "^3.1.8",
+    "hono": "^4.13.7",
+    "ip-address": "^10.7.2",
+    "qs": "^6.16.0",
+    "toml": "^4.2.0",
+    "@modelcontextprotocol/sdk>zod": "4.4.2"
   },
   "_overridesRationale": {
-    "fast-uri": "AJV URI resolver — pin past ReDoS/parse-handling advisories in older versions",
-    "hono": "Transitive via @opencode-ai/* — pin past request-handling/path traversal advisories",
-    "ip-address": "Transitive proxy/socks dep — pin past ReDoS-prone 6.x-8.x (CVE-2024-29415)",
-    "qs": "Classic prototype-pollution/DoS history — pin past CVE-2022-24999 and related"
+    "fast-uri": "AJV URI resolver â€” pin past SSRF and host-confusion advisories",
+    "hono": "Transitive via @opencode-ai/* â€” pin past request-handling/path traversal advisories",
+    "ip-address": "Transitive proxy/socks dep â€” pin past SSRF and classification advisories",
+    "qs": "Classic prototype-pollution/DoS history â€” pin past CVE-2022-24999 and related"
   },
   "engines": {
     "bun": ">=1.0.0"

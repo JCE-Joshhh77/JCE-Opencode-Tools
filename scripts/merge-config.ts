@@ -18,14 +18,16 @@ import {
   cpSync,
   statSync,
   renameSync,
+  lstatSync,
   unlinkSync,
 } from "fs";
-import { join } from "path";
+import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { execFileSync } from "child_process";
 import { ensureOpenCodeJsonEntries, ensureTuiJsonEntries } from "../src/lib/opencode-config-merge.js";
 
 /** Write JSON atomically: write to unique .tmp then rename */
 function writeJsonAtomic(filePath: string, data: unknown): void {
+  assertSafeTargetPath(filePath);
   const tmpFile = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   try {
     writeFileSync(tmpFile, JSON.stringify(data, null, 2) + "\n");
@@ -43,6 +45,58 @@ function writeJsonAtomic(filePath: string, data: unknown): void {
 const sourceDir = process.argv[2]; // e.g., /tmp/opencode-jce/config
 const targetDir = process.argv[3]; // e.g., ~/.config/opencode
 
+function assertSafeTargetPath(destination: string): void {
+  const root = resolve(targetDir);
+  const resolved = resolve(destination);
+  const rel = relative(root, resolved);
+  if (rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(rel)) {
+    throw new Error(`Refusing destination outside target directory: ${destination}`);
+  }
+  const ancestors: string[] = [];
+  for (let current = resolved; ; current = dirname(current)) {
+    ancestors.push(current);
+    if (current === dirname(current)) break;
+  }
+  for (const current of ancestors.reverse()) {
+    try {
+      if (lstatSync(current).isSymbolicLink()) {
+        throw new Error(`Refusing symlinked config destination: ${current}`);
+      }
+    } catch (error: any) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+}
+
+function preflightTargetPaths(): void {
+  const destinations = ["profiles", "prompts", "skills", "mcp.json", "agents.json", "lsp.json", "opencode.json", "tui.json", "AGENTS.md", "fallback.json"]
+    .map((destination) => join(targetDir, destination));
+
+  const addSkillDestinations = (source: string, destination: string): void => {
+    destinations.push(destination);
+    if (!statSync(source).isDirectory()) return;
+    for (const entry of readdirSync(source)) {
+      addSkillDestinations(join(source, entry), join(destination, entry));
+    }
+  };
+
+  for (const directory of ["profiles", "prompts", "skills"]) {
+    const source = join(sourceDir, directory);
+    if (!existsSync(source)) continue;
+    for (const entry of readdirSync(source)) {
+      const sourcePath = join(source, entry);
+      const destination = join(targetDir, directory, entry);
+      if (directory === "skills") {
+        if (statSync(sourcePath).isDirectory() || entry.endsWith(".md")) addSkillDestinations(sourcePath, destination);
+      } else if (!statSync(sourcePath).isDirectory()) {
+        destinations.push(destination);
+      }
+    }
+  }
+
+  for (const destination of destinations) assertSafeTargetPath(destination);
+}
+
 if (!sourceDir || !targetDir) {
   console.error("Usage: merge-config.ts <source-dir> <target-dir>");
   console.error("  source-dir: directory containing new config files");
@@ -54,8 +108,13 @@ if (!existsSync(sourceDir)) {
   console.error(`Source directory does not exist: ${sourceDir}`);
   process.exit(1);
 }
+if (existsSync(targetDir) && lstatSync(targetDir).isSymbolicLink()) {
+  console.error(`Refusing symlinked target directory: ${targetDir}`);
+  process.exit(1);
+}
 
-// Ensure target directories exist
+// Validate every destination before any filesystem mutation.
+preflightTargetPaths();
 mkdirSync(targetDir, { recursive: true });
 mkdirSync(join(targetDir, "profiles"), { recursive: true });
 
@@ -201,6 +260,7 @@ function mergeLsp() {
 function mergeProfiles() {
   const sourceProfiles = join(sourceDir, "profiles");
   const targetProfiles = join(targetDir, "profiles");
+  assertSafeTargetPath(targetProfiles);
 
   if (!existsSync(sourceProfiles)) return;
 
@@ -212,6 +272,7 @@ function mergeProfiles() {
     if (statSync(sourcePath).isDirectory()) continue;
 
     const target = join(targetProfiles, file);
+    assertSafeTargetPath(target);
     if (!existsSync(target)) {
       copyFileSync(sourcePath, target);
       added++;
@@ -229,6 +290,7 @@ function mergePrompts() {
 
   if (!existsSync(sourcePrompts)) return;
 
+  assertSafeTargetPath(targetPrompts);
   mkdirSync(targetPrompts, { recursive: true });
 
   let added = 0;
@@ -239,6 +301,7 @@ function mergePrompts() {
     if (statSync(sourcePath).isDirectory()) continue;
 
     const target = join(targetPrompts, file);
+    assertSafeTargetPath(target);
     if (!existsSync(target)) {
       copyFileSync(sourcePath, target);
       added++;
@@ -256,6 +319,7 @@ function mergeSkills() {
 
   if (!existsSync(sourceSkills)) return;
 
+  assertSafeTargetPath(targetSkills);
   mkdirSync(targetSkills, { recursive: true });
 
   let added = 0;
@@ -263,6 +327,7 @@ function mergeSkills() {
   for (const entry of readdirSync(sourceSkills)) {
     const sourcePath = join(sourceSkills, entry);
     const targetPath = join(targetSkills, entry);
+    assertSafeTargetPath(targetPath);
 
     if (statSync(sourcePath).isDirectory()) {
       // New structure: skill directories with SKILL.md
@@ -289,6 +354,7 @@ function mergeSkills() {
 function copyIfMissing(filename: string) {
   const sourceFile = join(sourceDir, filename);
   const targetFile = join(targetDir, filename);
+  assertSafeTargetPath(targetFile);
 
   if (!existsSync(sourceFile)) return;
 

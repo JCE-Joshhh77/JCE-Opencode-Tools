@@ -32,7 +32,7 @@ const manifestText = readFileSync(join(root, CLI_PAYLOAD_MANIFEST_PATH), "utf8")
 describe("installer CLI payload verification", () => {
   test("TypeScript update verifies JCE intelligence payload before swapping CLI", () => {
     const text = readFileSync(join(root, "src", "commands", "update.ts"), "utf8");
-    expect(text).toContain("getRequiredCliPayloadFiles");
+    expect(text).toContain("assertCliPayloadComplete");
     expect(text).toContain("assertCliPayloadComplete(stagingDir)");
     for (const file of getRequiredCliPayloadFiles(root)) expect(manifestText).toContain(file);
   });

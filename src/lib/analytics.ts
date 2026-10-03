@@ -143,19 +143,20 @@ function calculateComplexity(data: TokenUsageEntry[]): string {
 }
 
 function calculateCostTrend(data: TokenUsageEntry[]): "increasing" | "decreasing" | "stable" {
-  if (data.length < 4) return "stable";
-
-  // Split data into two halves and compare average daily cost
-  const sorted = [...data].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
-  );
+  const costsByDay = new Map<string, number>();
+  for (const entry of data) {
+    const date = entry.timestamp.split("T")[0];
+    costsByDay.set(date, (costsByDay.get(date) ?? 0) + entry.cost);
+  }
+  const sorted = [...costsByDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, cost]) => cost);
+  if (sorted.length < 4) return "stable";
 
   const midpoint = Math.floor(sorted.length / 2);
   const firstHalf = sorted.slice(0, midpoint);
   const secondHalf = sorted.slice(midpoint);
 
-  const firstAvgCost = firstHalf.reduce((sum, e) => sum + e.cost, 0) / firstHalf.length;
-  const secondAvgCost = secondHalf.reduce((sum, e) => sum + e.cost, 0) / secondHalf.length;
+  const firstAvgCost = firstHalf.reduce((sum, cost) => sum + cost, 0) / firstHalf.length;
+  const secondAvgCost = secondHalf.reduce((sum, cost) => sum + cost, 0) / secondHalf.length;
 
   const changePercent = ((secondAvgCost - firstAvgCost) / (firstAvgCost || 1)) * 100;
 

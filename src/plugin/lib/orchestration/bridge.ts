@@ -57,6 +57,8 @@ export class OrchestrationBridge {
   private orchestrator: OrchestrationController;
   private onPersist?: () => void;
   private collectedTasks = new Set<string>();
+  private reconciledFailures = new Set<string>();
+  private reconcilingFailures = new Set<string>();
 
   constructor(config: OrchestrationBridgeConfig) {
     this.manager = config.manager;
@@ -196,16 +198,34 @@ export class OrchestrationBridge {
 
   reconcileTaskFailures(): ReconciledTaskFailure[] {
     const reconciled: ReconciledTaskFailure[] = [];
+    const generation = this.orchestrator.getSessionGeneration();
     for (const task of this.manager.listTasks()) {
-      if (task.status !== "error") continue;
+      if (task.status !== "error" || this.reconciledFailures.has(task.id) || this.reconcilingFailures.has(task.id)) continue;
       const nodeId = this.orchestrator.getNodeForTask(task.id);
       if (!nodeId) continue;
       const reason = task.error || task.failureReason || "Background task failed";
-      void this.handleTaskFailure(task.id, reason, task.parentSessionId, task.parentMessageId);
+      this.reconcilingFailures.add(task.id);
+      void this.handleTaskFailure(task.id, reason, task.parentSessionId, task.parentMessageId)
+        .then(() => {
+          if (generation !== this.orchestrator.getSessionGeneration()) return;
+          this.reconciledFailures.add(task.id);
+          this.onPersist?.();
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (generation === this.orchestrator.getSessionGeneration()) this.reconcilingFailures.delete(task.id);
+        });
       reconciled.push({ taskId: task.id, nodeId, reason });
     }
     if (reconciled.length) this.onPersist?.();
     return reconciled;
+  }
+
+  resetSession(): void {
+    this.collectedTasks.clear();
+    this.reconciledFailures.clear();
+    this.reconcilingFailures.clear();
+    this.orchestrator.resetSession();
   }
 
   reconcileRestoredTasks(): string[] {
@@ -263,6 +283,7 @@ export class OrchestrationBridge {
     parentMessageId: string,
   ): Promise<Array<{ nodeId: string; taskId: string; agent: string }>> {
     const dispatched: Array<{ nodeId: string; taskId: string; agent: string }> = [];
+    const generation = this.orchestrator.getSessionGeneration();
 
     for (const node of nodes) {
       try {
@@ -288,6 +309,8 @@ export class OrchestrationBridge {
         const category = node.modelCategory as TaskCategory;
         const modelHint = resolveModelForCategory(node.agent, category);
 
+        if (generation !== this.orchestrator.getSessionGeneration()) break;
+
         // Spawn via BackgroundManager
         const taskId = await spawnBackgroundTask(this.manager, this.client, {
           description: `[orchestrated] ${node.nodeId}`,
@@ -297,6 +320,8 @@ export class OrchestrationBridge {
           parentMessageId,
           modelHint,
         });
+
+        if (generation !== this.orchestrator.getSessionGeneration()) continue;
 
         // Map node to task for collection
         this.orchestrator.mapNodeToTask(node.nodeId, taskId);

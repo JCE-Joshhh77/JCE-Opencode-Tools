@@ -27,6 +27,7 @@ export class BackgroundManager {
   private taskLearnings: TaskLearning[] = [];
   private launchPending?: (taskId: string) => void;
   private launching = 0;
+  private sessionGeneration = 0;
 
   constructor(options: BackgroundManagerOptions) {
     this.maxConcurrency = options.maxConcurrency;
@@ -315,13 +316,29 @@ export class BackgroundManager {
     return Array.from(this.tasks.values()).filter((t) => t.status === "running").length + this.launching;
   }
 
+  resetSession(): void {
+    this.sessionGeneration += 1;
+    this.tasks.clear();
+    this.traceEvents = [];
+    this.launching = 0;
+  }
+
+  getSessionGeneration(): number {
+    return this.sessionGeneration;
+  }
+
+  isCurrentSession(generation: number): boolean {
+    return generation === this.sessionGeneration;
+  }
+
   reserveLaunch(): boolean {
     if (!this.canLaunch()) return false;
     this.launching += 1;
     return true;
   }
 
-  releaseLaunch(): void {
+  releaseLaunch(generation = this.sessionGeneration): void {
+    if (!this.isCurrentSession(generation)) return;
     this.launching = Math.max(0, this.launching - 1);
     this.pumpPending();
   }

@@ -265,8 +265,8 @@ export function buildStatusTool(manager: BackgroundManager, getOrchestrationStat
   return tool({
     description: "Check the status of all background tasks launched in this session.",
     args: {},
-    async execute() {
-      const tasks = manager.listTasks();
+    async execute(_args, context) {
+      const tasks = manager.listTasks().filter((task) => !context.sessionID || task.parentSessionId === context.sessionID);
       const orchestrationStatus = getOrchestrationStatus?.() ?? "";
       if (tasks.length === 0 && !orchestrationStatus) return "No background tasks.";
       const taskLines = tasks
@@ -291,11 +291,11 @@ export function buildCollectTool(
     args: {
       taskId: z.string().describe("The task ID returned by dispatch"),
     },
-    async execute(args) {
+    async execute(args, context) {
       const filterOutput = (text: string) => filterChineseOutput(text, chineseTranslator);
       const taskId = args.taskId as string;
       const task = manager.getTask(taskId);
-      if (!task) return filterOutput(`Task not found: ${taskId}`);
+      if (!task || (context.sessionID && task.parentSessionId !== context.sessionID)) return filterOutput(`Task not found: ${taskId}`);
       if (task.status === "pending") return filterOutput(`Task ${taskId} is still pending.`);
       if (task.status === "running") return filterOutput(`Task ${taskId} is still running.`);
       if (task.status === "cancelled") return filterOutput(`Task ${taskId} was cancelled.`);

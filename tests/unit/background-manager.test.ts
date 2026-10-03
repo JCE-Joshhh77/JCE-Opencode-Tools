@@ -94,4 +94,14 @@ describe("background manager", () => {
     expect(updated.failureReason).toContain("Task stale");
     expect(manager.canLaunch()).toBe(true);
   });
+
+  test("reset invalidates in-flight session generation", () => {
+    const manager = new BackgroundManager({ maxConcurrency: 1 });
+    const generation = manager.getSessionGeneration();
+
+    manager.resetSession();
+
+    expect(manager.isCurrentSession(generation)).toBe(false);
+    expect(manager.isCurrentSession(manager.getSessionGeneration())).toBe(true);
+  });
 });

@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync, readdirSync } from "fs";
-import { join } from "path";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync, readdirSync } from "fs";
+import { dirname, join, relative, resolve } from "path";
 import { buildDefaultOpenCodeJson, buildDefaultTuiJson } from "./opencode-json-template.js";
 import { buildAgentConfigs } from "../plugin/config.js";
 import { cleanupLegacyMcpEntries } from "./version.js";
@@ -105,6 +105,12 @@ function timestamp(): string {
 }
 
 function writeJsonAtomic(filePath: string, data: unknown): void {
+  const root = realpathSync(dirname(filePath));
+  const target = resolve(filePath);
+  const rel = relative(root, target);
+  if (rel.startsWith("..") || rel === "" || existsSync(target) && lstatSync(target).isSymbolicLink()) {
+    throw new Error(`Refusing unsafe config write outside config root or through symlink: ${filePath}`);
+  }
   // Unique temp name (pid + timestamp + random) so concurrent writers never
   // collide on a shared `.tmp` file and clobber each other's rename.
   const tmp = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -148,12 +154,14 @@ function cleanupOldBackups(configDir: string, patternStr: string): void {
 export function writeOpenCodeJsonAtomic(configDir: string, data: unknown): void {
   const configPath = join(configDir, "opencode.json");
   mkdirSync(configDir, { recursive: true });
+  if (lstatSync(configDir).isSymbolicLink()) throw new Error(`Refusing unsafe config write through symlinked config root: ${configDir}`);
   writeJsonAtomic(configPath, data);
 }
 
 export function writeTuiJsonAtomic(configDir: string, data: unknown): void {
   const configPath = join(configDir, "tui.json");
   mkdirSync(configDir, { recursive: true });
+  if (lstatSync(configDir).isSymbolicLink()) throw new Error(`Refusing unsafe config write through symlinked config root: ${configDir}`);
   writeJsonAtomic(configPath, data);
 }
 
@@ -172,6 +180,9 @@ function mergeRecord(existing: unknown, defaults: unknown): Record<string, unkno
 export function readOrRepairOpenCodeJson(configDir: string): ReadOpenCodeJsonResult {
   const configPath = join(configDir, "opencode.json");
   mkdirSync(configDir, { recursive: true });
+  if (lstatSync(configDir).isSymbolicLink() || existsSync(configPath) && lstatSync(configPath).isSymbolicLink()) {
+    throw new Error(`Refusing unsafe opencode.json access through symlink: ${configPath}`);
+  }
 
   if (!existsSync(configPath)) return { config: {}, repaired: false };
 

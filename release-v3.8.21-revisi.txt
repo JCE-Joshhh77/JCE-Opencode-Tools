@@ -1,0 +1,33 @@
+JCE OpenCode Tools v3.8.21 Released
+
+Fokus update ini: kontrol model Factory Droid sekarang bisa dilakukan langsung dari CLI `opencode-jce`, tanpa bergantung pada command path plugin Droid.
+
+Yang baru:
+• Tambah command CLI:
+  • `opencode-jce droid models`
+    Untuk melihat model AI yang tersedia di Droid, termasuk native model dan BYOK custom model dari `~/.factory/settings.json`.
+  • `opencode-jce droid agent <agent> <model|default>`
+    Untuk mengatur model AI berbeda per JCE Droid agent.
+
+Contoh:
+• `opencode-jce droid models`
+• `opencode-jce droid agent jce-worker gpt-5.5`
+• `opencode-jce droid agent explorer claude-sonnet-4-6`
+• `opencode-jce droid agent jce-worker default`
+
+Dengan ini, `jce-worker` bisa pakai model kuat, sementara `explorer` bisa pakai model cepat atau murah. Setting disimpan ke `~/.factory/droids/<agent>.md`, jadi saat Droid memakai agent tersebut, model yang sudah diset akan ikut digunakan.
+
+Perbaikan penting:
+• File command baru `src/commands/droid.ts` sudah masuk payload install/update, jadi ikut terbawa saat install atau `opencode-jce update`.
+• Ada regression test agar command Droid CLI tidak hilang dari paket update.
+• Tidak lagi bergantung pada `${DROID_PLUGIN_ROOT}` untuk mengatur model lewat CLI.
+
+Verifikasi:
+• Full test suite lulus: 1317 pass, 0 fail.
+• Typecheck lulus.
+• Audit dependency bersih, tidak ada vulnerability.
+• Config validation OK.
+• Installer Windows dan Linux/macOS lolos syntax check.
+
+Release:
+https://github.com/JCE-Joshhh77/JCE-Opencode-Tools/releases/tag/v3.8.21

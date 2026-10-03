@@ -1,6 +1,6 @@
 import { join, resolve, sep } from "path";
 import { existsSync } from "fs";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, rename, rm, writeFile, mkdir } from "fs/promises";
 import { getConfigDir } from "./config.js";
 import { sanitizeGitUrl } from "./plugins.js";
 
@@ -8,6 +8,54 @@ export interface TeamConfig {
   repoUrl: string;
   lastSync: string;
   branch: string;
+}
+
+interface TeamWrite {
+  path: string;
+  content: string;
+}
+
+export async function commitTeamWrites(pendingWrites: TeamWrite[], renameFile = rename, recoverFile = rename): Promise<void> {
+  const token = `.team-${process.pid}-${Date.now()}`;
+  const staged = pendingWrites.map((pending) => ({ ...pending, temp: `${pending.path}${token}.tmp`, backup: `${pending.path}${token}.bak`, existed: existsSync(pending.path) }));
+  const committed: typeof staged = [];
+  const preserveBackups = new Set<string>();
+  let activating: (typeof staged)[number] | undefined;
+  try {
+    for (const pending of staged) {
+      await mkdir(resolve(pending.path, ".."), { recursive: true });
+      await writeFile(pending.temp, pending.content, "utf-8");
+    }
+    for (const pending of staged) {
+      activating = pending;
+      if (pending.existed) await rename(pending.path, pending.backup);
+      await renameFile(pending.temp, pending.path);
+      committed.push(pending);
+      activating = undefined;
+    }
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    if (activating?.existed && existsSync(activating.backup)) {
+      try { await recoverFile(activating.backup, activating.path); } catch (rollbackError) { preserveBackups.add(activating.backup); rollbackErrors.push(rollbackError); }
+    }
+    for (const pending of committed.reverse()) {
+      try {
+        await rm(pending.path, { force: true });
+        if (pending.existed) await recoverFile(pending.backup, pending.path);
+      } catch (rollbackError) {
+        preserveBackups.add(pending.backup);
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    if (rollbackErrors.length) throw new AggregateError([error, ...rollbackErrors], `Team write failed and rollback failed: ${rollbackErrors.map(String).join("; ")}`);
+    throw error;
+  } finally {
+    for (const pending of staged) {
+      await rm(pending.temp, { force: true });
+      if (preserveBackups.has(pending.backup)) continue;
+      await rm(pending.backup, { force: true });
+    }
+  }
 }
 
 function parseTeamConfig(content: string, path: string): TeamConfig {
@@ -191,6 +239,11 @@ export async function pushTeamConfig(): Promise<{ success: boolean; error?: stri
     // Git add, commit, push
     const addProc = Bun.spawn(["git", "add", "."], { cwd: tempDir, stdout: "pipe", stderr: "pipe" });
     await addProc.exited;
+    if (addProc.exitCode !== 0) {
+      const stderr = await new Response(addProc.stderr).text();
+      await cleanup(tempDir);
+      return { success: false, error: `Failed to stage team config: ${stderr.trim()}` };
+    }
 
     const commitProc = Bun.spawn(["git", "commit", "-m", `sync: update config from ${new Date().toISOString()}`], {
       cwd: tempDir,
@@ -271,45 +324,32 @@ export async function pullTeamConfig(): Promise<{ success: boolean; error?: stri
       return { success: false, error: `Failed to clone team repo: ${stderr}` };
     }
 
-    // Copy config files from team repo to local config
+    // Validate the complete snapshot before changing local files.
+    const pendingWrites: Array<{ path: string; content: string }> = [];
     const filesToSync = ["agents.json", "mcp.json", "lsp.json"];
     for (const file of filesToSync) {
       const srcPath = join(tempDir, file);
       const dstPath = join(configDir, file);
       if (existsSync(srcPath)) {
-        // Backup existing before overwrite
-        if (existsSync(dstPath)) {
-          const backupPath = `${dstPath}.team-backup-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-          const existing = await readFile(dstPath, "utf-8");
-          await writeFile(backupPath, existing, "utf-8");
-        }
-        // Validate JSON before writing
         const content = await readFile(srcPath, "utf-8");
-        try { JSON.parse(content); } catch { continue; } // skip invalid JSON
-        // Basic structure validation for known config files
+        let parsed: any;
+        try { parsed = JSON.parse(content); } catch { throw new Error(`Invalid JSON in team snapshot: ${file}`); }
         if (file === "agents.json") {
-          const parsed = JSON.parse(content);
-          if (!parsed.agents || !Array.isArray(parsed.agents)) continue;
+          if (!Array.isArray(parsed.agents)) throw new Error(`Invalid team snapshot structure: ${file}`);
         }
         if (file === "mcp.json") {
-          const parsed = JSON.parse(content);
-          if (!parsed.mcpServers || typeof parsed.mcpServers !== "object") continue;
+          if (!parsed.mcpServers || typeof parsed.mcpServers !== "object" || Array.isArray(parsed.mcpServers)) throw new Error(`Invalid team snapshot structure: ${file}`);
         }
         if (file === "lsp.json") {
-          const parsed = JSON.parse(content);
-          if (!parsed.lsp || typeof parsed.lsp !== "object") continue;
+          if (!parsed.lsp || typeof parsed.lsp !== "object" || Array.isArray(parsed.lsp)) throw new Error(`Invalid team snapshot structure: ${file}`);
         }
-        await writeFile(dstPath, content, "utf-8");
+        pendingWrites.push({ path: dstPath, content });
       }
     }
 
-    // Copy profiles
     const tempProfilesDir = join(tempDir, "profiles");
     const profilesDir = join(configDir, "profiles");
     if (existsSync(tempProfilesDir)) {
-      if (!existsSync(profilesDir)) {
-        await mkdir(profilesDir, { recursive: true });
-      }
       const { readdirSync } = await import("fs");
       const profiles = readdirSync(tempProfilesDir).filter((f) => f.endsWith(".json"));
       const safeProfilesRoot = resolve(profilesDir);
@@ -318,22 +358,15 @@ export async function pullTeamConfig(): Promise<{ success: boolean; error?: stri
         if (!resolvedDst.startsWith(safeProfilesRoot + sep)) continue; // skip traversal
         const srcProfile = join(tempProfilesDir, profile);
         const dstProfile = join(profilesDir, profile);
-        // Backup existing before overwrite
-        if (existsSync(dstProfile)) {
-          const backupPath = `${dstProfile}.team-backup-${new Date().toISOString().replace(/[:.]/g, "-")}`;
-          const existing = await readFile(dstProfile, "utf-8");
-          await writeFile(backupPath, existing, "utf-8");
-        }
-        // Validate JSON before writing
         const content = await readFile(srcProfile, "utf-8");
-        try { JSON.parse(content); } catch { continue; } // skip invalid JSON
-        await writeFile(dstProfile, content, "utf-8");
+        try { JSON.parse(content); } catch { throw new Error(`Invalid JSON in team snapshot: profiles/${profile}`); }
+        pendingWrites.push({ path: dstProfile, content });
       }
     }
 
-    // Update last sync time
     teamConfig.lastSync = new Date().toISOString();
-    await saveTeamConfig(teamConfig, configDir);
+    pendingWrites.push({ path: getTeamConfigPath(configDir), content: JSON.stringify(teamConfig, null, 2) + "\n" });
+    await commitTeamWrites(pendingWrites);
 
     await cleanup(tempDir);
     return { success: true };

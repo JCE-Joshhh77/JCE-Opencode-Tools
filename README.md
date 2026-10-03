@@ -6,12 +6,12 @@
 
 [![CI](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions/workflows/ci.yml/badge.svg)](https://github.com/JCETools-Petra/JCE-Opencode-Tools/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-3.8.29-green)]()
+[![Version](https://img.shields.io/badge/Version-3.8.30-green)]()
 [![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-brightgreen)]()
 
 **Install once. Get structured agents, workflows, orchestration, MCP tools, LSP config, and safer updates.**
 
-[Install](#install) · [Agents](#agents) · [Commands](#commands) · [Donate](#donate--buy-me-a-coffee)
+[Install](#install) Â· [Agents](#agents) Â· [Commands](#commands) Â· [Donate](#donate--buy-me-a-coffee)
 
 </div>
 
@@ -324,7 +324,7 @@ docs(readme): simplify project overview
 
 ## License
 
-MIT © [JCETools-Petra](https://github.com/JCETools-Petra)
+MIT Â© [JCETools-Petra](https://github.com/JCETools-Petra)
 
 ---
 
@@ -332,6 +332,6 @@ MIT © [JCETools-Petra](https://github.com/JCETools-Petra)
 
 **Built for the OpenCode community**
 
-[Report Bug](https://github.com/JCETools-Petra/JCE-Opencode-Tools/issues) · [Request Feature](https://github.com/JCETools-Petra/JCE-Opencode-Tools/issues) · [Donate](https://paypal.me/Darkness0777)
+[Report Bug](https://github.com/JCETools-Petra/JCE-Opencode-Tools/issues) Â· [Request Feature](https://github.com/JCETools-Petra/JCE-Opencode-Tools/issues) Â· [Donate](https://paypal.me/Darkness0777)
 
 </div>

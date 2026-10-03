@@ -1,5 +1,5 @@
 // ─── Version ─────────────────────────────────────────────────
-export const VERSION = "3.8.29";
+export const VERSION = "3.8.30";
 
 // ─── GitHub ──────────────────────────────────────────────────
 export const GITHUB_REPO = "JCETools-Petra/JCE-Opencode-Tools";

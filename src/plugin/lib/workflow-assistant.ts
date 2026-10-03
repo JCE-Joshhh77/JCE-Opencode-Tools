@@ -262,17 +262,51 @@ function normalizeStatus(code: string): string {
   return trimmed || code.trim() || code.replace(/\s/g, "") || "M";
 }
 
+function decodeGitPath(path: string): string {
+  if (!path.startsWith('"') || !path.endsWith('"')) return path;
+  const bytes: number[] = [];
+  const escapes: Record<string, number> = { a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 };
+  for (let i = 1; i < path.length - 1; i++) {
+    if (path[i] !== "\\") {
+      bytes.push(...new TextEncoder().encode(path[i]));
+      continue;
+    }
+    const escaped = path[++i];
+    if (/[0-7]/.test(escaped)) {
+      const octal = path.slice(i, i + 3).match(/^[0-7]{1,3}/)?.[0] ?? escaped;
+      bytes.push(Number.parseInt(octal, 8));
+      i += octal.length - 1;
+    } else {
+      bytes.push(escapes[escaped] ?? escaped.charCodeAt(0));
+    }
+  }
+  return new TextDecoder().decode(Uint8Array.from(bytes));
+}
+
 export function parseGitStatusPorcelain(output: string): GitStatusFile[] {
-  return output
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter(Boolean)
-    .map((line) => {
-      const status = line.startsWith("??") ? "??" : normalizeStatus(line.slice(0, 2));
-      const rawPath = line.slice(3).trim();
-      const path = /^[RC]/.test(status) && rawPath.includes(" -> ") ? rawPath.split(" -> ").at(-1)?.trim() || rawPath : rawPath;
-      return { status, path };
-    });
+  const nulDelimited = output.includes("\0");
+  const records = output.split(nulDelimited ? "\0" : /\r?\n/);
+  const files: GitStatusFile[] = [];
+  for (let i = 0; i < records.length; i++) {
+    const line = nulDelimited ? records[i] : records[i].trimEnd();
+    if (!line) continue;
+    const status = line.startsWith("??") ? "??" : normalizeStatus(line.slice(0, 2));
+    let rawPath = nulDelimited ? line.slice(3) : line.slice(3).trim();
+    if (nulDelimited && /^[RC]/.test(status)) i++;
+    if (!nulDelimited && /^[RC]/.test(status)) {
+      let quoted = false;
+      let escaped = false;
+      for (let j = 0; j <= rawPath.length - 4; j++) {
+        const char = rawPath[j];
+        if (escaped) escaped = false;
+        else if (char === "\\" && quoted) escaped = true;
+        else if (char === '"') quoted = !quoted;
+        else if (!quoted && rawPath.slice(j, j + 4) === " -> ") rawPath = rawPath.slice(j + 4).trim();
+      }
+    }
+    files.push({ status, path: decodeGitPath(rawPath) });
+  }
+  return files;
 }
 
 function isDocsPlanOrSpec(path: string): boolean {
