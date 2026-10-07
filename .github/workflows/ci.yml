@@ -150,6 +150,7 @@ jobs:
         env:
           XDG_CONFIG_HOME: ${{ runner.temp }}/xdg
           OPENCODE_JCE_INSTALL_SOURCE_DIR: ${{ github.workspace }}
+          OPENCODE_JCE_OPENCODE_MAJOR: "2"
         run: |
           bash install.sh </dev/null
           export PATH="$HOME/.bun/bin:$PATH"
@@ -162,6 +163,7 @@ jobs:
         env:
           XDG_CONFIG_HOME: ${{ runner.temp }}\xdg
           OPENCODE_JCE_INSTALL_SOURCE_DIR: ${{ github.workspace }}
+          OPENCODE_JCE_OPENCODE_MAJOR: "2"
         run: |
           $env:PATH = "$env:USERPROFILE\.bun\bin;$env:PATH"
           "s" | .\install.ps1

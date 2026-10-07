@@ -1230,8 +1230,13 @@ function Select-OpenCodeVersion {
     Write-Host "  [d] Auto-detect (detect from installed opencode --version)" -ForegroundColor DarkGray
     Write-Host ""
 
-    # Check for non-interactive mode
-    if ([Console]::IsInputRedirected -or -not $Host.UI.RawUI.KeyAvailable) {
+    # Check for non-interactive mode (stdin redirected or not a terminal)
+    $nonInteractive = $false
+    try { $nonInteractive = [Console]::IsInputRedirected } catch { $nonInteractive = $true }
+    if (-not $nonInteractive) {
+        try { $nonInteractive = -not $Host.UI.RawUI.KeyAvailable } catch { $nonInteractive = $true }
+    }
+    if ($nonInteractive) {
         # Non-interactive: try auto-detect, default to V2
         $detected = Get-OpenCodeMajorVersion
         if ($detected -eq 1) {
@@ -1272,15 +1277,17 @@ function Select-OpenCodeVersion {
     Write-Host ""
 }
 
-Select-OpenCodeVersion
-
-# Auto-detect OpenCode config location FIRST
+# Auto-detect OpenCode config location FIRST (needed for version detection)
 $ConfigDir = Detect-OpenCodeConfig
 
 # Backup existing config before making changes
 Backup-ExistingConfig $ConfigDir
 
 Write-Info "Config directory: $ConfigDir"
+
+# Version selection after config dir is known (auto-detect uses config files)
+Select-OpenCodeVersion
+
 Write-Info "Target OpenCode version: V$($env:OPENCODE_JCE_OPENCODE_MAJOR)"
 Write-Host ""
 

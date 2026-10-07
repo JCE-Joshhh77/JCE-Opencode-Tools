@@ -1558,12 +1558,14 @@ main() {
     detect_package_manager
     echo ""
 
-    select_opencode_version
-
-    # Auto-detect OpenCode config location and backup
+    # Auto-detect OpenCode config location and backup FIRST (needed for version detection)
     detect_opencode_config
     backup_existing_config
     info "Config directory: $CONFIG_DIR"
+    echo ""
+
+    # Version selection after config dir is known (auto-detect uses config files)
+    select_opencode_version
     info "Target OpenCode version: V${OPENCODE_JCE_OPENCODE_MAJOR}"
     echo ""
 
