@@ -94,8 +94,10 @@ describe("update config hardening", () => {
     ensureOpenCodeJsonEntries(configDir, 2);
 
     const merged = JSON.parse(readFileSync(configPath, "utf8"));
-    expect(merged.agent["jce-worker"].prompt).toBe("custom worker");
-    expect(merged.agent["custom-review"].prompt).toBe("custom review");
+    expect(merged.agent).toBeUndefined();
+    // V1 `agent` entries are migrated to V2 `agents` with `prompt`→`system`.
+    expect(merged.agents["jce-worker"].system).toBe("custom worker");
+    expect(merged.agents["custom-review"].system).toBe("custom review");
     expect(merged.agents["jce-researcher"]).toMatchObject({
       description: expect.any(String),
       mode: "all",
@@ -104,7 +106,6 @@ describe("update config hardening", () => {
     expect(merged.agents.explorer.mode).toBe("all");
     expect(merged.agents.frontend.mode).toBe("all");
     expect(merged.agents.oracle.mode).toBe("all");
-    expect(merged.agents["jce-worker"]).toBeUndefined();
   });
 
   test("refreshes stale context-keeper command path during ensure flow", () => {
@@ -125,7 +126,8 @@ describe("update config hardening", () => {
     const merged = JSON.parse(readFileSync(configPath, "utf8"));
 
     expect(result.changed).toBe(true);
-    expect(merged.mcp["context-keeper"].command[2]).toContain(`${configDir.replace(/\\/g, "/")}/cli/src/mcp/context-keeper.ts`);
-    expect(merged.mcp.servers["context-keeper"]).toBeUndefined();
+    // V1 flat MCP is migrated to V2 mcp.servers; context-keeper path is refreshed.
+    expect(merged.mcp.servers["context-keeper"].command[2]).toContain(`${configDir.replace(/\\/g, "/")}/cli/src/mcp/context-keeper.ts`);
+    expect(merged.mcp["context-keeper"]).toBeUndefined();
   });
 });

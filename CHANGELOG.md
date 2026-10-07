@@ -6,6 +6,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.10.0] - 2026-10-08
+
+### Added — Explicit V1/V2 Version Selection
+- **Interactive version selection at install time**: Both `install.ps1` and `install.sh` now prompt the user to choose OpenCode V1 or V2 before any config is written. This prevents cross-version config contamination that caused agents to disappear and MCP/plugin shapes to mismatch.
+  - Option `1` — OpenCode V1 (legacy `@opencode-ai/cli`): `agent` (singular), `plugin` (singular), flat `mcp`, `env`/`enabled`, `tui.json`.
+  - Option `2` — OpenCode V2 (new `@opencode/plugin`): `agents` (plural), `plugins` (plural), `mcp.servers`, `environment`/`disabled`, `cli.json`.
+  - Option `d` — Auto-detect from `opencode --version`.
+  - Non-interactive (piped) installs auto-detect and default to V2.
+- The selected version is passed through `OPENCODE_JCE_OPENCODE_MAJOR` env var for the entire install flow, ensuring all config generation, merge, and registration steps produce the correct shapes.
+
+### Fixed — Bidirectional V1↔V2 Config Migration
+- **V1 `agent` entries with `prompt` field now migrate to V2 `agents` with `system` field**: Previously, `ensureOpenCodeJsonEntries` for V2 only added new V2 defaults, leaving existing V1 `agent` entries with the deprecated `prompt` field — V2 reads `agents` (plural) with `system`, so agents were invisible. Now V1 `agent` entries are fully migrated: `prompt` → `system`, `agent` key deleted.
+- **V2→V1 downgrade now works**: Previously, switching from V2 to V1 left stale `agents` (plural), `plugins` (plural), and `mcp.servers` keys alongside V1 keys. Now `ensureOpenCodeJsonEntries` for V1 migrates V2 shapes back: `agents` → `agent` (with `system` → `prompt`), `plugins` → `plugin`, `mcp.servers` → flat `mcp`, `environment` → `env`, `disabled` → `enabled`, `{env:VAR}` → `${VAR}`.
+- **TUI config file cleanup when switching versions**: `ensureTuiJsonEntries` now deletes the other version's TUI config file (`tui.json` ↔ `cli.json`) to avoid cross-version confusion.
+
+### Changed
+- Version bumped to 3.10.0 (minor, feature: version selection + bidirectional migration).
+- Install summary now displays the selected OpenCode version.
+
+### Verification
+- `tsc --noEmit` exit 0.
+- `bun test` — 1413 pass / 0 fail.
+- `bun audit` — 0 vulnerabilities.
+- V1→V2 migration test: `agent`/`prompt` → `agents`/`system`, flat `mcp` → `mcp.servers`, all 6 agents present.
+- V2→V1 migration test: `agents`/`system` → `agent`/`prompt`, `mcp.servers` → flat `mcp`, all 6 agents present.
+- V1 stay-V1 test: V1 shapes preserved correctly, all 6 agents present.
+- TUI file cleanup test: `tui.json` deleted when V2 selected, `cli.json` deleted when V1 selected.
+- `install.ps1` parse OK, `bash -n install.sh` exit 0.
+
+---
+
 ## [3.9.1] - 2026-10-07
 
 ### Fixed

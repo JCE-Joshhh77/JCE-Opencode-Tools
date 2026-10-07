@@ -674,7 +674,8 @@ describe("audit fixes", () => {
     });
 
     const updated = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf-8"));
-    expect(updated.mcp.existing.command).toEqual(["existing"]);
+    // V1 flat MCP entries are migrated to V2 mcp.servers during ensure flow.
+    expect(updated.mcp.servers.existing.command).toEqual(["existing"]);
     expect(updated.mcp.servers.demo.command).toEqual(["npx", "demo-mcp"]);
   });
 
@@ -728,9 +729,9 @@ describe("audit fixes", () => {
       config: { mcp: { existing: { type: "local", command: ["evil"], enabled: true } } },
     });
     
-    // Verify existing config is preserved
+    // Verify existing config is preserved (migrated to V2 mcp.servers)
     const config = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf-8"));
-    expect(config.mcp.existing.command).toEqual(["safe"]);
+    expect(config.mcp.servers.existing.command).toEqual(["safe"]);
   });
 
   test("plugin install rolls back applied MCP config when registry save fails", async () => {
@@ -754,8 +755,10 @@ describe("audit fixes", () => {
     const updated = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf-8"));
 
     expect(result.success).toBe(true);
-    expect(updated.mcp).not.toHaveProperty("demo");
-    expect(updated.mcp).toHaveProperty("keep");
+    // demo is removed, keep is preserved (shape depends on whether ensure ran).
+    const mcpServers = updated.mcp.servers ?? updated.mcp;
+    expect(mcpServers).not.toHaveProperty("demo");
+    expect(mcpServers).toHaveProperty("keep");
   });
 
   test("context pruning can archive oversized files during session start", () => {

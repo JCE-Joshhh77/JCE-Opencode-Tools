@@ -48,7 +48,8 @@ describe("plugin config hardening", () => {
     const updated = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"));
     expect(updated.customTheme).toBe("night");
     expect(updated.providers).toEqual({ custom: { models: ["foo"] } });
-    expect(updated.mcp.existing.command).toEqual(["existing"]);
+    // V1 flat MCP entries are migrated to V2 mcp.servers during ensure flow.
+    expect(updated.mcp.servers.existing.command).toEqual(["existing"]);
     expect(updated.mcp.servers.demo.command).toEqual(["npx", "demo-mcp"]);
   });
 
@@ -92,8 +93,9 @@ describe("plugin config hardening", () => {
     });
 
     const updated = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"));
-    expect(updated.mcp.existing).toEqual(original.mcp.existing);
-    expect(updated.mcp).not.toHaveProperty("demo");
+    // V1 flat MCP entries are migrated to V2 mcp.servers; existing is preserved.
+    expect(updated.mcp.servers.existing.command).toEqual(["safe"]);
+    expect(updated.mcp.servers).not.toHaveProperty("demo");
   });
 
   test("plugin MCP entries are converted to V2 shape (environment/disabled) when merged into V2 config", () => {

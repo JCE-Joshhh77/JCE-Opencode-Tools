@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.9.1"
+VERSION="3.10.0"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -1476,6 +1476,7 @@ print_summary() {
     fi
     echo "╠══════════════════════════════════════════╣"
     echo "║                                          ║"
+    echo -e "║  OpenCode version: ${BOLD}V${OPENCODE_JCE_OPENCODE_MAJOR}${NC}                  ║"
     echo "║  Get started:  opencode                  ║"
     echo "║                                          ║"
     echo "╚══════════════════════════════════════════╝"
@@ -1489,16 +1490,81 @@ print_summary() {
 
 # ─── Main ─────────────────────────────────────────────────────
 
+select_opencode_version() {
+    echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║       OpenCode Version Selection         ║${NC}"
+    echo -e "${CYAN}╠══════════════════════════════════════════╣${NC}"
+    echo -e "${CYAN}║                                          ║${NC}"
+    echo -e "${CYAN}║${NC}  Which version of OpenCode are you using?${NC}"
+    echo -e "${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  ${BOLD}1${NC}${CYAN}) OpenCode V1 (legacy @opencode-ai/cli)   ${NC}"
+    echo -e "${CYAN}║${NC}     agent (singular), plugin, flat mcp      ${NC}"
+    echo -e "${CYAN}║${NC}     Config: tui.json                        ${NC}"
+    echo -e "${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  ${BOLD}2${NC}${CYAN}) OpenCode V2 (new @opencode/plugin)    ${NC} ${GREEN}(Recommended)${NC}"
+    echo -e "${CYAN}║${NC}     agents (plural), plugins, mcp.servers   ${NC}"
+    echo -e "${CYAN}║${NC}     environment/disabled, Config: cli.json  ${NC}"
+    echo -e "${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}  ${BOLD}d${NC}${CYAN}) Auto-detect from installed opencode     ${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
+    echo ""
+
+    # Non-interactive: detect automatically, default V2
+    if [ ! -t 0 ]; then
+        local detected
+        detected="$(detect_opencode_major)"
+        if [ "$detected" = "1" ]; then
+            warn "Non-interactive mode. Auto-detected OpenCode V1."
+            export OPENCODE_JCE_OPENCODE_MAJOR="1"
+        else
+            warn "Non-interactive mode. Auto-detected OpenCode V2."
+            export OPENCODE_JCE_OPENCODE_MAJOR="2"
+        fi
+        return
+    fi
+
+    read -rp "  Your choice [1/2/d]: " version_choice
+
+    case "$version_choice" in
+        1)
+            success "Selected: OpenCode V1"
+            export OPENCODE_JCE_OPENCODE_MAJOR="1"
+            ;;
+        2)
+            success "Selected: OpenCode V2"
+            export OPENCODE_JCE_OPENCODE_MAJOR="2"
+            ;;
+        [dD])
+            local detected
+            detected="$(detect_opencode_major)"
+            if [ "$detected" = "1" ]; then
+                success "Auto-detected: OpenCode V1"
+            else
+                success "Auto-detected: OpenCode V2"
+            fi
+            export OPENCODE_JCE_OPENCODE_MAJOR="$detected"
+            ;;
+        *)
+            warn "Invalid choice. Defaulting to OpenCode V2."
+            export OPENCODE_JCE_OPENCODE_MAJOR="2"
+            ;;
+    esac
+    echo ""
+}
+
 main() {
     print_banner
     detect_os
     detect_package_manager
     echo ""
 
+    select_opencode_version
+
     # Auto-detect OpenCode config location and backup
     detect_opencode_config
     backup_existing_config
     info "Config directory: $CONFIG_DIR"
+    info "Target OpenCode version: V${OPENCODE_JCE_OPENCODE_MAJOR}"
     echo ""
 
     install_git

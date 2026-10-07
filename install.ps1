@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.9.1"
+$Version = "3.10.0"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -1173,6 +1173,7 @@ function Write-Summary {
     Write-Host "  [OK] 81 Skills      - on-demand workflows" -ForegroundColor Green
     Write-Host "  [OK] 19 Profiles    - ready" -ForegroundColor Green
     Write-Host "  [OK] 6 MCP Tools    - cached & ready" -ForegroundColor Green
+    Write-Host "  [OK] OpenCode V$($env:OPENCODE_JCE_OPENCODE_MAJOR) config - agents active" -ForegroundColor Green
     if ($LspInstalled -gt 0) {
         Write-Host "  [OK] LSP Servers    - $LspInstalled installed" -ForegroundColor Green
     } else {
@@ -1205,6 +1206,74 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
 
 Write-Banner
 
+# --- Version Selection (V1 vs V2) ---
+# The user must explicitly choose which OpenCode major version they are using.
+# This prevents cross-version config contamination that causes agents to disappear
+# and MCP/plugin shapes to mismatch.
+function Select-OpenCodeVersion {
+    Write-Host ""
+    Write-Host "====================================================" -ForegroundColor Cyan
+    Write-Host "       OpenCode Version Selection" -ForegroundColor Cyan
+    Write-Host "====================================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  Which version of OpenCode are you using?" -ForegroundColor White
+    Write-Host ""
+    Write-Host "  [1] OpenCode V1 (legacy @opencode-ai/cli)" -ForegroundColor White
+    Write-Host "      - Uses: agent (singular), plugin (singular), flat mcp, env/enabled" -ForegroundColor DarkGray
+    Write-Host "      - Config: tui.json" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  [2] OpenCode V2 (new @opencode/plugin API)" -ForegroundColor White -NoNewline
+    Write-Host " (Recommended)" -ForegroundColor Green
+    Write-Host "      - Uses: agents (plural), plugins (plural), mcp.servers, environment/disabled" -ForegroundColor DarkGray
+    Write-Host "      - Config: cli.json" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  [d] Auto-detect (detect from installed opencode --version)" -ForegroundColor DarkGray
+    Write-Host ""
+
+    # Check for non-interactive mode
+    if ([Console]::IsInputRedirected -or -not $Host.UI.RawUI.KeyAvailable) {
+        # Non-interactive: try auto-detect, default to V2
+        $detected = Get-OpenCodeMajorVersion
+        if ($detected -eq 1) {
+            Write-Warn "Non-interactive mode. Auto-detected OpenCode V1."
+            $env:OPENCODE_JCE_OPENCODE_MAJOR = "1"
+        } else {
+            Write-Warn "Non-interactive mode. Auto-detected OpenCode V2."
+            $env:OPENCODE_JCE_OPENCODE_MAJOR = "2"
+        }
+        return
+    }
+
+    $choice = Read-Host "  Your choice [1/2/d]"
+
+    switch -Regex ($choice) {
+        "^[1]$" {
+            Write-Ok "Selected: OpenCode V1"
+            $env:OPENCODE_JCE_OPENCODE_MAJOR = "1"
+        }
+        "^[2]$" {
+            Write-Ok "Selected: OpenCode V2"
+            $env:OPENCODE_JCE_OPENCODE_MAJOR = "2"
+        }
+        "^[dD]$" {
+            $detected = Get-OpenCodeMajorVersion
+            if ($detected -eq 1) {
+                Write-Ok "Auto-detected: OpenCode V1"
+            } else {
+                Write-Ok "Auto-detected: OpenCode V2"
+            }
+            $env:OPENCODE_JCE_OPENCODE_MAJOR = "$detected"
+        }
+        default {
+            Write-Warn "Invalid choice. Defaulting to OpenCode V2."
+            $env:OPENCODE_JCE_OPENCODE_MAJOR = "2"
+        }
+    }
+    Write-Host ""
+}
+
+Select-OpenCodeVersion
+
 # Auto-detect OpenCode config location FIRST
 $ConfigDir = Detect-OpenCodeConfig
 
@@ -1212,6 +1281,7 @@ $ConfigDir = Detect-OpenCodeConfig
 Backup-ExistingConfig $ConfigDir
 
 Write-Info "Config directory: $ConfigDir"
+Write-Info "Target OpenCode version: V$($env:OPENCODE_JCE_OPENCODE_MAJOR)"
 Write-Host ""
 
 try {

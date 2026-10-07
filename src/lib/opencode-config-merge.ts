@@ -297,35 +297,79 @@ export function ensureOpenCodeJsonEntries(
   const merged: Record<string, unknown> = { ...current };
   if (!("$schema" in merged) && "$schema" in defaults) merged.$schema = defaults.$schema;
   if (majorVersion === 1) {
-    merged.plugin = mergeStringArray(merged.plugin, defaults.plugin);
+    // Migrate V2 `plugins` (plural) → V1 `plugin` (singular).
+    const legacyPlugins = Array.isArray(merged.plugins) ? merged.plugins : [];
+    merged.plugin = mergeStringArray(mergeStringArray(merged.plugin, legacyPlugins), defaults.plugin);
+    delete merged.plugins;
   } else {
     const legacyPlugins = Array.isArray(merged.plugin) ? merged.plugin : [];
     merged.plugins = mergeStringArray(merged.plugins, [...legacyPlugins, ...(defaults.plugins as unknown[] ?? [])]);
+    delete merged.plugin;
   }
   if (majorVersion === 1) {
-    merged.agent = mergeRecord(merged.agent, defaults.agent);
-    merged.mcp = mergeRecord(merged.mcp, defaults.mcp);
-  } else {
+    // Migrate V2 `agents` (plural, `system` field) → V1 `agent` (singular, `prompt` field).
     const legacyAgents = objectRecord(merged.agent);
-    const defaultAgents = objectRecord(defaults.agents);
-    const safeAgentDefaults = Object.fromEntries(Object.entries(defaultAgents).filter(([id]) => !(id in legacyAgents)));
-    merged.agents = mergeRecord(merged.agents, safeAgentDefaults);
+    const v2Agents = objectRecord(merged.agents);
+    const migratedV2Agents = Object.fromEntries(Object.entries(v2Agents).map(([id, entry]) => {
+      if (!isRecord(entry)) return [id, entry];
+      const { system, ...rest } = entry;
+      return [id, { ...rest, ...(system !== undefined ? { prompt: system } : {}) }];
+    }));
+    merged.agent = mergeRecord(mergeRecord(legacyAgents, migratedV2Agents), defaults.agent);
+    delete merged.agents;
 
+    // Migrate V2 `mcp.servers` → V1 flat `mcp`.
     const currentMcp = objectRecord(merged.mcp);
+    const v2Servers = objectRecord(currentMcp.servers);
+    // Convert V2-shaped entries (environment/disabled) to V1 shape (env/enabled).
+    const migratedV2Servers = Object.fromEntries(Object.entries(v2Servers).map(([key, entry]) => {
+      if (!isRecord(entry)) return [key, entry];
+      return [key, convertV2McpEntryToV1(entry)];
+    }));
+    const flatMcp = Object.fromEntries(Object.entries(currentMcp).filter(([key]) => key !== "servers"));
+    merged.mcp = mergeRecord(mergeRecord(flatMcp, migratedV2Servers), defaults.mcp);
+  } else {
+    // Migrate V1 `agent` (singular, `prompt` field) → V2 `agents` (plural, `system` field).
+    const legacyAgents = objectRecord(merged.agent);
+    const existingAgents = objectRecord(merged.agents);
+    const migratedAgents = Object.fromEntries(Object.entries(legacyAgents).map(([id, entry]) => {
+      if (!isRecord(entry)) return [id, entry];
+      const { prompt, ...rest } = entry;
+      // V2 uses `system` instead of `prompt`. Preserve the rest of the fields.
+      return [id, { ...rest, ...(prompt !== undefined ? { system: prompt } : {}) }];
+    }));
+    const mergedAgents = mergeRecord(existingAgents, migratedAgents);
+    const defaultAgents = objectRecord(defaults.agents);
+    const safeAgentDefaults = Object.fromEntries(Object.entries(defaultAgents).filter(([id]) => !(id in mergedAgents)));
+    merged.agents = mergeRecord(mergedAgents, safeAgentDefaults);
+    delete merged.agent;
+
+    // Migrate V1 flat `mcp` servers → V2 `mcp.servers`.
+    const currentMcp = objectRecord(merged.mcp);
+    const legacyFlatServers = Object.fromEntries(Object.entries(currentMcp).filter(([key]) => key !== "servers"));
     const currentServers = objectRecord(currentMcp.servers);
+    // Convert V1-shaped entries (env/enabled) to V2 shape (environment/disabled).
+    const migratedLegacyServers = Object.fromEntries(Object.entries(legacyFlatServers).map(([key, entry]) => {
+      if (!isRecord(entry)) return [key, entry];
+      // Skip non-server entries that may be V2 config keys like `servers`.
+      if (!("type" in entry)) return [key, entry];
+      return [key, convertPluginMcpEntryToV2(entry)];
+    }));
+    const mergedServers = mergeRecord(currentServers, migratedLegacyServers);
     const defaultServers = objectRecord(objectRecord(defaults.mcp).servers);
-    const safeServerDefaults = Object.fromEntries(Object.entries(defaultServers).filter(([id]) => !(id in currentMcp)));
-    merged.mcp = { ...currentMcp, servers: mergeRecord(currentServers, safeServerDefaults) };
+    const safeServerDefaults = Object.fromEntries(Object.entries(defaultServers).filter(([id]) => !(id in mergedServers)));
+    merged.mcp = { servers: mergeRecord(mergedServers, safeServerDefaults) };
   }
   merged.lsp = mergeRecord(merged.lsp, defaults.lsp);
   cleanupLegacyMcpEntries(merged as Record<string, any>);
 
   const mcp = objectRecord(merged.mcp);
   const defaultMcp = objectRecord(defaults.mcp);
+  // V1 flat MCP servers are now migrated into mcp.servers during the V2 path above.
   const usesLegacyContextKeeper = majorVersion === 2 && "context-keeper" in mcp;
   const mcpServers = majorVersion === 1 || usesLegacyContextKeeper ? mcp : objectRecord(mcp.servers);
-  const defaultMcpServers = majorVersion === 1 || usesLegacyContextKeeper
-    ? buildDefaultMcpConfig(configDir, 1)
+  const defaultMcpServers = majorVersion === 1
+    ? mcp
     : objectRecord(defaultMcp.servers);
   const defaultContextKeeper = defaultMcpServers["context-keeper"];
   const contextKeeper = mcpServers["context-keeper"];
@@ -371,6 +415,13 @@ export function ensureTuiJsonEntries(
   const configPath = join(configDir, tuiConfigName(majorVersion));
   const { config: current, repaired, backupPath } = readOrRepairTuiJson(configDir, majorVersion);
 
+  // Clean up the other version's TUI config file to avoid cross-version confusion.
+  const otherConfig = majorVersion === 1 ? "cli.json" : "tui.json";
+  const otherPath = join(configDir, otherConfig);
+  if (existsSync(otherPath)) {
+    try { unlinkSync(otherPath); } catch { /* best-effort */ }
+  }
+
   const merged: Record<string, unknown> = { ...current };
   if (!("$schema" in merged) && "$schema" in defaults) merged.$schema = defaults.$schema;
   if (majorVersion === 1) {
@@ -408,6 +459,26 @@ export function convertPluginMcpEntryToV2(entry: Record<string, unknown>): Recor
   // For already-V2 entries (no `enabled` field), preserve the existing `disabled` from `...server`.
   if ("enabled" in entry) {
     result.disabled = enabled === false;
+  }
+  return result;
+}
+
+/** Convert a V2-shaped MCP entry (environment/disabled) back to V1 shape (env/enabled). */
+export function convertV2McpEntryToV1(entry: Record<string, unknown>): Record<string, unknown> {
+  const { environment, disabled, ...server } = entry;
+  const result: Record<string, unknown> = { ...server };
+  if (environment && typeof environment === "object" && !Array.isArray(environment)) {
+    result.env = Object.fromEntries(
+      Object.entries(environment as Record<string, unknown>).map(([key, value]) => [
+        key,
+        typeof value === "string"
+          ? value.replace(/\{env:([A-Za-z_][A-Za-z0-9_]*)\}/g, "\${$1}")
+          : value,
+      ]),
+    );
+  }
+  if ("disabled" in entry) {
+    result.enabled = disabled !== true;
   }
   return result;
 }

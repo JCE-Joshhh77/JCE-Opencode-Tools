@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { detectOpenCodeMajorVersion, ensureOpenCodeJsonEntries, ensureTuiJsonEntries, parseOpenCodeMajorVersion, stripTrailingCommas, stripBom } from "../../src/lib/opencode-config-merge.ts";
@@ -74,9 +74,13 @@ describe("opencode config merge", () => {
     ensureOpenCodeJsonEntries(configDir, 2);
 
     const merged = JSON.parse(readFileSync(configPath, "utf8"));
+    // V1 `plugin` is migrated to V2 `plugins`.
     expect(merged.plugins).toContain("custom-plugin");
-    expect(merged.mcp.customServer).toBeTruthy();
-    expect(merged.mcp.servers.customServer).toBeUndefined();
+    expect(merged.plugin).toBeUndefined();
+    // V1 flat MCP servers are migrated to V2 `mcp.servers` with shape conversion.
+    expect(merged.mcp.servers.customServer).toBeTruthy();
+    expect(merged.mcp.servers.customServer.disabled).toBe(false);
+    expect(merged.mcp.servers.customServer.enabled).toBeUndefined();
     expect(merged.lsp.custom).toBeTruthy();
   });
 
@@ -190,11 +194,14 @@ describe("opencode config merge", () => {
     ensureOpenCodeJsonEntries(configDir, 2);
 
     const config = JSON.parse(readFileSync(configPath, "utf8"));
-    expect(config.agent["jce-worker"].prompt).toBe("legacy custom worker");
-    expect(config.agents["jce-worker"]).toBeUndefined();
+    // V1 `agent` is migrated to V2 `agents` with `prompt`→`system`.
+    expect(config.agent).toBeUndefined();
+    expect(config.agents["jce-worker"].system).toBe("legacy custom worker");
+    expect(config.agents["jce-worker"].prompt).toBeUndefined();
     expect(config.agents["jce-researcher"].system).toContain("Research Scope");
-    expect(config.mcp["context-keeper"].command).toEqual(["custom-context"]);
-    expect(config.mcp.servers["context-keeper"]).toBeUndefined();
+    // V1 flat MCP servers are migrated to V2 `mcp.servers`.
+    expect(config.mcp.servers["context-keeper"].command).toEqual(["custom-context"]);
+    expect(config.mcp["context-keeper"]).toBeUndefined();
     expect(config.mcp.servers.memory).toMatchObject({ disabled: false });
   });
 
@@ -215,5 +222,62 @@ describe("opencode config merge", () => {
       if (previous === undefined) delete process.env.OPENCODE_JCE_OPENCODE_MAJOR;
       else process.env.OPENCODE_JCE_OPENCODE_MAJOR = previous;
     }
+  });
+
+  test("migrates V2 config back to V1 shape when user selects V1", () => {
+    const configDir = tempConfigDir();
+    const configPath = join(configDir, "opencode.json");
+    writeFileSync(configPath, JSON.stringify({
+      agents: { "jce-worker": { mode: "primary", system: "V2 worker prompt" } },
+      plugins: ["file:///old/cli"],
+      mcp: {
+        servers: {
+          "context-keeper": { type: "local", command: ["bun", "run", "/old/ck.ts"], environment: { PROJECT_ROOT: "{env:PROJECT_ROOT}" }, disabled: false },
+          memory: { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-memory"], disabled: false },
+        },
+      },
+    }));
+
+    ensureOpenCodeJsonEntries(configDir, 1);
+
+    const config = JSON.parse(readFileSync(configPath, "utf8"));
+    // V2 `agents` is migrated back to V1 `agent` with `system`→`prompt`.
+    expect(config.agents).toBeUndefined();
+    expect(config.agent["jce-worker"].prompt).toBe("V2 worker prompt");
+    expect(config.agent["jce-worker"].system).toBeUndefined();
+    // V2 `plugins` is migrated back to V1 `plugin`.
+    expect(config.plugins).toBeUndefined();
+    expect(config.plugin).toBeDefined();
+    // V2 `mcp.servers` is flattened back to V1 flat `mcp`.
+    expect(config.mcp.servers).toBeUndefined();
+    expect(config.mcp["context-keeper"].enabled).toBe(true);
+    expect(config.mcp["context-keeper"].env.PROJECT_ROOT).toBe("${PROJECT_ROOT}");
+    expect(config.mcp.memory.enabled).toBe(true);
+  });
+
+  test("cleans up the other version's TUI config file when switching versions", () => {
+    const configDir = tempConfigDir();
+    // Start with V1 tui.json
+    writeFileSync(join(configDir, "tui.json"), JSON.stringify({
+      $schema: "https://opencode.ai/tui.json",
+      plugin: ["file:///old/tui.tsx"],
+    }));
+
+    ensureTuiJsonEntries(configDir, 2);
+
+    // V1 tui.json should be deleted, V2 cli.json should be created.
+    expect(existsSync(join(configDir, "tui.json"))).toBe(false);
+    expect(existsSync(join(configDir, "cli.json"))).toBe(true);
+    const cli = JSON.parse(readFileSync(join(configDir, "cli.json"), "utf8"));
+    expect(cli.$schema).toBe("https://opencode.ai/v2/cli.json");
+    expect(cli.plugins).toBeDefined();
+
+    // Now switch back to V1 — cli.json should be deleted, tui.json recreated.
+    ensureTuiJsonEntries(configDir, 1);
+    expect(existsSync(join(configDir, "cli.json"))).toBe(false);
+    expect(existsSync(join(configDir, "tui.json"))).toBe(true);
+    const tui = JSON.parse(readFileSync(join(configDir, "tui.json"), "utf8"));
+    expect(tui.$schema).toBe("https://opencode.ai/tui.json");
+    expect(tui.plugin).toBeDefined();
   });
 });
