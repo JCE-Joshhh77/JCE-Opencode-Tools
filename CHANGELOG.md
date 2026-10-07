@@ -6,6 +6,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.9.1] - 2026-10-07
+
+### Fixed
+- **CI `install-smoke` (ubuntu-latest) failing**: `opencode.json — invalid` with error `/mcp/servers must have required property 'type'`. Root cause: `schemas/opencode.schema.json` only modeled the V1 flat `mcp` shape, but the V2 config generation writes `mcp.servers` (nested wrapper). The schema interpreted the `servers` key as a server entry and demanded `type` on it.
+- **Schema now dual-version**: `opencode.schema.json` updated to support both V1 (flat `mcp`, `plugin`, `agent` with `prompt`) and V2 (`mcp.servers` wrapper, `plugins`, `agents` with `system`) shapes. MCP server entries now accept both `env`/`enabled` (V1) and `environment`/`disabled` (V2) fields.
+
+### Changed
+- Version synced to 3.9.1 across all sites.
+
+### Verification
+- `tsc --noEmit` exit 0.
+- `bun test` — 1411 pass / 0 fail.
+- `bun ./src/index.ts validate` — 24/24 configs valid.
+- V1 smoke test: `opencode.json` validates against schema — VALID.
+- V2 smoke test: `opencode.json` validates against schema — VALID.
+
+---
+
 ## [3.9.0] - 2026-10-03
 
 ### Added — OpenCode V2 Dual-Version Support
