@@ -1,56 +1,80 @@
 import { createElement, insert, setProp } from "@opentui/solid";
 import type { PluginOptions } from "@opencode-ai/plugin";
 import type { TuiPluginApi, TuiPluginMeta } from "@opencode-ai/plugin/tui";
+import { Plugin as V2Plugin } from "@opencode/plugin/tui";
 import { getConfigurableAgentIds, listAvailableModels, loadJcePluginSettings, saveJcePluginSettings } from "./lib/settings.js";
-import { createContextBudgetLineSignal } from "./lib/token-savings-sidebar.js";
+import { createContextBudgetLineSignal, renderContextBudgetLine } from "./lib/token-savings-sidebar.js";
 
 export function buildJceModelOptions() {
   const settings = loadJcePluginSettings();
   const models = listAvailableModels();
-  const options = getConfigurableAgentIds().map((agent) => {
-    const value = settings.agents[agent];
-    return {
+  return [
+    ...getConfigurableAgentIds().map((agent) => ({
       title: agent,
       value: `agent:${agent}`,
-      description: typeof value === "string" && models.includes(value) ? value : "active OpenCode model",
+      description: typeof settings.agents[agent] === "string" && models.includes(settings.agents[agent]!)
+        ? settings.agents[agent]!
+        : "active OpenCode model",
       category: "Agents",
       disabled: true,
-    };
-  });
-
-  options.push(...(models.length ? models.map((model) => ({
-    title: model,
-    value: `model:${model}`,
-    description: `Use: /jce-agent-model <agent> ${model}`,
-    category: "Available models",
-    disabled: false,
-  })) : [{
-    title: "none found",
-    value: "model:none",
-    description: "Add models to OpenCode provider config first.",
-    category: "Available models",
-    disabled: true,
-  }]));
-
-  return options;
+    })),
+    ...(models.length ? models.map((model) => ({
+      title: model,
+      value: `model:${model}`,
+      description: `Use: /jce-agent-model <agent> ${model}`,
+      category: "Available models",
+      disabled: false,
+    })) : [{
+      title: "none found",
+      value: "model:none",
+      description: "Add models to OpenCode provider config first.",
+      category: "Available models",
+      disabled: true,
+    }]),
+  ];
 }
 
-function buildJceAgentOptions(api: TuiPluginApi) {
+async function selectAgent(context: V2Plugin.Context): Promise<void> {
   const settings = loadJcePluginSettings();
   const models = listAvailableModels();
-  return getConfigurableAgentIds().map((agent) => {
-    const value = settings.agents[agent];
-    return {
-      title: agent,
-      value: agent,
-      description: typeof value === "string" && models.includes(value) ? value : "active OpenCode model",
+  const agent = await context.ui.dialog.select({
+    title: "JCE Agent Model",
+    placeholder: "Select agent",
+    options: getConfigurableAgentIds().map((id) => ({
+      title: id,
+      value: id,
+      description: typeof settings.agents[id] === "string" && models.includes(settings.agents[id]!)
+        ? settings.agents[id]!
+        : "active OpenCode model",
       category: "Agents",
-      onSelect: () => showJceAgentModelDialog(api, agent),
-    };
+    })),
+  });
+  if (!agent) return;
+
+  const model = await context.ui.dialog.select({
+    title: `JCE Agent Model: ${agent}`,
+    placeholder: "Select model override",
+    current: settings.agents[agent] ?? "default",
+    options: [
+      { title: "active OpenCode model", value: "default", description: `Clear ${agent} override`, category: "Default" },
+      ...models.map((id) => ({ title: id, value: id, description: `Set ${agent} to ${id}`, category: "Available models" })),
+    ],
+  });
+  if (!model) return;
+  settings.agents[agent] = model === "default" ? null : model;
+  await saveJcePluginSettings(settings);
+  context.ui.toast.show({ message: model === "default" ? `${agent} now uses active OpenCode model.` : `${agent} now uses ${model}.`, variant: "success" });
+}
+
+async function showModels(context: V2Plugin.Context): Promise<void> {
+  await context.ui.dialog.select({
+    title: "JCE Agent Models",
+    placeholder: "Search models. Use /jce-agent-model <agent> <provider/model|default> to set.",
+    options: buildJceModelOptions(),
   });
 }
 
-function buildJceAgentModelOptions(api: TuiPluginApi, agent: string) {
+function buildLegacyAgentModelOptions(api: TuiPluginApi, agent: string) {
   const models = listAvailableModels();
   return [
     {
@@ -58,14 +82,14 @@ function buildJceAgentModelOptions(api: TuiPluginApi, agent: string) {
       value: "default",
       description: `Clear ${agent} override`,
       category: "Default",
-      onSelect: () => void setJceAgentModel(api, agent, null),
+      onSelect: () => void setLegacyAgentModel(api, agent, null),
     },
     ...(models.length ? models.map((model) => ({
       title: model,
       value: model,
       description: `Set ${agent} to ${model}`,
       category: "Available models",
-      onSelect: () => void setJceAgentModel(api, agent, model),
+      onSelect: () => void setLegacyAgentModel(api, agent, model),
     })) : [{
       title: "none found",
       value: "none",
@@ -76,29 +100,36 @@ function buildJceAgentModelOptions(api: TuiPluginApi, agent: string) {
   ];
 }
 
-function showJceAgentDialog(api: TuiPluginApi): void {
-  api.ui.dialog.replace(() => api.ui.DialogSelect({
-    title: "JCE Agent Model",
-    placeholder: "Select agent",
-    options: buildJceAgentOptions(api),
-  }));
-}
-
-function showJceAgentModelDialog(api: TuiPluginApi, agent: string): void {
+function showLegacyAgentModelDialog(api: TuiPluginApi, agent: string): void {
   api.ui.dialog.replace(() => api.ui.DialogSelect({
     title: `JCE Agent Model: ${agent}`,
     placeholder: "Select model override",
-    options: buildJceAgentModelOptions(api, agent),
+    options: buildLegacyAgentModelOptions(api, agent),
   }));
 }
 
-async function setJceAgentModel(api: TuiPluginApi, agent: string, model: string | null): Promise<void> {
+function buildLegacyAgentOptions(api: TuiPluginApi) {
+  const settings = loadJcePluginSettings();
+  const models = listAvailableModels();
+  return getConfigurableAgentIds().map((agent) => ({
+    title: agent,
+    value: agent,
+    description: typeof settings.agents[agent] === "string" && models.includes(settings.agents[agent]!)
+      ? settings.agents[agent]!
+      : "active OpenCode model",
+    category: "Agents",
+    onSelect: () => showLegacyAgentModelDialog(api, agent),
+  }));
+}
+
+async function setLegacyAgentModel(api: TuiPluginApi, agent: string, model: string | null): Promise<void> {
   const settings = loadJcePluginSettings();
   settings.agents[agent] = model;
   await saveJcePluginSettings(settings);
   api.ui.toast({ message: model ? `${agent} now uses ${model}.` : `${agent} now uses active OpenCode model.` });
 }
-function createTokenSavingsBox(api: TuiPluginApi): any {
+
+function createLegacyTokenSavingsBox(api: TuiPluginApi): any {
   const line = createContextBudgetLineSignal(api);
   const box = createElement("box");
   const title = createElement("text");
@@ -111,10 +142,10 @@ function createTokenSavingsBox(api: TuiPluginApi): any {
   insert(title, bold);
   insert(value, line);
   insert(box, [title, value]);
-
   return box;
 }
 
+/** OpenCode V1 TUI entrypoint. */
 export async function tui(api: TuiPluginApi, _options: PluginOptions | undefined, _meta: TuiPluginMeta): Promise<void> {
   api.keymap.registerLayer({
     commands: [
@@ -141,7 +172,11 @@ export async function tui(api: TuiPluginApi, _options: PluginOptions | undefined
         namespace: "palette",
         slashName: "jce-agent-model",
         run() {
-          showJceAgentDialog(api);
+          api.ui.dialog.replace(() => api.ui.DialogSelect({
+            title: "JCE Agent Model",
+            placeholder: "Select agent",
+            options: buildLegacyAgentOptions(api),
+          }));
         },
       },
     ],
@@ -150,14 +185,44 @@ export async function tui(api: TuiPluginApi, _options: PluginOptions | undefined
   api.slots.register({
     order: 600,
     slots: {
-      sidebar_content: (_ctx: unknown, _props: { session_id: string }) => {
-        return createTokenSavingsBox(api);
-      },
+      sidebar_content: () => createLegacyTokenSavingsBox(api),
     },
   });
 }
 
-export default {
+const v2Plugin = V2Plugin.define({
   id: "opencode-jce-token-savings",
+  setup(context) {
+    context.keymap.layer(() => ({
+      mode: "global",
+      commands: [
+        {
+          id: "jce.models",
+          title: "JCE Models",
+          group: "JCE",
+          palette: true,
+          slash: { name: "jce-models" },
+          run: () => showModels(context),
+        },
+        {
+          id: "jce.agent-model",
+          title: "JCE Agent Model",
+          group: "JCE",
+          palette: true,
+          slash: { name: "jce-agent-model" },
+          run: () => selectAgent(context),
+        },
+      ],
+    }));
+
+    return context.ui.slot({
+      append: "sidebar.content",
+      render: () => <text fg={context.theme.text.muted}>Token Savings\n{renderContextBudgetLine(context)}</text>,
+    });
+  },
+});
+
+export default {
+  ...v2Plugin,
   tui,
 };

@@ -1,5 +1,7 @@
 // Refactored (audit-2026-06-13): pure helpers extracted to src/plugin/hooks/plugin-helpers.ts.
-import type { Plugin, Hooks } from "@opencode-ai/plugin";
+import type { Plugin as LegacyPlugin, Hooks } from "@opencode-ai/plugin";
+import { Plugin } from "@opencode/plugin";
+import { z } from "zod";
 import { appendFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { BackgroundManager } from "./background/manager.js";
@@ -68,7 +70,7 @@ import {
 } from "./hooks/plugin-helpers.js";
 
 
-const jcePlugin: Plugin = async (input) => {
+const jcePlugin: LegacyPlugin = async (input) => {
   const { client } = input;
   const chineseTranslator = buildChineseTranslator(client);
   const manager = new BackgroundManager({ maxConcurrency: 5 });
@@ -1099,8 +1101,133 @@ const jcePlugin: Plugin = async (input) => {
   return hooks;
 };
 
+function contentText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => part && typeof part === "object" && (part as any).type === "text" ? (part as any).text : "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+function createV2ClientAdapter(ctx: Plugin.Context) {
+  return {
+    session: {
+      create: async (request: any = {}) => ctx.session.create(request.body ?? request),
+      prompt: async (request: any) => {
+        const sessionID = request?.path?.id ?? request?.params?.id ?? request?.sessionID;
+        const body = request?.body ?? request;
+        const text = Array.isArray(body?.parts)
+          ? body.parts.map((part: any) => part?.type === "text" ? part.text : "").filter(Boolean).join("\n")
+          : body?.text ?? body?.content ?? "";
+        if (body?.agent) await ctx.session.switchAgent({ sessionID, agent: body.agent });
+        if (body?.model) await ctx.session.switchModel({ sessionID, model: { providerID: body.model.providerID, id: body.model.modelID ?? body.model.id } });
+        await ctx.session.prompt({ sessionID, text });
+        await ctx.session.wait({ sessionID });
+        const messages = await ctx.session.context({ sessionID });
+        const assistant = [...messages].reverse().find((message: any) => message?.type === "assistant") as any;
+        return { text: contentText(assistant?.content), parts: assistant?.content ?? [] };
+      },
+    },
+  };
+}
+
+function legacyToolResultText(result: any): string {
+  return contentText(result?.content) || (typeof result?.output === "string" ? result.output : "");
+}
+
+async function setupV2(ctx: Plugin.Context) {
+  const client = createV2ClientAdapter(ctx);
+  const hooks = await jcePlugin({
+    client: client as any,
+    project: ctx.location.project as any,
+    directory: ctx.location.directory,
+    worktree: ctx.location.project.canonical,
+    serverUrl: new URL("http://127.0.0.1"),
+    $: undefined as any,
+    experimental_workspace: { register() {} },
+  } as any);
+
+  await ctx.agent.transform((editor) => {
+    const configured = buildAgentConfigs();
+    for (const [id, config] of Object.entries(configured)) {
+      if (!editor.get(id)) continue;
+      editor.update(id, (agent: any) => {
+        agent.system = config.systemPrompt;
+        if (config.model) {
+          const separator = config.model.indexOf("/");
+          if (separator > 0) agent.model = { providerID: config.model.slice(0, separator), id: config.model.slice(separator + 1) };
+        }
+      });
+    }
+  });
+
+  await ctx.tool.transform((editor) => {
+    for (const [name, definition] of Object.entries(hooks.tool ?? {}) as Array<[string, any]>) {
+      editor.add({
+        name,
+        description: definition.description,
+        input: z.object(definition.args ?? {}),
+        async execute(input: unknown, context: any) {
+          const content = await definition.execute(input, {
+            sessionID: context.sessionID,
+            messageID: context.messageID,
+            agent: context.agent,
+            directory: ctx.location.directory,
+            worktree: ctx.location.project.canonical,
+            signal: context.signal,
+          });
+          return { content: typeof content === "string" ? content : JSON.stringify(content) };
+        },
+      } as any);
+    }
+  });
+
+  await ctx.session.hook("prompt", async (event) => {
+    const output: any = { message: event.prompt.text, parts: [{ type: "text", text: event.prompt.text }] };
+    await hooks["chat.message"]?.({ sessionID: event.sessionID } as any, output);
+    const text = output.parts?.filter((part: any) => part?.type === "text").map((part: any) => part.text).join("\n");
+    if (typeof text === "string" && text) event.prompt.text = text;
+  });
+
+  await ctx.session.hook("context", async (event) => {
+    const originalLength = event.system.length;
+    const output: any = { system: event.system.map((part: any) => part?.text ?? "").filter(Boolean) };
+    await hooks["experimental.chat.system.transform"]?.({ sessionID: event.sessionID, model: event.model } as any, output);
+    for (const text of output.system.slice(originalLength)) event.system.push({ type: "text", text } as any);
+  });
+
+  await ctx.session.hook("compaction", async (event) => {
+    const output: any = { context: [] };
+    await hooks["experimental.session.compacting"]?.({ sessionID: event.sessionID } as any, output);
+    for (const text of output.context) event.system.push({ type: "text", text } as any);
+  });
+
+  await ctx.tool.hook("execute.after", async (event) => {
+    if (event.status !== "completed") return;
+    const output: any = { output: legacyToolResultText(event.result) };
+    await hooks["tool.execute.after"]?.({ tool: event.tool, args: event.input, sessionID: event.sessionID, messageID: event.messageID } as any, output);
+    event.result = { ...event.result, content: output.output };
+  });
+
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        const data = (event as any).data ?? {};
+        await hooks.event?.({ event: { type: event.type, properties: { info: data.info ?? data.session ?? data, sessionID: data.sessionID } } } as any);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) console.error("opencode-jce event subscription failed", error);
+    }
+  })();
+
+  return () => controller.abort();
+}
+
 const pluginModule = {
-  id: "opencode-jce",
+  ...Plugin.define({ id: "opencode-jce", setup: setupV2 }),
+  // Temporary V1 compatibility. Remove after OpenCode 1 support window closes.
   server: jcePlugin,
 };
 

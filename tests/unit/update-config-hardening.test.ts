@@ -24,7 +24,7 @@ describe("update config hardening", () => {
     const configPath = join(configDir, "opencode.json");
     writeFileSync(configPath, "{ nope", "utf8");
 
-    expect(() => ensureOpenCodeJsonEntries(configDir)).toThrow("Refusing to rebuild malformed opencode.json automatically");
+    expect(() => ensureOpenCodeJsonEntries(configDir, 2)).toThrow("Refusing to rebuild malformed opencode.json automatically");
     expect(readFileSync(configPath, "utf8")).toBe("{ nope");
   });
 
@@ -37,7 +37,7 @@ describe("update config hardening", () => {
     const configDir = join(root, "config");
     symlinkSync(outsideDir, configDir, "junction");
 
-    expect(() => ensureOpenCodeJsonEntries(configDir)).toThrow();
+    expect(() => ensureOpenCodeJsonEntries(configDir, 2)).toThrow();
     expect(JSON.parse(readFileSync(outside, "utf8"))).toEqual({ secret: true });
   });
 
@@ -72,16 +72,16 @@ describe("update config hardening", () => {
       plugin: ["custom-plugin"],
     }, null, 2), "utf8");
 
-    ensureOpenCodeJsonEntries(configDir);
-    ensureOpenCodeJsonEntries(configDir);
+    ensureOpenCodeJsonEntries(configDir, 2);
+    ensureOpenCodeJsonEntries(configDir, 2);
 
     const merged = JSON.parse(readFileSync(configPath, "utf8"));
     expect(merged.providers).toEqual({ custom: { models: ["a", "b"] } });
-    expect(merged.plugin).toContain("custom-plugin");
-    expect(merged.plugin.length).toBe(new Set(merged.plugin).size);
+    expect(merged.plugins).toContain("custom-plugin");
+    expect(merged.plugins.length).toBe(new Set(merged.plugins).size);
   });
 
-  test("adds native JCE agent entries for OpenCode Desktop without overwriting user agents", () => {
+  test("adds native V2 JCE agent entries without overwriting legacy user agents", () => {
     const configDir = tempConfigDir();
     const configPath = join(configDir, "opencode.json");
     writeFileSync(configPath, JSON.stringify({
@@ -91,19 +91,20 @@ describe("update config hardening", () => {
       },
     }, null, 2), "utf8");
 
-    ensureOpenCodeJsonEntries(configDir);
+    ensureOpenCodeJsonEntries(configDir, 2);
 
     const merged = JSON.parse(readFileSync(configPath, "utf8"));
     expect(merged.agent["jce-worker"].prompt).toBe("custom worker");
     expect(merged.agent["custom-review"].prompt).toBe("custom review");
-    expect(merged.agent["jce-researcher"]).toMatchObject({
+    expect(merged.agents["jce-researcher"]).toMatchObject({
       description: expect.any(String),
       mode: "all",
-      prompt: expect.stringContaining("Research Scope"),
+      system: expect.stringContaining("Research Scope"),
     });
-    expect(merged.agent.explorer.mode).toBe("all");
-    expect(merged.agent.frontend.mode).toBe("all");
-    expect(merged.agent.oracle.mode).toBe("all");
+    expect(merged.agents.explorer.mode).toBe("all");
+    expect(merged.agents.frontend.mode).toBe("all");
+    expect(merged.agents.oracle.mode).toBe("all");
+    expect(merged.agents["jce-worker"]).toBeUndefined();
   });
 
   test("refreshes stale context-keeper command path during ensure flow", () => {
@@ -120,10 +121,11 @@ describe("update config hardening", () => {
       },
     }, null, 2), "utf8");
 
-    const result = ensureOpenCodeJsonEntries(configDir);
+    const result = ensureOpenCodeJsonEntries(configDir, 2);
     const merged = JSON.parse(readFileSync(configPath, "utf8"));
 
     expect(result.changed).toBe(true);
     expect(merged.mcp["context-keeper"].command[2]).toContain(`${configDir.replace(/\\/g, "/")}/cli/src/mcp/context-keeper.ts`);
+    expect(merged.mcp.servers["context-keeper"]).toBeUndefined();
   });
 });

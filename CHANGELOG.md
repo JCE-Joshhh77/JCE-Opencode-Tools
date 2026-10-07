@@ -6,6 +6,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/), versioned with 
 
 ---
 
+## [3.9.0] - 2026-10-03
+
+### Added — OpenCode V2 Dual-Version Support
+- **Full dual V1/V2 compatibility**: JCE now supports both OpenCode V1 and V2. Version is auto-detected via env override (`OPENCODE_JCE_OPENCODE_MAJOR`), cached `opencode --version` probe, or file inference (`cli.json` → V2, `tui.json` → V1, `plugins` array → V2, `plugin` array → V1).
+- **V2 server plugin**: `src/plugin/index.ts` now exports a V2 `setup()` (via `@opencode/plugin@2.0.24` `Plugin.define`) alongside the V1 `server()` export. Default export `.` points to the server plugin.
+- **V2 TUI plugin**: `src/plugin/tui.tsx` now exports a V2 `setup()` (via `@opencode/plugin/tui` with `@opentui/core` + `@opentui/solid`) alongside the V1 `tui()` compatibility export. All `select` dialogs include `placeholder` fields. Package export `./tui` added.
+- **V2 native config shapes**: `buildDefaultOpenCodeJson`/`buildDefaultMcpConfig`/`buildJceAgents` branch on detected major version:
+  - V2: `agents` (plural, `system` field), `mcp.servers` (nested, `disabled`/`environment`), `{env:VAR}` syntax
+  - V1: `agent` (singular, `prompt` field), `mcp` flat (`enabled`/`env`), `${VAR}` syntax
+- **V2 CLI config**: `cli.json` (schema `https://opencode.ai/v2/cli.json`) with `plugins` array; V1 retains `tui.json` (schema `https://opencode.ai/tui.json`) with `plugin`/`plugin_enabled`.
+- **Version-aware installer registration**: `install.ps1` (`Get-OpenCodeMajorVersion`, `Register-ContextKeeper`, `Register-TuiPlugin`) and `install.sh` (`detect_opencode_major`, `register_context_keeper`, `register_tui_plugin`) now write correct MCP shape per version.
+- **Version-aware config merge**: `scripts/merge-config.ts` and `src/commands/update.ts` pass `detectOpenCodeMajorVersion`, use dynamic config names, and back up both `tui.json`/`cli.json`.
+- **Legacy V1 key preservation**: `ensureOpenCodeJsonEntries` preserves V1 keys when upgrading to V2 (`agent`→`agents`, `mcp` flat→`mcp.servers`) without overwriting user values.
+- **Package exports restructured**: `.` → server plugin, `./cli` → binary entry, `./tui` → TUI plugin.
+
+### Fixed
+- **Plugin MCP shape conversion**: `mergePluginMcpIntoOpenCodeJson` now converts V1-shaped plugin manifest MCP entries (`env`/`enabled`) to native V2 shape (`environment`/`disabled`) when writing to `mcp.servers`. Already-V2 entries preserve their `disabled` value.
+- **Env var syntax conversion**: All `${VAR}` patterns are now converted to `{env:VAR}` via general regex (previously only `${GITHUB_TOKEN}` was converted — `${PROJECT_ROOT}` was left in V1 syntax in V2 config).
+- **Plugin removal on V2**: `removeAppliedPluginConfig` now normalizes `appliedMcp` entries to V2 shape before comparing, so removal works after V1→V2 conversion.
+- **Migration version-aware**: Migration `1.4.0→1.6.0` now calls `detectOpenCodeMajorVersion` + `buildDefaultMcpConfig` and writes to the correct container (`mcp` flat for V1, `mcp.servers` for V2).
+- **Checker reads both shapes**: `src/lib/checker.ts` now reads MCP from flat `mcp` or `mcp.servers` and checks `environment`/`env`.
+- **Fixer writes correct container**: `fixContextKeeper` writes context-keeper into the version-correct MCP container.
+- **Cleanup scans both containers**: `cleanupLegacyMcpEntries` now scans both `mcp` and `mcp.servers`.
+- **Playwright pin aligned**: Both installers now use `@playwright/mcp@latest` (matching template and test expectations), previously pinned to `0.0.28`.
+- **TUI token-savings sidebar**: Updated to read `location.directory` (V2 API) with fallback to `state.path.directory` (V1 API).
+
+### Security
+- `@modelcontextprotocol/sdk` pinned to 1.32.1 (GHSA-6qxp-vccf-f47h).
+- Transitive `seroval` 1.6.8 (GHSA-jp82-f5mq-hwhp), `proxy-addr` 2.0.8 (GHSA-p6vx-979v-rg4c, GHSA-jqcg-44mw-7w3h) pinned via overrides.
+- `bun audit` reports zero vulnerabilities.
+
+### Changed
+- Version synced to 3.9.0 across all sites.
+- `token-savings-sidebar.ts` now reads `api.location?.directory` (V2) with V1 fallback.
+
+### Verification
+- `tsc --noEmit` exit 0.
+- `bun audit` — No vulnerabilities found.
+- `bun test` — 1411 pass / 0 fail / 5771 expect() calls across 119 files.
+- `bun ./src/index.ts validate` — 24/24 config files valid, 81 skills startup audit pass.
+- PowerShell parser `install.ps1` — OK.
+- `bash -n install.sh` — exit 0.
+- V1 smoke test: produces native V1 shapes (`plugin`/`agent`/`mcp` flat/`enabled`/`env`/`${VAR}`/`tui.json`).
+- V2 smoke test: produces native V2 shapes (`plugins`/`agents`/`mcp.servers`/`disabled`/`environment`/`{env:VAR}`/`cli.json`).
+
+---
+
 ## [3.8.34] - 2026-10-03
 
 ### Fixed

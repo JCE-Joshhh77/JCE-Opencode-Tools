@@ -34,22 +34,25 @@ export function cleanupLegacyMcpEntries(config: MutableConfig): boolean {
 
   let changed = false;
   const mcp = config.mcp as Record<string, any>;
+  const containers = [mcp, mcp.servers].filter((value): value is Record<string, any> => Boolean(value && typeof value === "object" && !Array.isArray(value)));
 
-  if (isLocalCommand(mcp["web-fetch"], ["npx", "-y", "@modelcontextprotocol/server-fetch"])) {
-    delete mcp["web-fetch"];
-    changed = true;
-  }
-
-  if (isLocalCommand(mcp.filesystem, ["npx", "-y", "@modelcontextprotocol/server-filesystem", "./"])) {
-    delete mcp.filesystem;
-    changed = true;
-  }
-
-  if (isLocalCommand(mcp.postgres, ["npx", "-y", "@modelcontextprotocol/server-postgres"])) {
-    const connStr = mcp.postgres.env?.POSTGRES_CONNECTION_STRING;
-    if (!connStr || connStr === "${DATABASE_URL}") {
-      delete mcp.postgres;
+  for (const servers of containers) {
+    if (isLocalCommand(servers["web-fetch"], ["npx", "-y", "@modelcontextprotocol/server-fetch"])) {
+      delete servers["web-fetch"];
       changed = true;
+    }
+
+    if (isLocalCommand(servers.filesystem, ["npx", "-y", "@modelcontextprotocol/server-filesystem", "./"])) {
+      delete servers.filesystem;
+      changed = true;
+    }
+
+    if (isLocalCommand(servers.postgres, ["npx", "-y", "@modelcontextprotocol/server-postgres"])) {
+      const connStr = servers.postgres.env?.POSTGRES_CONNECTION_STRING ?? servers.postgres.environment?.POSTGRES_CONNECTION_STRING;
+      if (!connStr || connStr === "${DATABASE_URL}" || connStr === "{env:DATABASE_URL}") {
+        delete servers.postgres;
+        changed = true;
+      }
     }
   }
 
@@ -59,7 +62,7 @@ export function cleanupLegacyMcpEntries(config: MutableConfig): boolean {
 /**
  * Current version of the config schema.
  */
-export const CURRENT_CONFIG_VERSION = "3.8.34";
+export const CURRENT_CONFIG_VERSION = "3.9.0";
 
 /**
  * Get the path to the version.json file.
@@ -147,6 +150,8 @@ const migrations: Migration[] = [
     toVersion: "1.6.0",
     description: "Register context-keeper MCP server in opencode.json",
     migrate: async () => {
+      const { detectOpenCodeMajorVersion } = await import("./opencode-config-merge.js");
+      const { buildDefaultMcpConfig } = await import("./opencode-json-template.js");
       const configDir = getConfigDir();
       const opencodeJsonPath = join(configDir, "opencode.json");
       const contextKeeperPath = join(configDir, "cli", "src", "mcp", "context-keeper.ts");
@@ -163,22 +168,21 @@ const migrations: Migration[] = [
 
       const content = await readFile(opencodeJsonPath, "utf-8");
       const config = JSON.parse(content);
+      const majorVersion = detectOpenCodeMajorVersion(configDir);
 
       if (!config.mcp) config.mcp = {};
-      if (config.mcp["context-keeper"]) {
+      const servers = majorVersion === 1 ? config.mcp : (config.mcp.servers ??= {});
+
+      if (config.mcp["context-keeper"] || servers["context-keeper"]) {
         log("INFO", "migration", "context-keeper already registered");
         return;
       }
 
-      // Normalize path (forward slashes for cross-platform)
-      const normalizedPath = contextKeeperPath.replace(/\\/g, "/");
-
-      config.mcp["context-keeper"] = {
-        type: "local",
-        command: ["bun", "run", normalizedPath],
-        env: { PROJECT_ROOT: "${PROJECT_ROOT}" },
-        enabled: true,
-      };
+      // Use the version-correct default shape (V1: env/enabled flat, V2: environment/disabled nested)
+      const defaults = buildDefaultMcpConfig(configDir, majorVersion) as Record<string, any>;
+      servers["context-keeper"] = majorVersion === 1
+        ? defaults["context-keeper"]
+        : defaults.servers["context-keeper"];
 
       await writeFile(opencodeJsonPath, JSON.stringify(config, null, 2) + "\n");
       log("INFO", "migration", "context-keeper registered in opencode.json");

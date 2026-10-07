@@ -14,20 +14,21 @@ function fakeTuiApi(root: string) {
 }
 
 describe("plugin entry point", () => {
-  test("exports a valid PluginModule with id and server function", async () => {
+  test("exports a valid V2 Plugin with temporary V1 compatibility", async () => {
     const mod = await import("../../src/plugin/index.ts");
     expect(mod.default).toBeDefined();
     expect(mod.default.id).toBe("opencode-jce");
+    expect(typeof mod.default.setup).toBe("function");
     expect(typeof mod.default.server).toBe("function");
     expect((mod.default as any).tui).toBeUndefined();
   });
 
   test("provides a TUI-only Token Savings module", () => {
     const source = readFileSync(join(process.cwd(), "src", "plugin", "tui.tsx"), "utf8");
-    expect(source).toContain('import { createElement, insert, setProp } from "@opentui/solid"');
-    expect(source).not.toContain("@jsxImportSource");
+    expect(source).toContain('import { Plugin as V2Plugin } from "@opencode/plugin/tui"');
     expect(source).toContain('id: "opencode-jce-token-savings"');
-    expect(source).toContain("tui,");
+    expect(source).toContain("V2Plugin.define");
+    expect(source).toContain("export async function tui");
     expect(readFileSync(join(process.cwd(), "src", "plugin", "lib", "token-savings-sidebar.ts"), "utf8")).toContain("top:");
     expect(source).not.toContain("server:");
   });
@@ -35,34 +36,48 @@ describe("plugin entry point", () => {
   test("TUI-only Token Savings module imports without external preload", async () => {
     const mod = await import("../../src/plugin/tui.tsx");
     expect(mod.default.id).toBe("opencode-jce-token-savings");
+    expect(typeof mod.default.setup).toBe("function");
     expect(typeof mod.default.tui).toBe("function");
   });
 
-  test("TUI module registers JCE model slash commands", async () => {
+  test("V1 TUI module registers JCE model slash commands", async () => {
     const mod = await import("../../src/plugin/tui.tsx");
     const layers: any[] = [];
     await mod.default.tui({
       keymap: { registerLayer: (layer: any) => layers.push(layer) },
-      slots: { register: () => "slot" },
+      slots: { register: () => undefined },
     } as any, undefined, {} as any);
     const commands = layers.flatMap((layer) => layer.commands ?? []);
     expect(commands.map((command) => command.slashName)).toContain("jce-models");
     expect(commands.map((command) => command.slashName)).toContain("jce-agent-model");
   });
 
+  test("TUI module registers JCE model slash commands", async () => {
+    const mod = await import("../../src/plugin/tui.tsx");
+    const layers: any[] = [];
+    await mod.default.setup({
+      keymap: { layer: (factory: any) => layers.push(factory()) },
+      ui: { slot: () => () => undefined },
+      theme: { text: { muted: "gray" } },
+    } as any);
+    const commands = layers.flatMap((layer) => layer.commands ?? []);
+    expect(commands.map((command) => command.slash?.name)).toContain("jce-models");
+    expect(commands.map((command) => command.slash?.name)).toContain("jce-agent-model");
+  });
+
   test("TUI /jce-models command shows scrollable model list instead of placeholder toast", async () => {
     const mod = await import("../../src/plugin/tui.tsx");
     const layers: any[] = [];
     let select: any;
-    await mod.default.tui({
-      keymap: { registerLayer: (layer: any) => layers.push(layer) },
-      slots: { register: () => "slot" },
+    await mod.default.setup({
+      keymap: { layer: (factory: any) => layers.push(factory()) },
       ui: {
-        DialogSelect: (props: any) => props,
-        dialog: { replace: (render: any) => { select = render(); } },
+        slot: () => () => undefined,
+        dialog: { select: async (props: any) => { select = props; } },
       },
-    } as any, undefined, {} as any);
-    layers.flatMap((layer) => layer.commands ?? []).find((command) => command.slashName === "jce-models")?.run();
+      theme: { text: { muted: "gray" } },
+    } as any);
+    await layers.flatMap((layer) => layer.commands ?? []).find((command) => command.slash?.name === "jce-models")?.run();
     expect(select.title).toBe("JCE Agent Models");
     expect(select.placeholder).toContain("Search models");
     expect(select.options.some((option: any) => option.title === "jce-worker" && option.category === "Agents")).toBe(true);
@@ -73,20 +88,19 @@ describe("plugin entry point", () => {
     const mod = await import("../../src/plugin/tui.tsx");
     const layers: any[] = [];
     const selects: any[] = [];
-    await mod.default.tui({
-      keymap: { registerLayer: (layer: any) => layers.push(layer) },
-      slots: { register: () => "slot" },
+    await mod.default.setup({
+      keymap: { layer: (factory: any) => layers.push(factory()) },
       ui: {
-        DialogSelect: (props: any) => props,
-        dialog: { replace: (render: any) => { selects.push(render()); } },
-        toast: () => undefined,
+        slot: () => () => undefined,
+        dialog: { select: async (props: any) => { selects.push(props); return selects.length === 1 ? "jce-worker" : undefined; } },
+        toast: { show: () => undefined },
       },
-    } as any, undefined, {} as any);
-    layers.flatMap((layer) => layer.commands ?? []).find((command) => command.slashName === "jce-agent-model")?.run();
+      theme: { text: { muted: "gray" } },
+    } as any);
+    await layers.flatMap((layer) => layer.commands ?? []).find((command) => command.slash?.name === "jce-agent-model")?.run();
     expect(selects[0].title).toBe("JCE Agent Model");
     expect(selects[0].placeholder).toContain("Select agent");
     expect(selects[0].options.some((option: any) => option.title === "jce-worker" && option.category === "Agents")).toBe(true);
-    selects[0].options.find((option: any) => option.title === "jce-worker")?.onSelect();
     expect(selects[1].title).toBe("JCE Agent Model: jce-worker");
     expect(selects[1].options.some((option: any) => option.value === "default")).toBe(true);
   });

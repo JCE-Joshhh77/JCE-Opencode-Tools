@@ -14,16 +14,19 @@ function formatCompactInteger(value: number): string {
 }
 
 export interface TokenSavingsStateApi {
-  state: {
+  state?: {
     path: {
       directory?: string;
       worktree?: string;
     };
   };
+  location?: {
+    directory?: string;
+  };
 }
 
 export function renderContextBudgetLine(api: TokenSavingsStateApi): string {
-  const projectRoot = api.state.path.directory || api.state.path.worktree;
+  const projectRoot = api.location?.directory || api.state?.path.directory || api.state?.path.worktree;
   if (!projectRoot) return "~0 token(s) saved · no project root";
 
   const summary = loadSessionState(projectRoot).state.runtime.contextBudgetSummary;

@@ -113,9 +113,10 @@ export async function loadOpenCodeConfig(): Promise<Record<string, any>> {
     if (err.code === "ENOENT") {
       // Auto-create with full template
       const { buildDefaultOpenCodeJson } = await import("./opencode-json-template.js");
+      const { detectOpenCodeMajorVersion } = await import("./opencode-config-merge.js");
       const { buildAgentConfigs } = await import("../plugin/config.js");
       const configDir = getConfigDir();
-      const template = buildDefaultOpenCodeJson(configDir, buildAgentConfigs());
+      const template = buildDefaultOpenCodeJson(configDir, buildAgentConfigs(), detectOpenCodeMajorVersion(configDir));
       await mkdir(dirname(configPath), { recursive: true });
       await writeFile(configPath, JSON.stringify(template, null, 2) + "\n", "utf-8");
       return template as Record<string, any>;
@@ -132,9 +133,10 @@ export async function loadOpenCodeConfig(): Promise<Record<string, any>> {
     console.warn(`   A fresh default config will be written. Copy your settings from the backup.`);
 
     const { buildDefaultOpenCodeJson } = await import("./opencode-json-template.js");
+    const { detectOpenCodeMajorVersion } = await import("./opencode-config-merge.js");
     const { buildAgentConfigs } = await import("../plugin/config.js");
     const configDir = getConfigDir();
-    const template = buildDefaultOpenCodeJson(configDir, buildAgentConfigs());
+    const template = buildDefaultOpenCodeJson(configDir, buildAgentConfigs(), detectOpenCodeMajorVersion(configDir));
     await writeFile(configPath, JSON.stringify(template, null, 2) + "\n", "utf-8");
     return template as Record<string, any>;
   }

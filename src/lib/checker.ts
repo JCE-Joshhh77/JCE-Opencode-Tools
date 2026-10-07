@@ -176,10 +176,11 @@ interface OpenCodeMcpEntry {
   url?: string;
   enabled?: boolean;
   env?: Record<string, string>;
+  environment?: Record<string, string>;
 }
 
 interface OpenCodeConfig {
-  mcp?: Record<string, OpenCodeMcpEntry>;
+  mcp?: Record<string, OpenCodeMcpEntry> & { servers?: Record<string, OpenCodeMcpEntry> };
   [key: string]: unknown;
 }
 
@@ -208,7 +209,9 @@ export async function checkMcpServers(): Promise<CheckResult[]> {
       // Strip UTF-8 BOM if present
       if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
       const config: OpenCodeConfig = JSON.parse(raw);
-      opencodeMcp = config.mcp ?? {};
+      const mcp = config.mcp ?? {};
+      opencodeMcp = { ...mcp, ...(mcp.servers ?? {}) };
+      delete (opencodeMcp as Record<string, unknown>).servers;
     }
   } catch {
     results.push({ name: "OpenCode MCP", status: "warn", message: "Cannot parse opencode.json mcp section" });
@@ -234,8 +237,9 @@ export async function checkMcpServers(): Promise<CheckResult[]> {
     }
     const requiredEnv = requiredMcpEnv(name);
     for (const key of requiredEnv) {
-      if (!entry.env || typeof entry.env[key] !== "string" || !entry.env[key]) {
-        results.push({ name: `MCP: ${name} env`, status: "warn", message: `missing env.${key}` });
+      const environment = entry.environment ?? entry.env;
+      if (!environment || typeof environment[key] !== "string" || !environment[key]) {
+        results.push({ name: `MCP: ${name} env`, status: "warn", message: `missing environment.${key}` });
       }
     }
   }

@@ -18,10 +18,16 @@ interface LspEntry {
   extensions: string[];
 }
 
-interface NativeAgentEntry {
+interface LegacyAgentEntry {
   description: string;
   mode: "primary" | "subagent" | "all";
   prompt: string;
+}
+
+interface NativeAgentEntry {
+  description: string;
+  mode: "primary" | "subagent" | "all";
+  system: string;
 }
 
 export const AGENT_DESCRIPTIONS: Record<string, string> = {
@@ -33,7 +39,7 @@ export const AGENT_DESCRIPTIONS: Record<string, string> = {
   android: "Native Android specialist for Gradle, Kotlin/Java Android, Compose, adb/logcat, APK/AAB, and release diagnostics.",
 };
 
-const AGENT_MODES: Record<string, NativeAgentEntry["mode"]> = {
+const AGENT_MODES: Record<string, LegacyAgentEntry["mode"]> = {
   "jce-worker": "primary",
   oracle: "all",
   "jce-researcher": "all",
@@ -81,21 +87,27 @@ export function detectInstalledLsp(configDir: string): Record<string, LspEntry> 
   return result;
 }
 
-export function buildNativeJceAgents(agentConfigs: Record<string, { systemPrompt: string }>): Record<string, NativeAgentEntry> {
+export function buildJceAgents(
+  agentConfigs: Record<string, { systemPrompt: string }>,
+  majorVersion: OpenCodeMajorVersion = 2,
+): Record<string, LegacyAgentEntry | NativeAgentEntry> {
   return Object.fromEntries(Object.entries(agentConfigs).map(([id, config]) => [id, {
     description: AGENT_DESCRIPTIONS[id] ?? id,
     mode: AGENT_MODES[id] ?? "all",
-    prompt: config.systemPrompt,
-  }])) as Record<string, NativeAgentEntry>;
+    ...(majorVersion === 1 ? { prompt: config.systemPrompt } : { system: config.systemPrompt }),
+  }])) as Record<string, LegacyAgentEntry | NativeAgentEntry>;
 }
 
 // ─── Template Builder ────────────────────────────────────────
 
-export function buildDefaultMcpConfig(configDir: string): Record<string, unknown> {
+export function buildDefaultMcpConfig(
+  configDir: string,
+  majorVersion: OpenCodeMajorVersion = 2,
+): Record<string, unknown> {
   const contextKeeperPath = join(configDir, "cli", "src", "mcp", "context-keeper.ts")
     .replace(/\\/g, "/");
 
-  return {
+  const servers = {
     "context-keeper": {
       type: "local",
       command: ["bun", "run", contextKeeperPath],
@@ -133,6 +145,25 @@ export function buildDefaultMcpConfig(configDir: string): Record<string, unknown
       enabled: true,
     },
   };
+
+  if (majorVersion === 1) return servers;
+  return {
+    servers: Object.fromEntries(Object.entries(servers).map(([id, value]) => {
+      const { env, enabled, ...server } = value as Record<string, any>;
+      return [id, {
+        ...server,
+        ...(env ? {
+          environment: Object.fromEntries(Object.entries(env).map(([key, entry]) => [
+            key,
+            typeof entry === "string"
+              ? entry.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, "{env:$1}")
+              : entry,
+          ])),
+        } : {}),
+        disabled: !enabled,
+      }];
+    })),
+  };
 }
 
 /**
@@ -140,29 +171,40 @@ export function buildDefaultMcpConfig(configDir: string): Record<string, unknown
  * @param configDir - The resolved config directory (e.g., ~/.config/opencode)
  *                    Used to compute the context-keeper path and detect LSP.
  */
-export function buildDefaultOpenCodeJson(configDir: string, agentConfigs?: Record<string, { systemPrompt: string }>): Record<string, unknown> {
+export type OpenCodeMajorVersion = 1 | 2;
+
+export function buildDefaultOpenCodeJson(
+  configDir: string,
+  agentConfigs?: Record<string, { systemPrompt: string }>,
+  majorVersion: OpenCodeMajorVersion = 2,
+): Record<string, unknown> {
   // Auto-detect installed LSP servers
   const lsp = detectInstalledLsp(configDir);
 
+  const normalizedConfigDir = configDir.replace(/\\/g, "/");
   return {
     $schema: "https://opencode.ai/config.json",
-    plugin: [
-      `file://${configDir.replace(/\\/g, "/")}/cli/src/plugin/index.ts`,
-    ],
-    agent: agentConfigs ? buildNativeJceAgents(agentConfigs) : {},
-    mcp: buildDefaultMcpConfig(configDir),
+    ...(majorVersion === 1
+      ? { plugin: [`file://${normalizedConfigDir}/cli/src/plugin/index.ts`] }
+      : { plugins: [`file://${normalizedConfigDir}/cli`] }),
+    ...(majorVersion === 1
+      ? { agent: agentConfigs ? buildJceAgents(agentConfigs, 1) : {} }
+      : { agents: agentConfigs ? buildJceAgents(agentConfigs, 2) : {} }),
+    mcp: buildDefaultMcpConfig(configDir, majorVersion),
     lsp,
   };
 }
 
-export function buildDefaultTuiJson(configDir: string): Record<string, unknown> {
-  return {
-    $schema: "https://opencode.ai/tui.json",
-    plugin: [
-      `file://${configDir.replace(/\\/g, "/")}/cli/src/plugin/tui.tsx`,
-    ],
-    plugin_enabled: {
-      "opencode-jce-token-savings": true,
-    },
-  };
+export function buildDefaultTuiJson(configDir: string, majorVersion: OpenCodeMajorVersion = 2): Record<string, unknown> {
+  const normalizedConfigDir = configDir.replace(/\\/g, "/");
+  return majorVersion === 1
+    ? {
+        $schema: "https://opencode.ai/tui.json",
+        plugin: [`file://${normalizedConfigDir}/cli/src/plugin/tui.tsx`],
+        plugin_enabled: { "opencode-jce-token-savings": true },
+      }
+    : {
+        $schema: "https://opencode.ai/v2/cli.json",
+        plugins: [`file://${normalizedConfigDir}/cli`],
+      };
 }

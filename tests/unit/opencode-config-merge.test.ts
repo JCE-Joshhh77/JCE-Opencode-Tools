@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { ensureOpenCodeJsonEntries, ensureTuiJsonEntries, stripTrailingCommas, stripBom } from "../../src/lib/opencode-config-merge.ts";
+import { detectOpenCodeMajorVersion, ensureOpenCodeJsonEntries, ensureTuiJsonEntries, parseOpenCodeMajorVersion, stripTrailingCommas, stripBom } from "../../src/lib/opencode-config-merge.ts";
 import { readdirSync } from "fs";
 
 function tempConfigDir(): string {
@@ -21,13 +21,13 @@ describe("opencode config merge", () => {
       providers: { custom: { models: ["foo"] } },
     }, null, 2));
 
-    ensureOpenCodeJsonEntries(configDir);
+    ensureOpenCodeJsonEntries(configDir, 2);
 
     const merged = JSON.parse(readFileSync(configPath, "utf8"));
     expect(merged.customTheme).toBe("tokyo-night");
     expect(merged.providers).toEqual({ custom: { models: ["foo"] } });
-    expect(Array.isArray(merged.plugin)).toBe(true);
-    expect(merged.mcp).toBeTruthy();
+    expect(Array.isArray(merged.plugins)).toBe(true);
+    expect(merged.mcp.servers).toBeTruthy();
   });
 
   test("refuses to rebuild non-empty malformed opencode.json", () => {
@@ -35,32 +35,31 @@ describe("opencode config merge", () => {
     const configPath = join(configDir, "opencode.json");
     writeFileSync(configPath, "{ invalid json");
 
-    expect(() => ensureOpenCodeJsonEntries(configDir)).toThrow("Refusing to rebuild malformed opencode.json automatically");
+    expect(() => ensureOpenCodeJsonEntries(configDir, 2)).toThrow("Refusing to rebuild malformed opencode.json automatically");
     expect(readFileSync(configPath, "utf8")).toBe("{ invalid json");
   });
 
   test("does not duplicate JCE plugin entries on repeated merge", () => {
     const configDir = tempConfigDir();
 
-    ensureOpenCodeJsonEntries(configDir);
-    ensureOpenCodeJsonEntries(configDir);
+    ensureOpenCodeJsonEntries(configDir, 2);
+    ensureOpenCodeJsonEntries(configDir, 2);
 
     const merged = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"));
-    const pluginEntries = Array.isArray(merged.plugin) ? merged.plugin : [];
+    const pluginEntries = Array.isArray(merged.plugins) ? merged.plugins : [];
     expect(pluginEntries.length).toBe(new Set(pluginEntries).size);
   });
 
-  test("creates tui.json with Token Savings TUI plugin without duplicating entries", () => {
+  test("creates cli.json with JCE CLI plugin without duplicating entries", () => {
     const configDir = tempConfigDir();
 
-    ensureTuiJsonEntries(configDir);
-    ensureTuiJsonEntries(configDir);
+    ensureTuiJsonEntries(configDir, 2);
+    ensureTuiJsonEntries(configDir, 2);
 
-    const merged = JSON.parse(readFileSync(join(configDir, "tui.json"), "utf8"));
-    expect(merged.$schema).toBe("https://opencode.ai/tui.json");
-    expect(merged.plugin).toContain(`file://${configDir.replace(/\\/g, "/")}/cli/src/plugin/tui.tsx`);
-    expect(merged.plugin.length).toBe(new Set(merged.plugin).size);
-    expect(merged.plugin_enabled["opencode-jce-token-savings"]).toBe(true);
+    const merged = JSON.parse(readFileSync(join(configDir, "cli.json"), "utf8"));
+    expect(merged.$schema).toBe("https://opencode.ai/v2/cli.json");
+    expect(merged.plugins).toContain(`file://${configDir.replace(/\\/g, "/")}/cli`);
+    expect(merged.plugins.length).toBe(new Set(merged.plugins).size);
   });
 
   test("preserves existing user value for JCE-known sections when already configured", () => {
@@ -72,11 +71,12 @@ describe("opencode config merge", () => {
       lsp: { custom: { command: ["custom-lsp"], extensions: [".foo"] } },
     }, null, 2));
 
-    ensureOpenCodeJsonEntries(configDir);
+    ensureOpenCodeJsonEntries(configDir, 2);
 
     const merged = JSON.parse(readFileSync(configPath, "utf8"));
-    expect(merged.plugin).toContain("custom-plugin");
+    expect(merged.plugins).toContain("custom-plugin");
     expect(merged.mcp.customServer).toBeTruthy();
+    expect(merged.mcp.servers.customServer).toBeUndefined();
     expect(merged.lsp.custom).toBeTruthy();
   });
 
@@ -102,7 +102,7 @@ describe("opencode config merge", () => {
     ].join("\n");
     writeFileSync(configPath, malformed, "utf8");
 
-    const result = ensureOpenCodeJsonEntries(configDir);
+    const result = ensureOpenCodeJsonEntries(configDir, 2);
     expect(result.tidied).toBe(true);
     expect(result.backupPath).toBeTruthy();
 
@@ -112,7 +112,7 @@ describe("opencode config merge", () => {
     expect(merged.provider["9router"].models["codebuddy/claude-opus-4.6"].name).toBe("codebuddy/claude-opus-4.6");
     expect(merged.provider["9router"].models["codebuddy/claude-opus-4.6"].modalities.input).toEqual(["text", "image", "pdf"]);
     // JCE entries were still merged in.
-    expect(Array.isArray(merged.plugin)).toBe(true);
+    expect(Array.isArray(merged.plugins)).toBe(true);
 
     // Original malformed content was backed up, not lost.
     const backups = readdirSync(configDir).filter((f) => f.startsWith("opencode.json.invalid-"));
@@ -148,7 +148,7 @@ describe("opencode config merge", () => {
     });
     writeFileSync(configPath, "\uFEFF" + valid, "utf8");
 
-    const result = ensureOpenCodeJsonEntries(configDir);
+    const result = ensureOpenCodeJsonEntries(configDir, 2);
     expect(result.tidied).toBe(true);
     expect(result.backupPath).toBeTruthy();
 
@@ -160,6 +160,60 @@ describe("opencode config merge", () => {
     const merged = JSON.parse(text);
     expect(merged.model).toBe("9router/kr/claude-opus-4.8");
     expect(merged.provider["9router"].options.baseURL).toBe("http://127.0.0.1:20128/v1");
-    expect(Array.isArray(merged.plugin)).toBe(true);
+    expect(Array.isArray(merged.plugins)).toBe(true);
+  });
+
+  test("creates V1 opencode.json and tui.json entries when OpenCode 1 is selected", () => {
+    const configDir = tempConfigDir();
+    ensureOpenCodeJsonEntries(configDir, 1);
+    ensureTuiJsonEntries(configDir, 1);
+
+    const server = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"));
+    const tui = JSON.parse(readFileSync(join(configDir, "tui.json"), "utf8"));
+    expect(server.plugin).toContain(`file://${configDir.replace(/\\/g, "/")}/cli/src/plugin/index.ts`);
+    expect(server.plugins).toBeUndefined();
+    expect(tui.$schema).toBe("https://opencode.ai/tui.json");
+    expect(tui.plugin).toContain(`file://${configDir.replace(/\\/g, "/")}/cli/src/plugin/tui.tsx`);
+    expect(tui.plugin_enabled["opencode-jce-token-savings"]).toBe(true);
+    expect(server.agent["jce-worker"].prompt).toBeString();
+    expect(server.mcp["context-keeper"].env).toBeTruthy();
+  });
+
+  test("creates native V2 agents and MCP servers without duplicating legacy IDs", () => {
+    const configDir = tempConfigDir();
+    const configPath = join(configDir, "opencode.json");
+    writeFileSync(configPath, JSON.stringify({
+      agent: { "jce-worker": { prompt: "legacy custom worker" } },
+      mcp: { "context-keeper": { type: "local", command: ["custom-context"] } },
+    }));
+
+    ensureOpenCodeJsonEntries(configDir, 2);
+
+    const config = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(config.agent["jce-worker"].prompt).toBe("legacy custom worker");
+    expect(config.agents["jce-worker"]).toBeUndefined();
+    expect(config.agents["jce-researcher"].system).toContain("Research Scope");
+    expect(config.mcp["context-keeper"].command).toEqual(["custom-context"]);
+    expect(config.mcp.servers["context-keeper"]).toBeUndefined();
+    expect(config.mcp.servers.memory).toMatchObject({ disabled: false });
+  });
+
+  test("parses V1 and V2 OpenCode version output", () => {
+    expect(parseOpenCodeMajorVersion("opencode v1.18.34")).toBe(1);
+    expect(parseOpenCodeMajorVersion("opencode v2.0.24")).toBe(2);
+    expect(parseOpenCodeMajorVersion("unknown")).toBeNull();
+  });
+
+  test("honors explicit OpenCode major override for installer and test isolation", () => {
+    const previous = process.env.OPENCODE_JCE_OPENCODE_MAJOR;
+    try {
+      process.env.OPENCODE_JCE_OPENCODE_MAJOR = "1";
+      expect(detectOpenCodeMajorVersion()).toBe(1);
+      process.env.OPENCODE_JCE_OPENCODE_MAJOR = "2";
+      expect(detectOpenCodeMajorVersion()).toBe(2);
+    } finally {
+      if (previous === undefined) delete process.env.OPENCODE_JCE_OPENCODE_MAJOR;
+      else process.env.OPENCODE_JCE_OPENCODE_MAJOR = previous;
+    }
   });
 });

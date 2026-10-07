@@ -5,7 +5,7 @@
 # ===================================================================
 
 $ErrorActionPreference = "Stop"
-$Version = "3.8.34"
+$Version = "3.9.0"
 $RepoUrl = "https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 $TempDir = Join-Path $env:TEMP "opencode-jce-install-$([System.IO.Path]::GetRandomFileName())"
 $JceBinDir = Join-Path $env:USERPROFILE ".opencode-jce\bin"
@@ -390,6 +390,23 @@ function Backup-ExistingConfig {
     }
 }
 
+function Get-OpenCodeMajorVersion {
+    if ($env:OPENCODE_JCE_OPENCODE_MAJOR -in @("1", "2")) {
+        return [int]$env:OPENCODE_JCE_OPENCODE_MAJOR
+    }
+    if (Test-Command "opencode") {
+        try {
+            $output = (& opencode --version 2>$null | Out-String).Trim()
+            if ($output -match '(?i)(?:^|\s|v)(\d+)(?:\.|\s|$)') {
+                return $(if ([int]$Matches[1] -ge 2) { 2 } else { 1 })
+            }
+        } catch {}
+    }
+    if (Test-Path (Join-Path $ConfigDir "cli.json")) { return 2 }
+    if (Test-Path (Join-Path $ConfigDir "tui.json")) { return 1 }
+    return 2
+}
+
 # --- Installation Steps ---
 
 function Install-Git {
@@ -745,6 +762,7 @@ function Register-ContextKeeper {
     $opencodeJson = Join-Path $ConfigDir "opencode.json"
     $cliDir = Join-Path $ConfigDir "cli"
     $contextKeeperPath = Join-Path $cliDir "src\mcp\context-keeper.ts"
+    $openCodeMajor = Get-OpenCodeMajorVersion
 
     if ((Test-Path $opencodeJson) -and ((Get-Item $opencodeJson -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         Write-Warn "Refusing to write symlinked opencode.json: $opencodeJson"
@@ -773,19 +791,32 @@ function Register-ContextKeeper {
             Write-Info "opencode.json not found. Creating with default MCP servers..."
             $config = [PSCustomObject]@{
                 '$schema' = "https://opencode.ai/config.json"
-                plugin = @("file://$($ConfigDir -replace '\\','/')/cli/src/plugin/index.ts")
                 mcp = [PSCustomObject]@{}
                 lsp = [PSCustomObject]@{}
             }
         }
 
-        $jcePlugin = "file://$($ConfigDir -replace '\\','/')/cli/src/plugin/index.ts"
-        if (-not $config.plugin) { $config | Add-Member -NotePropertyName "plugin" -NotePropertyValue @() }
-        if (@($config.plugin) -notcontains $jcePlugin) { $config.plugin = @($config.plugin) + $jcePlugin }
+        if ($openCodeMajor -eq 1) {
+            $jcePlugin = "file://$($ConfigDir -replace '\\','/')/cli/src/plugin/index.ts"
+            if (-not $config.plugin) { $config | Add-Member -NotePropertyName "plugin" -NotePropertyValue @() }
+            if (@($config.plugin) -notcontains $jcePlugin) { $config.plugin = @($config.plugin) + $jcePlugin }
+        } else {
+            $jcePlugin = "file://$($ConfigDir -replace '\\','/')/cli"
+            if (-not $config.plugins) { $config | Add-Member -NotePropertyName "plugins" -NotePropertyValue @() }
+            if (@($config.plugins) -notcontains $jcePlugin) { $config.plugins = @($config.plugins) + $jcePlugin }
+        }
 
         # Ensure mcp section exists
         if (-not $config.mcp) {
             $config | Add-Member -NotePropertyName "mcp" -NotePropertyValue ([PSCustomObject]@{})
+        }
+
+        $mcpServers = $config.mcp
+        if ($openCodeMajor -ge 2) {
+            if (-not $config.mcp.PSObject.Properties["servers"]) {
+                $config.mcp | Add-Member -NotePropertyName "servers" -NotePropertyValue ([PSCustomObject]@{})
+            }
+            $mcpServers = $config.mcp.servers
         }
 
         $defaults = [ordered]@{
@@ -793,14 +824,25 @@ function Register-ContextKeeper {
             "context7" = [PSCustomObject]@{ type = "remote"; url = "https://mcp.context7.com/mcp"; enabled = $true }
             "github-search" = [PSCustomObject]@{ type = "local"; command = @("npx", "-y", "@modelcontextprotocol/server-github"); env = [PSCustomObject]@{ GITHUB_PERSONAL_ACCESS_TOKEN = '${GITHUB_TOKEN}' }; enabled = $true }
             "memory" = [PSCustomObject]@{ type = "local"; command = @("npx", "-y", "@modelcontextprotocol/server-memory"); enabled = $true }
-            "playwright" = [PSCustomObject]@{ type = "local"; command = @("npx", "-y", "@playwright/mcp@0.0.28"); enabled = $true }
+            "playwright" = [PSCustomObject]@{ type = "local"; command = @("npx", "-y", "@playwright/mcp@latest"); enabled = $true }
             "sequential-thinking" = [PSCustomObject]@{ type = "local"; command = @("npx", "-y", "@modelcontextprotocol/server-sequential-thinking"); enabled = $true }
+        }
+
+        if ($openCodeMajor -ge 2) {
+            $defaults = [ordered]@{
+                "context-keeper" = [PSCustomObject]@{ type = "local"; command = @("bun", "run", $normalizedPath); environment = [PSCustomObject]@{ PROJECT_ROOT = '${PROJECT_ROOT}' }; disabled = $false }
+                "context7" = [PSCustomObject]@{ type = "remote"; url = "https://mcp.context7.com/mcp"; disabled = $false }
+                "github-search" = [PSCustomObject]@{ type = "local"; command = @("npx", "-y", "@modelcontextprotocol/server-github"); environment = [PSCustomObject]@{ GITHUB_PERSONAL_ACCESS_TOKEN = '{env:GITHUB_TOKEN}' }; disabled = $false }
+                "memory" = [PSCustomObject]@{ type = "local"; command = @("npx", "-y", "@modelcontextprotocol/server-memory"); disabled = $false }
+                "playwright" = [PSCustomObject]@{ type = "local"; command = @("npx", "-y", "@playwright/mcp@latest"); disabled = $false }
+                "sequential-thinking" = [PSCustomObject]@{ type = "local"; command = @("npx", "-y", "@modelcontextprotocol/server-sequential-thinking"); disabled = $false }
+            }
         }
 
         $added = 0
         foreach ($entry in $defaults.GetEnumerator()) {
-            if (-not $config.mcp.PSObject.Properties[$entry.Key]) {
-                $config.mcp | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value
+            if (-not $config.mcp.PSObject.Properties[$entry.Key] -and -not $mcpServers.PSObject.Properties[$entry.Key]) {
+                $mcpServers | Add-Member -NotePropertyName $entry.Key -NotePropertyValue $entry.Value
                 $added++
             }
         }
@@ -820,11 +862,13 @@ function Register-ContextKeeper {
 }
 
 function Register-TuiPlugin {
-    Write-Info "Registering Token Savings TUI plugin in tui.json..."
+    $openCodeMajor = Get-OpenCodeMajorVersion
+    $tuiConfigName = $(if ($openCodeMajor -eq 1) { "tui.json" } else { "cli.json" })
+    Write-Info "Registering JCE TUI plugin in $tuiConfigName..."
 
-    $tuiJson = Join-Path $ConfigDir "tui.json"
+    $tuiJson = Join-Path $ConfigDir $tuiConfigName
     $tuiPluginFile = Join-Path $ConfigDir "cli\src\plugin\tui.tsx"
-    $tuiPlugin = "file://$($ConfigDir -replace '\\','/')/cli/src/plugin/tui.tsx"
+    $tuiPlugin = $(if ($openCodeMajor -eq 1) { "file://$($ConfigDir -replace '\\','/')/cli/src/plugin/tui.tsx" } else { "file://$($ConfigDir -replace '\\','/')/cli" })
 
     # Validate TUI plugin file exists
     if (-not (Test-Path $tuiPluginFile)) {
@@ -840,35 +884,33 @@ function Register-TuiPlugin {
             } catch {
                 $backupPath = "$tuiJson.invalid-$(Get-Date -Format 'yyyy-MM-ddTHH-mm-ss')"
                 Move-Item $tuiJson $backupPath -Force
-                Write-Warn "Malformed tui.json backed up to $backupPath and rebuilt."
-                $config = [PSCustomObject]@{
-                    '$schema' = "https://opencode.ai/tui.json"
-                    plugin = @()
-                    plugin_enabled = [PSCustomObject]@{}
-                }
+                Write-Warn "Malformed $tuiConfigName backed up to $backupPath and rebuilt."
+                $config = [PSCustomObject]@{}
             }
         } else {
-            $config = [PSCustomObject]@{
-                '$schema' = "https://opencode.ai/tui.json"
-                plugin = @()
-                plugin_enabled = [PSCustomObject]@{}
-            }
+            $config = [PSCustomObject]@{}
         }
 
-        if (-not $config.PSObject.Properties['$schema']) { $config | Add-Member -NotePropertyName '$schema' -NotePropertyValue "https://opencode.ai/tui.json" }
-        if (-not $config.plugin) { $config | Add-Member -NotePropertyName "plugin" -NotePropertyValue @() }
-        if (@($config.plugin) -notcontains $tuiPlugin) { $config.plugin = @($config.plugin) + $tuiPlugin }
-        if (-not $config.plugin_enabled) { $config | Add-Member -NotePropertyName "plugin_enabled" -NotePropertyValue ([PSCustomObject]@{}) }
-        if (-not $config.plugin_enabled.PSObject.Properties["opencode-jce-token-savings"]) {
-            $config.plugin_enabled | Add-Member -NotePropertyName "opencode-jce-token-savings" -NotePropertyValue $true
+        if ($openCodeMajor -eq 1) {
+            if (-not $config.PSObject.Properties['$schema']) { $config | Add-Member -NotePropertyName '$schema' -NotePropertyValue "https://opencode.ai/tui.json" }
+            if (-not $config.plugin) { $config | Add-Member -NotePropertyName "plugin" -NotePropertyValue @() }
+            if (@($config.plugin) -notcontains $tuiPlugin) { $config.plugin = @($config.plugin) + $tuiPlugin }
+            if (-not $config.plugin_enabled) { $config | Add-Member -NotePropertyName "plugin_enabled" -NotePropertyValue ([PSCustomObject]@{}) }
+            if (-not $config.plugin_enabled.PSObject.Properties["opencode-jce-token-savings"]) {
+                $config.plugin_enabled | Add-Member -NotePropertyName "opencode-jce-token-savings" -NotePropertyValue $true
+            }
+        } else {
+            if (-not $config.PSObject.Properties['$schema']) { $config | Add-Member -NotePropertyName '$schema' -NotePropertyValue "https://opencode.ai/v2/cli.json" }
+            if (-not $config.plugins) { $config | Add-Member -NotePropertyName "plugins" -NotePropertyValue @() }
+            if (@($config.plugins) -notcontains $tuiPlugin) { $config.plugins = @($config.plugins) + $tuiPlugin }
         }
 
         $jsonOut = $config | ConvertTo-Json -Depth 100
         [System.IO.File]::WriteAllText($tuiJson, $jsonOut, [System.Text.UTF8Encoding]::new($false))
-        Write-Ok "tui.json Token Savings plugin registered"
+        Write-Ok "$tuiConfigName JCE plugin registered"
     } catch {
         Write-Warn "Failed to register Token Savings TUI plugin: $($_.Exception.Message)"
-        Write-Info "Add manually to tui.json plugin: $tuiPlugin"
+        Write-Info "Add manually to ${tuiConfigName}: $tuiPlugin"
         Write-Info "Run 'opencode-jce update' after install to retry."
     }
 }
@@ -891,7 +933,7 @@ function Install-McpPackages {
     $mcpPackages = @(
         "@modelcontextprotocol/server-github",
         "@modelcontextprotocol/server-memory",
-        "@playwright/mcp@0.0.28",
+        "@playwright/mcp@latest",
         "@modelcontextprotocol/server-sequential-thinking"
     )
 

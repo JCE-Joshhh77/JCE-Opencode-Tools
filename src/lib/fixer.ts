@@ -707,8 +707,9 @@ export async function fixContextKeeper(): Promise<FixResult[]> {
 
   if (!existsSync(opencodeJsonPath)) {
     const { buildDefaultOpenCodeJson } = await import("./opencode-json-template.js");
+    const { detectOpenCodeMajorVersion } = await import("./opencode-config-merge.js");
     const { buildAgentConfigs } = await import("../plugin/config.js");
-    const template = buildDefaultOpenCodeJson(configDir, buildAgentConfigs());
+    const template = buildDefaultOpenCodeJson(configDir, buildAgentConfigs(), detectOpenCodeMajorVersion(configDir));
     await writeFile(
       opencodeJsonPath,
       JSON.stringify(template, null, 2) + "\n",
@@ -725,9 +726,13 @@ export async function fixContextKeeper(): Promise<FixResult[]> {
     const content = await readFile(opencodeJsonPath, "utf-8");
     const config = JSON.parse(content);
 
+    const { buildDefaultMcpConfig } = await import("./opencode-json-template.js");
+    const { detectOpenCodeMajorVersion } = await import("./opencode-config-merge.js");
+    const majorVersion = detectOpenCodeMajorVersion(configDir);
     if (!config.mcp) config.mcp = {};
+    const servers = majorVersion === 1 ? config.mcp : (config.mcp.servers ??= {});
 
-    if (config.mcp["context-keeper"]) {
+    if (config.mcp["context-keeper"] || servers["context-keeper"]) {
       // Already registered — nothing to fix
       return results;
     }
@@ -735,12 +740,10 @@ export async function fixContextKeeper(): Promise<FixResult[]> {
     // Normalize path (forward slashes)
     const normalizedPath = contextKeeperPath.replace(/\\/g, "/");
 
-    config.mcp["context-keeper"] = {
-      type: "local",
-      command: ["bun", "run", normalizedPath],
-      env: { PROJECT_ROOT: "${PROJECT_ROOT}" },
-      enabled: true,
-    };
+    const defaults = buildDefaultMcpConfig(configDir, majorVersion) as Record<string, any>;
+    servers["context-keeper"] = majorVersion === 1
+      ? defaults["context-keeper"]
+      : defaults.servers["context-keeper"];
 
     await writeFile(opencodeJsonPath, JSON.stringify(config, null, 2) + "\n");
     results.push({

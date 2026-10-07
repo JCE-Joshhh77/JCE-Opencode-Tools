@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync, readdirSync } from "fs";
 import { dirname, join, relative, resolve } from "path";
-import { buildDefaultOpenCodeJson, buildDefaultTuiJson } from "./opencode-json-template.js";
+import { execFileSync } from "child_process";
+import { buildDefaultMcpConfig, buildDefaultOpenCodeJson, buildDefaultTuiJson, type OpenCodeMajorVersion } from "./opencode-json-template.js";
 import { buildAgentConfigs } from "../plugin/config.js";
 import { cleanupLegacyMcpEntries } from "./version.js";
 
@@ -24,6 +25,44 @@ export interface ReadOpenCodeJsonResult {
   repaired: boolean;
   backupPath?: string;
   tidied?: boolean;
+}
+
+export function parseOpenCodeMajorVersion(output: string): OpenCodeMajorVersion | null {
+  const match = output.match(/(?:^|\s|v)(\d+)(?:\.|\s|$)/i);
+  if (!match) return null;
+  const major = Number(match[1]);
+  if (!Number.isInteger(major) || major < 1) return null;
+  return major >= 2 ? 2 : 1;
+}
+
+let detectedOpenCodeMajorVersion: OpenCodeMajorVersion | undefined;
+
+export function detectOpenCodeMajorVersion(configDir?: string): OpenCodeMajorVersion {
+  const override = process.env.OPENCODE_JCE_OPENCODE_MAJOR;
+  if (override === "1" || override === "2") return Number(override) as OpenCodeMajorVersion;
+
+  if (detectedOpenCodeMajorVersion) return detectedOpenCodeMajorVersion;
+  try {
+    const output = execFileSync("opencode", ["--version"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5_000 });
+    const detected = parseOpenCodeMajorVersion(output);
+    if (detected) return detectedOpenCodeMajorVersion = detected;
+  } catch {
+    // Infer from existing files when OpenCode is not currently on PATH.
+  }
+  if (configDir) {
+    if (existsSync(join(configDir, "cli.json"))) return 2;
+    if (existsSync(join(configDir, "tui.json"))) return 1;
+    try {
+      const config = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf8"));
+      if (Array.isArray(config?.plugins)) return 2;
+      if (Array.isArray(config?.plugin)) return 1;
+    } catch {}
+  }
+  return detectedOpenCodeMajorVersion = 2;
+}
+
+function tuiConfigName(majorVersion: OpenCodeMajorVersion): "tui.json" | "cli.json" {
+  return majorVersion === 1 ? "tui.json" : "cli.json";
 }
 
 /**
@@ -158,8 +197,8 @@ export function writeOpenCodeJsonAtomic(configDir: string, data: unknown): void 
   writeJsonAtomic(configPath, data);
 }
 
-export function writeTuiJsonAtomic(configDir: string, data: unknown): void {
-  const configPath = join(configDir, "tui.json");
+export function writeTuiJsonAtomic(configDir: string, data: unknown, majorVersion: OpenCodeMajorVersion = detectOpenCodeMajorVersion(configDir)): void {
+  const configPath = join(configDir, tuiConfigName(majorVersion));
   mkdirSync(configDir, { recursive: true });
   if (lstatSync(configDir).isSymbolicLink()) throw new Error(`Refusing unsafe config write through symlinked config root: ${configDir}`);
   writeJsonAtomic(configPath, data);
@@ -175,6 +214,14 @@ function mergeRecord(existing: unknown, defaults: unknown): Record<string, unkno
   const base = existing && typeof existing === "object" && !Array.isArray(existing) ? existing as Record<string, unknown> : {};
   const additions = defaults && typeof defaults === "object" && !Array.isArray(defaults) ? defaults as Record<string, unknown> : {};
   return { ...base, ...Object.fromEntries(Object.entries(additions).filter(([key]) => !(key in base))) };
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 export function readOrRepairOpenCodeJson(configDir: string): ReadOpenCodeJsonResult {
@@ -217,8 +264,9 @@ export function readOrRepairOpenCodeJson(configDir: string): ReadOpenCodeJsonRes
   return { config: {}, repaired: true, backupPath };
 }
 
-export function readOrRepairTuiJson(configDir: string): ReadOpenCodeJsonResult {
-  const configPath = join(configDir, "tui.json");
+export function readOrRepairTuiJson(configDir: string, majorVersion: OpenCodeMajorVersion = detectOpenCodeMajorVersion(configDir)): ReadOpenCodeJsonResult {
+  const configName = tuiConfigName(majorVersion);
+  const configPath = join(configDir, configName);
   mkdirSync(configDir, { recursive: true });
 
   if (!existsSync(configPath)) return { config: {}, repaired: false };
@@ -234,30 +282,53 @@ export function readOrRepairTuiJson(configDir: string): ReadOpenCodeJsonResult {
 
   const backupPath = `${configPath}.invalid-${timestamp()}`;
   renameSync(configPath, backupPath);
-  cleanupOldBackups(configDir, "^tui\\.json\\.invalid-");
+  cleanupOldBackups(configDir, `^${configName.replace(".", "\\.")}\\.invalid-`);
   return { config: {}, repaired: true, backupPath };
 }
 
-export function ensureOpenCodeJsonEntries(configDir: string): EnsureOpenCodeJsonResult {
-  const defaults = buildDefaultOpenCodeJson(configDir, buildAgentConfigs()) as Record<string, unknown>;
+export function ensureOpenCodeJsonEntries(
+  configDir: string,
+  majorVersion: OpenCodeMajorVersion = detectOpenCodeMajorVersion(configDir),
+): EnsureOpenCodeJsonResult {
+  const defaults = buildDefaultOpenCodeJson(configDir, buildAgentConfigs(), majorVersion) as Record<string, unknown>;
   const configPath = join(configDir, "opencode.json");
   const { config: current, repaired, backupPath, tidied } = readOrRepairOpenCodeJson(configDir);
 
   const merged: Record<string, unknown> = { ...current };
   if (!("$schema" in merged) && "$schema" in defaults) merged.$schema = defaults.$schema;
-  merged.plugin = mergeStringArray(merged.plugin, defaults.plugin);
-  merged.agent = mergeRecord(merged.agent, defaults.agent);
-  merged.mcp = mergeRecord(merged.mcp, defaults.mcp);
+  if (majorVersion === 1) {
+    merged.plugin = mergeStringArray(merged.plugin, defaults.plugin);
+  } else {
+    const legacyPlugins = Array.isArray(merged.plugin) ? merged.plugin : [];
+    merged.plugins = mergeStringArray(merged.plugins, [...legacyPlugins, ...(defaults.plugins as unknown[] ?? [])]);
+  }
+  if (majorVersion === 1) {
+    merged.agent = mergeRecord(merged.agent, defaults.agent);
+    merged.mcp = mergeRecord(merged.mcp, defaults.mcp);
+  } else {
+    const legacyAgents = objectRecord(merged.agent);
+    const defaultAgents = objectRecord(defaults.agents);
+    const safeAgentDefaults = Object.fromEntries(Object.entries(defaultAgents).filter(([id]) => !(id in legacyAgents)));
+    merged.agents = mergeRecord(merged.agents, safeAgentDefaults);
+
+    const currentMcp = objectRecord(merged.mcp);
+    const currentServers = objectRecord(currentMcp.servers);
+    const defaultServers = objectRecord(objectRecord(defaults.mcp).servers);
+    const safeServerDefaults = Object.fromEntries(Object.entries(defaultServers).filter(([id]) => !(id in currentMcp)));
+    merged.mcp = { ...currentMcp, servers: mergeRecord(currentServers, safeServerDefaults) };
+  }
   merged.lsp = mergeRecord(merged.lsp, defaults.lsp);
   cleanupLegacyMcpEntries(merged as Record<string, any>);
 
-  const mcp = merged.mcp && typeof merged.mcp === "object" && !Array.isArray(merged.mcp)
-    ? merged.mcp as Record<string, unknown>
-    : {};
-  const defaultContextKeeper = defaults.mcp && typeof defaults.mcp === "object" && !Array.isArray(defaults.mcp)
-    ? (defaults.mcp as Record<string, unknown>)["context-keeper"]
-    : undefined;
-  const contextKeeper = mcp["context-keeper"];
+  const mcp = objectRecord(merged.mcp);
+  const defaultMcp = objectRecord(defaults.mcp);
+  const usesLegacyContextKeeper = majorVersion === 2 && "context-keeper" in mcp;
+  const mcpServers = majorVersion === 1 || usesLegacyContextKeeper ? mcp : objectRecord(mcp.servers);
+  const defaultMcpServers = majorVersion === 1 || usesLegacyContextKeeper
+    ? buildDefaultMcpConfig(configDir, 1)
+    : objectRecord(defaultMcp.servers);
+  const defaultContextKeeper = defaultMcpServers["context-keeper"];
+  const contextKeeper = mcpServers["context-keeper"];
   if (defaultContextKeeper && typeof defaultContextKeeper === "object" && !Array.isArray(defaultContextKeeper)) {
     const currentContextKeeper = contextKeeper && typeof contextKeeper === "object" && !Array.isArray(contextKeeper)
       ? contextKeeper as Record<string, unknown>
@@ -272,8 +343,11 @@ export function ensureOpenCodeJsonEntries(configDir: string): EnsureOpenCodeJson
       !Array.isArray(defaultCommand) ||
       JSON.stringify(currentCommand) !== JSON.stringify(defaultCommand);
 
-    if (currentContextKeeper && (needsProjectRoot || needsCliPath)) {
-      mcp["context-keeper"] = defaultContextKeeper;
+    const managedContextKeeper = Array.isArray(currentCommand) && currentCommand.some((part) =>
+      typeof part === "string" && /(?:^|[/\\])src[/\\]mcp[/\\]context-keeper\.ts$/.test(part)
+    );
+    if (currentContextKeeper && managedContextKeeper && (needsProjectRoot || needsCliPath)) {
+      mcpServers["context-keeper"] = defaultContextKeeper;
     }
   }
 
@@ -289,34 +363,74 @@ export function ensureOpenCodeJsonEntries(configDir: string): EnsureOpenCodeJson
   return { changed: false, repaired, backupPath, tidied };
 }
 
-export function ensureTuiJsonEntries(configDir: string): EnsureTuiJsonResult {
-  const defaults = buildDefaultTuiJson(configDir) as Record<string, unknown>;
-  const configPath = join(configDir, "tui.json");
-  const { config: current, repaired, backupPath } = readOrRepairTuiJson(configDir);
+export function ensureTuiJsonEntries(
+  configDir: string,
+  majorVersion: OpenCodeMajorVersion = detectOpenCodeMajorVersion(configDir),
+): EnsureTuiJsonResult {
+  const defaults = buildDefaultTuiJson(configDir, majorVersion) as Record<string, unknown>;
+  const configPath = join(configDir, tuiConfigName(majorVersion));
+  const { config: current, repaired, backupPath } = readOrRepairTuiJson(configDir, majorVersion);
 
   const merged: Record<string, unknown> = { ...current };
   if (!("$schema" in merged) && "$schema" in defaults) merged.$schema = defaults.$schema;
-  merged.plugin = mergeStringArray(merged.plugin, defaults.plugin);
-  merged.plugin_enabled = mergeRecord(merged.plugin_enabled, defaults.plugin_enabled);
+  if (majorVersion === 1) {
+    merged.plugin = mergeStringArray(merged.plugin, defaults.plugin);
+    merged.plugin_enabled = mergeRecord(merged.plugin_enabled, defaults.plugin_enabled);
+  } else {
+    merged.plugins = mergeStringArray(merged.plugins, defaults.plugins);
+  }
 
   const before = JSON.stringify(current);
   const after = JSON.stringify(merged);
   if (!existsSync(configPath) || repaired || before !== after) {
-    writeTuiJsonAtomic(configDir, merged);
+    writeTuiJsonAtomic(configDir, merged, majorVersion);
     return { changed: true, repaired, backupPath };
   }
 
   return { changed: false, repaired, backupPath };
 }
 
+/** Convert a plugin manifest MCP entry (V1 shape: env/enabled) to native V2 shape (environment/disabled). */
+export function convertPluginMcpEntryToV2(entry: Record<string, unknown>): Record<string, unknown> {
+  const { env, enabled, ...server } = entry;
+  const result: Record<string, unknown> = { ...server };
+  if (env && typeof env === "object" && !Array.isArray(env)) {
+    result.environment = Object.fromEntries(
+      Object.entries(env as Record<string, unknown>).map(([key, value]) => [
+        key,
+        typeof value === "string"
+          ? value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, "{env:$1}")
+          : value,
+      ]),
+    );
+  }
+  // Only override `disabled` when converting from V1 `enabled` field.
+  // For already-V2 entries (no `enabled` field), preserve the existing `disabled` from `...server`.
+  if ("enabled" in entry) {
+    result.disabled = enabled === false;
+  }
+  return result;
+}
+
 export function mergePluginMcpIntoOpenCodeJson(configDir: string, pluginMcp: Record<string, unknown>): EnsureOpenCodeJsonResult {
   const base = ensureOpenCodeJsonEntries(configDir);
   const { config, repaired, backupPath } = readOrRepairOpenCodeJson(configDir);
-  const currentMcp = config.mcp && typeof config.mcp === "object" && !Array.isArray(config.mcp)
-    ? config.mcp as Record<string, unknown>
-    : {};
+  const majorVersion = detectOpenCodeMajorVersion(configDir);
+  const mcp = objectRecord(config.mcp);
+  const currentMcp = majorVersion === 1 ? mcp : objectRecord(mcp.servers);
+  const legacyMcp = majorVersion === 1 ? {} : mcp;
 
-  const collisions = Object.keys(pluginMcp).filter((key) => key in currentMcp);
+  // Convert plugin MCP entries to the native shape for the detected version.
+  const normalizedPluginMcp = Object.fromEntries(
+    Object.entries(pluginMcp).map(([key, entry]) => [
+      key,
+      majorVersion === 1 || !isRecord(entry)
+        ? entry
+        : convertPluginMcpEntryToV2(entry as Record<string, unknown>),
+    ]),
+  );
+
+  const collisions = Object.keys(normalizedPluginMcp).filter((key) => key in currentMcp || key in legacyMcp);
   if (collisions.length > 0) {
     // Instead of throwing, warn and skip colliding keys
     console.warn(`⚠️  MCP key collision(s) detected: ${collisions.join(", ")}`);
@@ -324,7 +438,7 @@ export function mergePluginMcpIntoOpenCodeJson(configDir: string, pluginMcp: Rec
     
     // Filter out colliding keys
     const safePluginMcp = Object.fromEntries(
-      Object.entries(pluginMcp).filter(([key]) => !collisions.includes(key))
+      Object.entries(normalizedPluginMcp).filter(([key]) => !collisions.includes(key))
     );
     
     if (Object.keys(safePluginMcp).length === 0) {
@@ -334,7 +448,9 @@ export function mergePluginMcpIntoOpenCodeJson(configDir: string, pluginMcp: Rec
 
     const next = {
       ...config,
-      mcp: { ...currentMcp, ...safePluginMcp },
+      mcp: majorVersion === 1
+        ? { ...currentMcp, ...safePluginMcp }
+        : { ...mcp, servers: { ...currentMcp, ...safePluginMcp } },
     };
     writeOpenCodeJsonAtomic(configDir, next);
     return { changed: true, repaired: base.repaired || repaired, backupPath: backupPath ?? base.backupPath };
@@ -342,7 +458,9 @@ export function mergePluginMcpIntoOpenCodeJson(configDir: string, pluginMcp: Rec
 
   const next = {
     ...config,
-    mcp: { ...currentMcp, ...pluginMcp },
+    mcp: majorVersion === 1
+      ? { ...currentMcp, ...normalizedPluginMcp }
+      : { ...mcp, servers: { ...currentMcp, ...normalizedPluginMcp } },
   };
   writeOpenCodeJsonAtomic(configDir, next);
   return { changed: true, repaired: base.repaired || repaired, backupPath: backupPath ?? base.backupPath };

@@ -43,9 +43,10 @@ afterEach(() => {
 
 describe("audit fixes", () => {
   test("OpenCode template uses npx-backed MCP commands that work after fresh install", () => {
-    const config = buildDefaultOpenCodeJson("/tmp/opencode") as { mcp: Record<string, { command?: string[]; env?: Record<string, string> }> };
+    const config = buildDefaultOpenCodeJson("/tmp/opencode") as { mcp: { servers: Record<string, { command?: string[]; environment?: Record<string, string> }> } };
+    const servers = config.mcp.servers;
 
-    expect(Object.keys(config.mcp).sort()).toEqual([
+    expect(Object.keys(servers).sort()).toEqual([
       "context-keeper",
       "context7",
       "github-search",
@@ -53,29 +54,29 @@ describe("audit fixes", () => {
       "playwright",
       "sequential-thinking",
     ]);
-    expect(config.mcp["sequential-thinking"].command).toEqual(["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"]);
-    expect(config.mcp.playwright.command).toEqual(["npx", "-y", "@playwright/mcp@latest"]);
-    expect(config.mcp["github-search"].command).toEqual(["npx", "-y", "@modelcontextprotocol/server-github"]);
-    expect(config.mcp.memory.command).toEqual(["npx", "-y", "@modelcontextprotocol/server-memory"]);
-    expect(config.mcp["context-keeper"].env?.PROJECT_ROOT).toBe("${PROJECT_ROOT}");
+    expect(servers["sequential-thinking"].command).toEqual(["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"]);
+    expect(servers.playwright.command).toEqual(["npx", "-y", "@playwright/mcp@latest"]);
+    expect(servers["github-search"].command).toEqual(["npx", "-y", "@modelcontextprotocol/server-github"]);
+    expect(servers.memory.command).toEqual(["npx", "-y", "@modelcontextprotocol/server-memory"]);
+    expect(servers["context-keeper"].environment?.PROJECT_ROOT).toBe("{env:PROJECT_ROOT}");
   });
 
   test("OpenCode template does not enable MCP servers known to close without local env", () => {
-    const config = buildDefaultOpenCodeJson("/tmp/opencode") as { mcp: Record<string, unknown> };
+    const config = buildDefaultOpenCodeJson("/tmp/opencode") as { mcp: { servers: Record<string, unknown> } };
 
-    expect(config.mcp).not.toHaveProperty("filesystem");
-    expect(config.mcp).not.toHaveProperty("web-fetch");
-    expect(config.mcp).not.toHaveProperty("postgres");
+    expect(config.mcp.servers).not.toHaveProperty("filesystem");
+    expect(config.mcp.servers).not.toHaveProperty("web-fetch");
+    expect(config.mcp.servers).not.toHaveProperty("postgres");
   });
 
   test("OpenCode template can expose bundled Android native agent after restart", async () => {
     const { buildAgentConfigs } = await import("../../src/plugin/config.js");
-    const config = buildDefaultOpenCodeJson("/tmp/opencode", buildAgentConfigs()) as { agent: Record<string, { description: string; mode: string; prompt: string }> };
+    const config = buildDefaultOpenCodeJson("/tmp/opencode", buildAgentConfigs()) as { agents: Record<string, { description: string; mode: string; system: string }> };
 
-    expect(config.agent.android).toBeDefined();
-    expect(config.agent.android.mode).toBe("all");
-    expect(config.agent.android.description).toContain("Native Android specialist");
-    expect(config.agent.android.prompt).toContain("android_logcat");
+    expect(config.agents.android).toBeDefined();
+    expect(config.agents.android.mode).toBe("all");
+    expect(config.agents.android.description).toContain("Native Android specialist");
+    expect(config.agents.android.system).toContain("android_logcat");
   });
 
   test("docs and installers report the stable MCP server count", () => {
@@ -250,7 +251,7 @@ describe("audit fixes", () => {
     const source = readFileSync(join(process.cwd(), "scripts", "merge-config.ts"), "utf-8");
     const helper = readFileSync(join(process.cwd(), "src", "lib", "opencode-config-merge.ts"), "utf-8");
 
-    expect(source).toContain("ensureOpenCodeJsonEntries(targetDir)");
+    expect(source).toContain("ensureOpenCodeJsonEntries(targetDir, detectOpenCodeMajorVersion(targetDir))");
     expect(helper).toContain("Refusing to rebuild malformed opencode.json automatically");
   });
 
@@ -258,7 +259,7 @@ describe("audit fixes", () => {
     const source = readFileSync(join(process.cwd(), "src", "commands", "update.ts"), "utf-8");
     const helper = readFileSync(join(process.cwd(), "src", "lib", "opencode-config-merge.ts"), "utf-8");
 
-    expect(source).toContain("ensureOpenCodeJsonEntries(configDir)");
+    expect(source).toContain("ensureOpenCodeJsonEntries(configDir, detectOpenCodeMajorVersion(configDir))");
     expect(source).toContain("Preserved existing opencode.json unchanged");
     expect(helper).toContain("needsCliPath");
   });
@@ -288,7 +289,7 @@ describe("audit fixes", () => {
     const updated = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf-8"));
     expect(updated.customTheme).toBe("night");
     expect(updated.providers).toEqual({ custom: { models: ["foo"] } });
-    expect(updated.mcp.demo.command).toEqual(["npx", "demo-mcp"]);
+    expect(updated.mcp.servers.demo.command).toEqual(["npx", "demo-mcp"]);
   });
 
   test("version upgrades hand off config merge to the freshly updated CLI", () => {
@@ -674,7 +675,7 @@ describe("audit fixes", () => {
 
     const updated = JSON.parse(readFileSync(join(configDir, "opencode.json"), "utf-8"));
     expect(updated.mcp.existing.command).toEqual(["existing"]);
-    expect(updated.mcp.demo.command).toEqual(["npx", "demo-mcp"]);
+    expect(updated.mcp.servers.demo.command).toEqual(["npx", "demo-mcp"]);
   });
 
   test("plugin config activation rejects malformed MCP declarations", async () => {

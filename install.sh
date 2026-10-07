@@ -6,7 +6,7 @@ set -euo pipefail
 # One command to install everything you need for OpenCode CLI
 # ═══════════════════════════════════════════════════════════════
 
-VERSION="3.8.34"
+VERSION="3.9.0"
 REPO_URL="https://github.com/JCETools-Petra/JCE-Opencode-Tools.git"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/opencode-jce-install.XXXXXXXXXX")"
 # CONFIG_DIR is set by detect_opencode_config() in main()
@@ -346,6 +346,23 @@ install_opencode() {
     fi
 }
 
+detect_opencode_major() {
+    if [ "${OPENCODE_JCE_OPENCODE_MAJOR:-}" = "1" ] || [ "${OPENCODE_JCE_OPENCODE_MAJOR:-}" = "2" ]; then
+        printf '%s' "$OPENCODE_JCE_OPENCODE_MAJOR"
+        return
+    fi
+    local output major
+    output="$(opencode --version 2>/dev/null || true)"
+    major="$(printf '%s' "$output" | sed -nE 's/.*(^|[[:space:]v])([0-9]+)(\..*)?$/\2/p' | head -1)"
+    if [ -n "$major" ]; then
+        [ "$major" -ge 2 ] && printf '2' || printf '1'
+        return
+    fi
+    [ -f "${CONFIG_DIR}/cli.json" ] && printf '2' && return
+    [ -f "${CONFIG_DIR}/tui.json" ] && printf '1' && return
+    printf '2'
+}
+
 download_repo_tarball() {
     local archive="${TEMP_DIR}.tar.gz"
     local extract_dir="${TEMP_DIR}.extract"
@@ -552,6 +569,8 @@ register_context_keeper() {
     local opencode_json="${CONFIG_DIR}/opencode.json"
     local cli_dir="${CONFIG_DIR}/cli"
     local context_keeper_path="${cli_dir}/src/mcp/context-keeper.ts"
+    local opencode_major
+    opencode_major="$(detect_opencode_major)"
 
     # Verify context-keeper.ts exists
     if [ ! -f "$context_keeper_path" ]; then
@@ -560,23 +579,34 @@ register_context_keeper() {
         return
     fi
 
-    OPENCODE_JSON="$opencode_json" CLI_DIR="$cli_dir" bun -e '
+    OPENCODE_JSON="$opencode_json" CLI_DIR="$cli_dir" OPENCODE_MAJOR="$opencode_major" bun -e '
 import fs from "fs";
 import path from "path";
 const opencodeJson = process.env.OPENCODE_JSON;
 const cliDir = process.env.CLI_DIR;
 const configDir = path.dirname(opencodeJson);
 const contextKeeperPath = path.join(cliDir, "src", "mcp", "context-keeper.ts").replace(/\\/g, "/");
-const pluginPath = `file://${path.join(cliDir, "src", "plugin", "index.ts").replace(/\\/g, "/")}`;
+const major = process.env.OPENCODE_MAJOR === "1" ? 1 : 2;
+const pluginPath = major === 1
+  ? `file://${path.join(cliDir, "src", "plugin", "index.ts").replace(/\\/g, "/")}`
+  : `file://${cliDir.replace(/\\/g, "/")}`;
 const defaults = {
   "context-keeper": { type: "local", command: ["bun", "run", contextKeeperPath], env: { PROJECT_ROOT: "${PROJECT_ROOT}" }, enabled: true },
   "context7": { type: "remote", url: "https://mcp.context7.com/mcp", enabled: true },
   "github-search": { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-github"], env: { GITHUB_PERSONAL_ACCESS_TOKEN: "${GITHUB_TOKEN}" }, enabled: true },
   "memory": { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-memory"], enabled: true },
-  "playwright": { type: "local", command: ["npx", "-y", "@playwright/mcp@0.0.28"], enabled: true },
+  "playwright": { type: "local", command: ["npx", "-y", "@playwright/mcp@latest"], enabled: true },
   "sequential-thinking": { type: "local", command: ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking"], enabled: true }
 };
-let config = { "$schema": "https://opencode.ai/config.json", plugin: [pluginPath], mcp: {}, lsp: {} };
+const nativeDefaults = Object.fromEntries(Object.entries(defaults).map(([id, value]) => {
+  const { env, enabled, ...server } = value;
+  return [id, {
+    ...server,
+    ...(env ? { environment: Object.fromEntries(Object.entries(env).map(([key, entry]) => [key, entry === "${GITHUB_TOKEN}" ? "{env:GITHUB_TOKEN}" : entry])) } : {}),
+    disabled: !enabled
+  }];
+}));
+let config = { "$schema": "https://opencode.ai/config.json", mcp: {}, lsp: {} };
 if (fs.existsSync(opencodeJson)) {
   if (fs.lstatSync(opencodeJson).isSymbolicLink()) throw new Error("Refusing to write symlinked opencode.json");
   try {
@@ -585,12 +615,15 @@ if (fs.existsSync(opencodeJson)) {
     throw new Error("Refusing to rebuild malformed opencode.json");
   }
 }
-if (!Array.isArray(config.plugin)) config.plugin = [];
-if (!config.plugin.includes(pluginPath)) config.plugin.push(pluginPath);
+const pluginKey = major === 1 ? "plugin" : "plugins";
+if (!Array.isArray(config[pluginKey])) config[pluginKey] = [];
+if (!config[pluginKey].includes(pluginPath)) config[pluginKey].push(pluginPath);
 if (!config.mcp || typeof config.mcp !== "object") config.mcp = {};
+const servers = major === 1 ? config.mcp : (config.mcp.servers ??= {});
+const selectedDefaults = major === 1 ? defaults : nativeDefaults;
 let added = 0;
-for (const [key, value] of Object.entries(defaults)) {
-  if (!(key in config.mcp)) { config.mcp[key] = value; added++; }
+for (const [key, value] of Object.entries(selectedDefaults)) {
+  if (!(key in config.mcp) && !(key in servers)) { servers[key] = value; added++; }
 }
 fs.writeFileSync(opencodeJson, JSON.stringify(config, null, 2) + "\n");
 console.log(added);
@@ -599,9 +632,12 @@ console.log(added);
 }
 
 register_tui_plugin() {
-    info "Registering Token Savings TUI plugin in tui.json..."
+    local opencode_major tui_config_name
+    opencode_major="$(detect_opencode_major)"
+    [ "$opencode_major" = "1" ] && tui_config_name="tui.json" || tui_config_name="cli.json"
+    info "Registering JCE TUI plugin in ${tui_config_name}..."
 
-    local tui_json="${CONFIG_DIR}/tui.json"
+    local tui_json="${CONFIG_DIR}/${tui_config_name}"
     local cli_dir="${CONFIG_DIR}/cli"
     local tui_plugin_file="${cli_dir}/src/plugin/tui.tsx"
 
@@ -620,33 +656,41 @@ register_tui_plugin() {
     fi
 
     local error_log="/tmp/tui-register-$$.log"
-    TUI_JSON="$tui_json" CLI_DIR="$cli_dir" bun -e '
+    TUI_JSON="$tui_json" CLI_DIR="$cli_dir" OPENCODE_MAJOR="$opencode_major" bun -e '
 import fs from "fs";
 import path from "path";
 const tuiJson = process.env.TUI_JSON;
 const cliDir = process.env.CLI_DIR;
-const pluginPath = `file://${path.join(cliDir, "src", "plugin", "tui.tsx").replace(/\\/g, "/")}`;
-let config = { "$schema": "https://opencode.ai/tui.json", plugin: [], plugin_enabled: {} };
+const major = process.env.OPENCODE_MAJOR === "1" ? 1 : 2;
+const pluginPath = major === 1
+  ? `file://${path.join(cliDir, "src", "plugin", "tui.tsx").replace(/\\/g, "/")}`
+  : `file://${cliDir.replace(/\\/g, "/")}`;
+let config = major === 1
+  ? { "$schema": "https://opencode.ai/tui.json", plugin: [], plugin_enabled: {} }
+  : { "$schema": "https://opencode.ai/v2/cli.json", plugins: [] };
 if (fs.existsSync(tuiJson)) {
   try {
     config = JSON.parse(fs.readFileSync(tuiJson, "utf8"));
   } catch (e) {
     const backup = `${tuiJson}.invalid-${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}`;
     fs.renameSync(tuiJson, backup);
-    console.error(`Malformed tui.json backed up to ${backup}`);
+    console.error(`Malformed ${major === 1 ? "tui.json" : "cli.json"} backed up to ${backup}`);
   }
 }
 if (!config || typeof config !== "object" || Array.isArray(config)) config = {};
-if (!config["$schema"]) config["$schema"] = "https://opencode.ai/tui.json";
-if (!Array.isArray(config.plugin)) config.plugin = [];
-if (!config.plugin.includes(pluginPath)) config.plugin.push(pluginPath);
-if (!config.plugin_enabled || typeof config.plugin_enabled !== "object" || Array.isArray(config.plugin_enabled)) config.plugin_enabled = {};
-if (!("opencode-jce-token-savings" in config.plugin_enabled)) config.plugin_enabled["opencode-jce-token-savings"] = true;
+if (!config["$schema"]) config["$schema"] = major === 1 ? "https://opencode.ai/tui.json" : "https://opencode.ai/v2/cli.json";
+const pluginKey = major === 1 ? "plugin" : "plugins";
+if (!Array.isArray(config[pluginKey])) config[pluginKey] = [];
+if (!config[pluginKey].includes(pluginPath)) config[pluginKey].push(pluginPath);
+if (major === 1) {
+  if (!config.plugin_enabled || typeof config.plugin_enabled !== "object" || Array.isArray(config.plugin_enabled)) config.plugin_enabled = {};
+  if (!("opencode-jce-token-savings" in config.plugin_enabled)) config.plugin_enabled["opencode-jce-token-savings"] = true;
+}
 fs.writeFileSync(tuiJson, JSON.stringify(config, null, 2) + "\n");
 ' 2>"$error_log"
     
     if [ $? -eq 0 ]; then
-        success "tui.json Token Savings plugin registered"
+        success "${tui_config_name} JCE plugin registered"
         rm -f "$error_log"
     else
         warn "Failed to register Token Savings TUI plugin."
@@ -678,7 +722,7 @@ precache_mcp_packages() {
     local -a MCP_PACKAGES=(
         "@modelcontextprotocol/server-github"
         "@modelcontextprotocol/server-memory"
-        "@playwright/mcp@0.0.28"
+        "@playwright/mcp@latest"
         "@modelcontextprotocol/server-sequential-thinking"
     )
 

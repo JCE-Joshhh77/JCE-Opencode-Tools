@@ -23,7 +23,7 @@ import {
 } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { execFileSync } from "child_process";
-import { ensureOpenCodeJsonEntries, ensureTuiJsonEntries } from "../src/lib/opencode-config-merge.js";
+import { detectOpenCodeMajorVersion, ensureOpenCodeJsonEntries, ensureTuiJsonEntries } from "../src/lib/opencode-config-merge.js";
 
 /** Write JSON atomically: write to unique .tmp then rename */
 function writeJsonAtomic(filePath: string, data: unknown): void {
@@ -69,7 +69,7 @@ function assertSafeTargetPath(destination: string): void {
 }
 
 function preflightTargetPaths(): void {
-  const destinations = ["profiles", "prompts", "skills", "mcp.json", "agents.json", "lsp.json", "opencode.json", "tui.json", "AGENTS.md", "fallback.json"]
+  const destinations = ["profiles", "prompts", "skills", "mcp.json", "agents.json", "lsp.json", "opencode.json", "tui.json", "cli.json", "AGENTS.md", "fallback.json"]
     .map((destination) => join(targetDir, destination));
 
   const addSkillDestinations = (source: string, destination: string): void => {
@@ -467,7 +467,7 @@ function ensureOpenCodeJson() {
   const targetFile = join(targetDir, "opencode.json");
   const existed = existsSync(targetFile);
   const before = existed ? readFileSync(targetFile, "utf8") : null;
-  const result = ensureOpenCodeJsonEntries(targetDir);
+  const result = ensureOpenCodeJsonEntries(targetDir, detectOpenCodeMajorVersion(targetDir));
   const after = readFileSync(targetFile, "utf8");
 
   if (result.repaired && result.backupPath) {
@@ -491,27 +491,29 @@ function ensureOpenCodeJson() {
 }
 
 function ensureTuiJson() {
-  const targetFile = join(targetDir, "tui.json");
+  const majorVersion = detectOpenCodeMajorVersion(targetDir);
+  const configName = majorVersion === 1 ? "tui.json" : "cli.json";
+  const targetFile = join(targetDir, configName);
   const existed = existsSync(targetFile);
   const before = existed ? readFileSync(targetFile, "utf8") : null;
-  const result = ensureTuiJsonEntries(targetDir);
+  const result = ensureTuiJsonEntries(targetDir, majorVersion);
   const after = readFileSync(targetFile, "utf8");
 
   if (result.repaired && result.backupPath) {
-    console.log(`  [!] tui.json was invalid; backed up to ${result.backupPath}`);
-    console.log(`  [+] tui.json created (repaired)`);
+    console.log(`  [!] ${configName} was invalid; backed up to ${result.backupPath}`);
+    console.log(`  [+] ${configName} created (repaired)`);
     return;
   }
 
   if (!existed) {
-    console.log(`  [+] tui.json created (new) — Token Savings TUI plugin registered`);
+    console.log(`  [+] ${configName} created (new) — JCE TUI plugin registered`);
     return;
   }
 
   if (before !== after) {
-    console.log(`  [+] tui.json defaults merged`);
+    console.log(`  [+] ${configName} defaults merged`);
   } else {
-    console.log(`  [=] tui.json exists, all defaults present`);
+    console.log(`  [=] ${configName} exists, all defaults present`);
   }
 }
 

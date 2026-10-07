@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync } from "fs";
 import { readFile, writeFile, rename } from "fs/promises";
 
 import { getConfigDir } from "./config.js";
-import { ensureOpenCodeJsonEntries, mergePluginMcpIntoOpenCodeJson, readOrRepairOpenCodeJson, writeOpenCodeJsonAtomic } from "./opencode-config-merge.js";
+import { convertPluginMcpEntryToV2, detectOpenCodeMajorVersion, ensureOpenCodeJsonEntries, mergePluginMcpIntoOpenCodeJson, readOrRepairOpenCodeJson, writeOpenCodeJsonAtomic } from "./opencode-config-merge.js";
 
 /**
  * Remove a directory recursively (cross-platform).
@@ -110,7 +110,11 @@ function validatePluginMcpConfig(pluginMcp: Record<string, unknown> | null): voi
     if ("env" in entry && (!isRecord(entry.env) || !Object.values(entry.env).every((value) => typeof value === "string" && isValidMcpEnvValue(value)))) {
       throw new Error(`Invalid MCP config for ${name}: env values must be strings without shell expansion patterns.`);
     }
+    if ("environment" in entry && (!isRecord(entry.environment) || !Object.values(entry.environment).every((value) => typeof value === "string" && isValidMcpEnvValue(value)))) {
+      throw new Error(`Invalid MCP config for ${name}: environment values must be strings without shell expansion patterns.`);
+    }
     if ("enabled" in entry && typeof entry.enabled !== "boolean") throw new Error(`Invalid MCP config for ${name}: enabled must be boolean.`);
+    if ("disabled" in entry && typeof entry.disabled !== "boolean") throw new Error(`Invalid MCP config for ${name}: disabled must be boolean.`);
   }
 }
 
@@ -125,7 +129,8 @@ export function summarizeMcpTrustRisk(pluginMcp: Record<string, unknown>): strin
     if (entry.type === "remote") return `${name}: remote ${typeof entry.url === "string" ? entry.url : "unknown-url"}`;
     const command = Array.isArray(entry.command) ? entry.command.filter((item): item is string => typeof item === "string") : [];
     const binary = command[0] ?? "unknown";
-    const envKeys = isRecord(entry.env) ? Object.keys(entry.env).sort().join(",") || "none" : "none";
+    const envRecord = isRecord(entry.environment) ? entry.environment : isRecord(entry.env) ? entry.env : null;
+    const envKeys = envRecord ? Object.keys(envRecord).sort().join(",") || "none" : "none";
     const allowlisted = SAFE_LOCAL_MCP_COMMANDS.has(binary) ? "known-runner" : "custom-runner";
     return `${name}: local ${command.join(" ")} (${allowlisted}); env keys: ${envKeys}; persists to opencode.json`;
   });
@@ -385,12 +390,27 @@ async function removeAppliedPluginConfig(plugin: InstalledPlugin): Promise<void>
 
   const { config } = readOrRepairOpenCodeJson(configDir);
   if (!config.mcp || typeof config.mcp !== "object" || Array.isArray(config.mcp)) return;
-  const currentMcp = config.mcp as Record<string, unknown>;
+  const mcp = config.mcp as Record<string, unknown>;
+  const majorVersion = detectOpenCodeMajorVersion(configDir);
+  const currentMcp = majorVersion === 1
+    ? mcp
+    : mcp.servers && typeof mcp.servers === "object" && !Array.isArray(mcp.servers)
+      ? mcp.servers as Record<string, unknown>
+      : {};
 
   let changed = false;
   for (const [key, value] of Object.entries(plugin.appliedMcp)) {
-    if (JSON.stringify(currentMcp[key]) === JSON.stringify(value)) {
+    // On V2, the appliedMcp was stored in V1 manifest shape but written to disk in V2 shape.
+    // Compare against the converted form so removal works after the V1→V2 conversion.
+    const compareValue = majorVersion === 2 && value && typeof value === "object" && !Array.isArray(value)
+      ? convertPluginMcpEntryToV2(value as Record<string, unknown>)
+      : value;
+    if (JSON.stringify(currentMcp[key]) === JSON.stringify(compareValue)) {
       delete currentMcp[key];
+      changed = true;
+    }
+    if (majorVersion === 2 && JSON.stringify(mcp[key]) === JSON.stringify(value)) {
+      delete mcp[key];
       changed = true;
     }
   }

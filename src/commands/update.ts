@@ -7,7 +7,7 @@ import { cp, mkdir, writeFile, readFile, chmod, rename, rm } from "fs/promises";
 import { platform } from "os";
 import chalk from "chalk";
 import { getConfigDir } from "../lib/config.js";
-import { ensureOpenCodeJsonEntries, ensureTuiJsonEntries } from "../lib/opencode-config-merge.js";
+import { detectOpenCodeMajorVersion, ensureOpenCodeJsonEntries, ensureTuiJsonEntries } from "../lib/opencode-config-merge.js";
 import { banner, heading, info, success, warn, error } from "../lib/ui.js";
 import { logCommandStart, logCommandSuccess, logCommandError } from "../lib/logger.js";
 import {
@@ -872,7 +872,7 @@ async function handleFallback(configDir: string): Promise<FallbackStatus> {
  */
 async function ensureOpenCodeJson(configDir: string): Promise<boolean> {
   try {
-    const result = ensureOpenCodeJsonEntries(configDir);
+    const result = ensureOpenCodeJsonEntries(configDir, detectOpenCodeMajorVersion(configDir));
     if (result.tidied && result.backupPath) {
       warn(`Tidied & reformatted opencode.json (recoverable syntax — e.g. BOM or trailing commas). All settings preserved; original backed up to ${result.backupPath}.`);
     } else if (result.repaired && result.backupPath) {
@@ -889,9 +889,11 @@ async function ensureOpenCodeJson(configDir: string): Promise<boolean> {
 }
 
 async function ensureTuiJson(configDir: string): Promise<boolean> {
-  const result = ensureTuiJsonEntries(configDir);
+  const majorVersion = detectOpenCodeMajorVersion(configDir);
+  const configName = majorVersion === 1 ? "tui.json" : "cli.json";
+  const result = ensureTuiJsonEntries(configDir, majorVersion);
   if (result.repaired && result.backupPath) {
-    warn(`Malformed tui.json was backed up to ${result.backupPath} and rebuilt.`);
+    warn(`Malformed ${configName} was backed up to ${result.backupPath} and rebuilt.`);
   }
   return result.changed;
 }
@@ -908,7 +910,7 @@ async function backupConfigForUpdate(configDir: string): Promise<void> {
   await mkdir(backupDir, { recursive: true });
   
   // Backup all critical config files that could be modified during update
-  const filesToBackup = ["opencode.json", "tui.json", "agents.json", "mcp.json", "lsp.json", "fallback.json"];
+  const filesToBackup = ["opencode.json", "tui.json", "cli.json", "agents.json", "mcp.json", "lsp.json", "fallback.json"];
   for (const file of filesToBackup) {
     const src = join(configDir, file);
     const dst = join(backupDir, file);
@@ -969,7 +971,7 @@ async function mergeUpdatedConfigs(): Promise<MergeStats> {
   info("Ensuring opencode.json...");
   stats.opencodeJsonChanged = await ensureOpenCodeJson(configDir);
 
-  info("Ensuring tui.json...");
+  info(`Ensuring ${detectOpenCodeMajorVersion(configDir) === 1 ? "tui.json" : "cli.json"}...`);
   stats.tuiJsonChanged = await ensureTuiJson(configDir);
 
   info("Merging agents.json...");
@@ -1065,7 +1067,7 @@ function printMergeReport(stats: MergeStats): void {
     success("opencode.json updated with missing defaults.");
   }
   if (stats.tuiJsonChanged) {
-    success("tui.json updated with Token Savings TUI plugin defaults.");
+    success("OpenCode TUI config updated with JCE plugin defaults.");
   }
 }
 
@@ -1193,6 +1195,7 @@ export const updateCommand = new Command("update")
           const filesToRestore = [
             "opencode.json",
             "tui.json",
+            "cli.json",
             "agents.json",
             "mcp.json",
             "lsp.json",
